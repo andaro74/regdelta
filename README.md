@@ -15,11 +15,22 @@ question set, and journaled — the repo history IS the demo.
 | 04 | API + demo UI | `m04-demo` | – | – | ⬜ |
 | 05 | Deploy + lifecycle | `m05-deploy` | – | – | ⬜ |
 | 06 | Load + observability | `m06-scale` | – | – | ⬜ |
+| 07 | Governance layer (three doors) | `m07-governance` | – | – | ⬜ |
 
 Fill each row at milestone close (see .claude/skills/close-milestone).
 The intended arc: baseline fails the trap questions → retrieval fixes
 recall → the agent graph fixes the traps → the rest makes it production-
 shaped. Evidence lives in milestones/M*/ and evals/history/.
+
+## Governance (separation of roles, from the start)
+The org chart is encoded in the repo: CODEOWNERS maps files to role seats
+(PM owns SPEC/**, the compliance SME owns golden ground truth, Security
+owns tool policy + infra, the lead owns CLAUDE.md/ADRs), branch protection
+makes those reviews mandatory, the eval-gate workflow blocks any PR that
+regresses the golden set, and role subagents (.claude/agents/) run
+first-pass review from each seat. Start here: docs/governance/ROLES.md ·
+demo script: docs/governance/demo-script.md · setup:
+docs/governance/branch-protection.md.
 
 ## Traceability rules
 - One milestone = one branch (`mNN-<slug>`) = one tag at close.

@@ -1,0 +1,18 @@
+{
+  "_comment": "Example of the SECURITY-OWNED managed policy pushed to all developer machines (macOS/Linux managed settings path or MDM). Developers cannot override these locally. Contrast with the repo's .claude/settings.json (project hooks).",
+  "permissions": {
+    "deny": [
+      "Read(./secrets/**)",
+      "Read(~/.aws/credentials)",
+      "Bash(aws iam create-*)",
+      "Bash(aws iam attach-*)",
+      "Bash(cdk deploy regdelta-core*)"
+    ],
+    "defaultMode": "default"
+  },
+  "_notes": [
+    "Prod-affecting deploys go through CI, never a developer's Claude session.",
+    "IAM mutation from sessions is denied; IAM changes ship as reviewed CDK diffs.",
+    "Pair with OS-level sandboxing for filesystem/network isolation."
+  ]
+}

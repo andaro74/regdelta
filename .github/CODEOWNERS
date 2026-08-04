@@ -1,0 +1,33 @@
+# RegDelta — ownership boundaries. Enforced via branch protection
+# ("Require review from Code Owners"). See docs/governance/ROLES.md.
+#
+# Replace @regdelta-* with real GitHub teams (org/teams) or usernames.
+# Solo-operator mode: create 2-3 free accounts to play the roles, or map
+# all teams to yourself and let the PR template checklist carry the roles.
+
+# Product owns WHAT to build and when it's acceptable
+/SPEC/                          @regdelta-pm
+/milestones/                    @regdelta-pm
+
+# The SME owns what CORRECT means. Engineering may never self-approve
+# changes to ground truth — this is the core AI-accountability boundary.
+/evals/golden_questions.json    @regdelta-sme
+/.claude/skills/regulatory-domain/  @regdelta-sme
+
+# Security owns what the tooling and infrastructure MAY DO
+/.claude/settings.json          @regdelta-security
+/.claude/agents/security-reviewer.md  @regdelta-security
+/infra/                         @regdelta-security @regdelta-lead
+/.github/workflows/             @regdelta-security
+
+# The tech lead owns the technical constitution
+/CLAUDE.md                      @regdelta-lead
+/docs/adr/                      @regdelta-lead
+/src/retrieval/router.py        @regdelta-lead   # the tier seam is an interface contract
+
+# Engineering owns that it works (default owner for the rest of src)
+/src/                           @regdelta-eng
+
+# Governance docs change how everyone works — lead + PM co-own
+/docs/governance/               @regdelta-lead @regdelta-pm
+/.github/CODEOWNERS             @regdelta-lead @regdelta-security

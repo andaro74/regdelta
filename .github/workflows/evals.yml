@@ -1,0 +1,63 @@
+# Eval gate — the merge button's conscience.
+# Runs the golden set on every PR; posts the scorecard as a PR comment;
+# fails the check on regression. Marked "required" in branch protection,
+# so a PR that regresses ground-truth answers physically cannot merge,
+# regardless of who — or what — wrote the code.
+name: eval-gate
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write        # OIDC to AWS — no long-lived keys in secrets
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install ruff pytest boto3
+      - run: ruff check src evals infra
+      - run: pytest -q
+
+  golden-set:
+    runs-on: ubuntu-latest
+    needs: unit
+    # Skip until the staging API exists (post-M04). Flip to enabled by
+    # setting the repo variable EVAL_GATE_ENABLED=true.
+    if: vars.EVAL_GATE_ENABLED == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install boto3
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_EVAL_ROLE_ARN }}   # OIDC role, read-only + invoke
+          aws-region: us-east-1
+      - name: Run golden set vs staging
+        id: evals
+        env:
+          REGDELTA_API_URL: ${{ vars.STAGING_API_URL }}
+        run: |
+          set +e
+          python evals/run_evals.py | tee scorecard.txt
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+      - name: Post scorecard on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = "### 🧪 Eval gate — golden set\n```\n" +
+              fs.readFileSync('scorecard.txt','utf8').slice(-3000) + "\n```" +
+              "\n_Ground truth owned by @regdelta-sme (CODEOWNERS). " +
+              "A failing gate blocks merge by branch protection._";
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number, body });
+      - name: Enforce
+        run: exit ${{ steps.evals.outputs.exit }}

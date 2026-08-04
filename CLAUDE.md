@@ -37,6 +37,11 @@ Python 3.12 · LangGraph · Bedrock (Claude + Titan v2 embeddings, 1024-dim)
 - Baseline discipline: never "improve" src/baseline/naive.py — it is the
   control (ADR-0002). All progress claims are deltas vs its scorecard.
 - Ask before adding dependencies.
+- Role gates (docs/governance/ROLES.md): never edit
+  evals/golden_questions.json to make a failure pass — run the
+  sme-eval-triage agent and stop for human SME approval. Run
+  security-reviewer on any infra/IAM/workflow diff and eng-code-reviewer
+  before opening a PR. Spec changes go through pm-spec-reviewer.
 - Regulatory-domain details (date semantics, amendatory instructions,
   thresholds) live in .claude/skills/regulatory-domain — consult when
   working on ingestion parsing or graph nodes.
