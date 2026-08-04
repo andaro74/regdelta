@@ -117,7 +117,7 @@ class RegDeltaCoreStack(cdk.Stack):
 
         poller = _lambda.Function(
             self, "PollerFn",
-            runtime=_lambda.Runtime.PYTHON_3_12,
+            runtime=_lambda.Runtime.PYTHON_3_14,
             handler="ingestion.poller.handler",
             code=_lambda.Code.from_asset("../src"),
             timeout=Duration.minutes(5),
@@ -133,7 +133,7 @@ class RegDeltaCoreStack(cdk.Stack):
 
         processor = _lambda.Function(
             self, "ProcessorFn",
-            runtime=_lambda.Runtime.PYTHON_3_12,
+            runtime=_lambda.Runtime.PYTHON_3_14,
             handler="ingestion.processor.handler",
             code=_lambda.Code.from_asset("../src"),
             timeout=Duration.minutes(15),
@@ -158,7 +158,7 @@ class RegDeltaCoreStack(cdk.Stack):
         # ------------------------------------------------------------------
         query_fn = _lambda.Function(
             self, "QueryFn",
-            runtime=_lambda.Runtime.PYTHON_3_12,
+            runtime=_lambda.Runtime.PYTHON_3_14,
             handler="api.api.handler",
             code=_lambda.Code.from_asset("../src"),
             timeout=Duration.minutes(2),
@@ -195,7 +195,7 @@ class RegDeltaCoreStack(cdk.Stack):
         # ------------------------------------------------------------------
         janitor = _lambda.Function(
             self, "JanitorFn",
-            runtime=_lambda.Runtime.PYTHON_3_12,
+            runtime=_lambda.Runtime.PYTHON_3_14,
             handler="handler.handler",
             code=_lambda.Code.from_asset("lambdas/janitor"),
             timeout=Duration.minutes(2),

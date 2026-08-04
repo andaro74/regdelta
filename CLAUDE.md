@@ -12,7 +12,7 @@ changed, does it apply to us, and what's the real deadline?" with citations.
 - `make status`        — search-tier state + session cost
 
 ## Stack
-Python 3.12 · LangGraph · Bedrock (Claude + Titan v2 embeddings, 1024-dim)
+Python 3.14 · LangGraph · Bedrock (Claude + Titan v2 embeddings, 1024-dim)
 · S3 Vectors (always-on tier) · OpenSearch Serverless (ephemeral hot tier)
 · DynamoDB · AWS CDK (Python) · FastAPI on Lambda.
 

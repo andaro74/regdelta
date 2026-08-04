@@ -67,7 +67,7 @@ class RegDeltaSearchStack(cdk.Stack):
 
         reindex = _lambda.Function(
             self, "ReindexFn",
-            runtime=_lambda.Runtime.PYTHON_3_12,
+            runtime=_lambda.Runtime.PYTHON_3_14,
             handler="handler.handler",
             code=_lambda.Code.from_asset("lambdas/reindex"),
             timeout=Duration.minutes(15), memory_size=1024,
