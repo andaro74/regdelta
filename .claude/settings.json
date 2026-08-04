@@ -1,0 +1,21 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {"type": "command",
+           "command": "sh -c 'f=\"$CLAUDE_FILE_PATHS\"; case \"$f\" in *.py) ruff check --fix \"$f\" 2>/dev/null; ruff format \"$f\" 2>/dev/null ;; esac; true'"}
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {"type": "command",
+           "command": "sh -c 'if [ -f .milestone-active ]; then python evals/run_evals.py --subset smoke || exit 2; fi; true'"}
+        ]
+      }
+    ]
+  }
+}

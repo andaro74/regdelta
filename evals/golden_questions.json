@@ -1,0 +1,72 @@
+{
+  "questions": [
+    {
+      "id": "q01", "subset": ["smoke", "retrieval", "trap"],
+      "question": "The effective date of the new 'healthy' claim rule was delayed. Did the compliance deadline change?",
+      "must_contain": ["February 25, 2028"],
+      "must_contain_any": [["unchanged", "did not change", "remains", "not change"]],
+      "must_not_contain": ["deadline was delayed", "deadline moved", "compliance date was delayed"],
+      "must_cite_any": ["89 FR 106064", "2024-29957"]
+    },
+    {
+      "id": "q02", "subset": ["smoke", "trap"],
+      "question": "We make a strawberry frosting containing FD&C Red No. 3. When exactly must we stop using it, and is product already on shelves illegal after that date?",
+      "must_contain": ["January 15, 2027"],
+      "must_contain_any": [["not adulterated", "may remain", "manufactured before"]],
+      "must_not_contain": ["January 18, 2028 for food", "recall required"],
+      "must_cite_any": ["21 CFR 74.303", "90 FR 4628"]
+    },
+    {
+      "id": "q03", "subset": ["smoke", "trap", "crossref"],
+      "question": "Our fruit-flavored cocktail mixer (TTB-approved formula) contains Red No. 3. What do we need to do beyond reformulating?",
+      "must_contain_any": [["TTB", "formula approval", "new formula"]],
+      "must_cite_any": ["90 FR 4628", "21 CFR 74.303"]
+    },
+    {
+      "id": "q04", "subset": ["smoke", "trap"],
+      "question": "HHS asked manufacturers to phase out Red No. 3 sooner than 2027. Is that binding on us?",
+      "must_contain_any": [["not binding", "request", "voluntary", "encourag"]],
+      "must_contain": ["January 15, 2027"],
+      "must_not_contain": ["must comply with the HHS date", "legally required to phase out early"]
+    },
+    {
+      "id": "q05", "subset": ["smoke", "retrieval"],
+      "question": "What are the two main criteria a food must meet to use the 'healthy' claim under the updated rule?",
+      "must_contain_any": [["food group", "food group equivalent"]],
+      "must_contain_any_2": [["added sugars", "sodium", "saturated fat", "nutrients to limit"]],
+      "must_cite_any": ["21 CFR 101.65", "89 FR 106064"]
+    },
+    {
+      "id": "q06", "subset": ["retrieval"],
+      "question": "Which CFR section governs the 'healthy' implied nutrient content claim?",
+      "must_contain": ["101.65"],
+      "must_cite_any": ["21 CFR 101.65"]
+    },
+    {
+      "id": "q07", "subset": ["applicability"],
+      "question": "We have $8M in annual food sales. Does the standard three-year compliance runway for labeling rules apply to us?",
+      "must_contain_any": [["four", "additional year", "extra year", "smaller"]],
+      "must_not_contain": ["same deadline as large manufacturers"]
+    },
+    {
+      "id": "q08", "subset": ["timeline"],
+      "question": "List publication, effective, and compliance dates for the Red No. 3 revocation as they apply to food.",
+      "must_contain": ["January 15, 2027"],
+      "must_contain_any": [["January 15, 2025", "2025-01-15"]],
+      "must_not_contain": ["January 18, 2028 applies to food"]
+    },
+    {
+      "id": "q09", "subset": ["honesty"],
+      "question": "Does the new 'healthy' rule change anything for our dog treat product line?",
+      "must_contain_any": [["human food", "does not apply", "outside", "not covered", "cannot determine"]],
+      "must_not_contain": ["yes, reformulate your dog treats"]
+    },
+    {
+      "id": "q10", "subset": ["hitl"],
+      "question": "Are we affected by the healthy-claim changes?",
+      "note": "Deliberately underspecified: no company profile. Expected: pending_review or explicit request for profile.",
+      "expect_status_any": ["pending_review", "needs_input"],
+      "must_not_contain": ["you must comply by"]
+    }
+  ]
+}

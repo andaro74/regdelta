@@ -1,0 +1,42 @@
+# RegDelta
+
+Agentic regulatory-change assistant for food labeling (FDA). Answers "what
+changed, does it apply to us, and what's the real deadline?" with citations.
+
+## Commands
+- `make evals`         — full golden set against the live API (the definition of done)
+- `make smoke`         — 5-question smoke subset
+- `make test`          — unit tests (pytest)
+- `make core`          — deploy persistent stack
+- `make up` / `make down` — create/destroy the ephemeral AOSS hot tier
+- `make status`        — search-tier state + session cost
+
+## Stack
+Python 3.12 · LangGraph · Bedrock (Claude + Titan v2 embeddings, 1024-dim)
+· S3 Vectors (always-on tier) · OpenSearch Serverless (ephemeral hot tier)
+· DynamoDB · AWS CDK (Python) · FastAPI on Lambda.
+
+## Architecture rules
+- S3 corpus bucket is the source of truth. Search indexes are pure functions
+  of it. Never write ingestion output directly to AOSS.
+- Retrieval routes by SSM param `/regdelta/search/endpoint`: present → AOSS
+  hybrid (BM25+kNN); absent → S3 Vectors path. Both paths must pass evals.
+- Embeddings are computed once at ingest and persisted with chunks. Never
+  re-embed during index hydration.
+- Every answer must cite FR doc number and/or CFR section for each claim.
+  An answer without citations is a bug, not a style issue.
+- Timeline questions (effective vs compliance dates, supersession) are
+  answered from the DynamoDB amendment graph, not vector similarity.
+
+## Workflow
+- One milestone per session. Read the relevant SPEC/*.md first; its
+  "Done when" is the exit criterion. Never mark done until it passes.
+- Work on branch mNN-<slug>. At milestone close, the user runs
+  /close-milestone NN (see .claude/skills/close-milestone): evidence pack
+  in milestones/MNN/, `run_evals.py --record`, ADR if needed, tag.
+- Baseline discipline: never "improve" src/baseline/naive.py — it is the
+  control (ADR-0002). All progress claims are deltas vs its scorecard.
+- Ask before adding dependencies.
+- Regulatory-domain details (date semantics, amendatory instructions,
+  thresholds) live in .claude/skills/regulatory-domain — consult when
+  working on ingestion parsing or graph nodes.
