@@ -4,8 +4,12 @@ import os
 
 REGION = os.environ.get("AWS_REGION", "us-west-2")
 
-# Bedrock model ids (inference profiles verified invocable in-account,
-# us-west-2: Claude 5 family and Opus 4.8 are listed but access-denied).
+# Bedrock model ids. Verified invocable in this account (us-west-2) with
+# bedrock-runtime Converse; everything newer is listed by
+# list-foundation-models but denied at invoke time:
+#   Opus 4.7 / 4.8, Sonnet 5, Opus 5, Fable 5, Haiku 4.5
+#     -> AccessDeniedException, agreementAvailability=NOT_AVAILABLE.
+# Raise MODEL_VERDICT to Opus 4.7 once account model access is granted.
 # MODEL_VERDICT is provisional — SPEC/03 pins the verdict model.
 MODEL_FAST = os.environ.get("MODEL_FAST", "us.anthropic.claude-sonnet-4-6")
 MODEL_VERDICT = os.environ.get("MODEL_VERDICT", "us.anthropic.claude-opus-4-6-v1")
@@ -46,6 +50,15 @@ TRACKED_CFR_SECTIONS = (
     ("21", "101.13", ("current",)),
     ("21", "74.303", ("2025-01-01", "current")),
 )
+
+# ----------------------------------------------------------- baseline (00b)
+# The control's knobs. Frozen at close of M00b — changing either invalidates
+# every delta measured against the baseline scorecard (ADR-0002). These are
+# deliberately NOT env-overridable: MODEL_VERDICT moves when SPEC/03 pins the
+# verdict model or when Opus 4.7 access lands, and the control must not move
+# with it or the recorded numbers stop being comparable.
+NAIVE_TOP_K = 8
+NAIVE_MODEL = "us.anthropic.claude-opus-4-6-v1"
 
 # Chunking (SPEC/01): pack whole CFR paragraphs, never split mid-paragraph.
 CHUNK_MAX_CHARS = int(os.environ.get("CHUNK_MAX_CHARS", "2400"))

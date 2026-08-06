@@ -8,8 +8,8 @@ question set, and journaled — the repo history IS the demo.
 
 | M | Milestone | Tag | Traps (q01-q04) | Overall | Status |
 |---|-----------|-----|-----------------|---------|--------|
-| 00b | Naive-RAG baseline (the control) | `m00b-baseline` | –/4 | –% | ⬜ |
-| 01 | Ingestion + amendment graph | `m01-ingestion` | – | – | ⬜ |
+| 00b | Naive-RAG baseline (the control) | `m00b-baseline` | 1/4 * | 30% | ✅ |
+| 01 | Ingestion + amendment graph | `m01-ingestion` | n/a | n/a | ✅ |
 | 02 | Two-tier retrieval (S3 Vectors / AOSS) | `m02-retrieval` | – | – | ⬜ |
 | 03 | Agent graph + HITL | `m03-agents` | –/4 | –% | ⬜ |
 | 04 | API + demo UI | `m04-demo` | – | – | ⬜ |
@@ -18,6 +18,13 @@ question set, and journaled — the repo history IS the demo.
 | 07 | Governance layer (three doors) | `m07-governance` | – | – | ⬜ |
 
 Fill each row at milestone close (see .claude/skills/close-milestone).
+
+\* The baseline's single trap "pass" (q03) is **not earned** — the question
+leaks its own answer token and has no TTB source in the corpus to retrieve.
+Recorded as-run per SPEC/00b's "if the traps pass, the questions are too
+easy — record it" clause; a tightening is drafted and awaiting SME approval
+(milestones/M00b). M01 has no eval row because the golden set needs an
+answering endpoint, which is SPEC/04.
 The intended arc: baseline fails the trap questions → retrieval fixes
 recall → the agent graph fixes the traps → the rest makes it production-
 shaped. Evidence lives in milestones/M*/ and evals/history/.

@@ -48,6 +48,14 @@ smoke:
 evals:
 	python evals/run_evals.py
 
+# M00b control. Reproduces the permanent baseline scorecard: starts the
+# loopback shim, runs the full golden set against mode=naive, records it.
+baseline:
+	@python evals/serve_local.py --port 8000 & echo $$! > .baseline.pid; \
+	  sleep 2; \
+	  python evals/run_evals.py --mode naive --api-url http://127.0.0.1:8000 --record; \
+	  status=$$?; kill $$(cat .baseline.pid); rm -f .baseline.pid; exit $$status
+
 test:
 	pytest -q
 

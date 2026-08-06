@@ -126,11 +126,14 @@ def main() -> int:
 
     passed = 0
     per_q = []
+    provenance: dict = {}
     t0 = time.monotonic()
     for q in questions:
         try:
             resp = ask(api_url, q["question"], args.mode)
             fails = check(q, resp)
+            # Which model / retrieval settings produced this scorecard.
+            provenance = resp.get("provenance") or provenance
         except Exception as e:  # noqa: BLE001 — an error IS a failure
             fails = [f"request error: {e}"]
         per_q.append({"id": q["id"], "pass": not fails, "fails": fails})
@@ -162,6 +165,7 @@ def main() -> int:
             "tier": tier,
             "mode": args.mode,
             "subset": args.subset,
+            "provenance": provenance,
             "passed": passed,
             "total": total,
             "wall_s": round(time.monotonic() - t0, 1),
