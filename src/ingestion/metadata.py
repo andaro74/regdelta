@@ -76,12 +76,13 @@ def _document_digest(parsed_doc: dict, limit: int = 12000) -> str:
 
 def _bedrock_invoke(prompt: str) -> str:
     import boto3  # lazy: unit tests never touch AWS
+    from shared.util import retry
     client = boto3.client("bedrock-runtime", region_name=config.REGION)
-    resp = client.converse(
+    resp = retry(lambda: client.converse(
         modelId=config.MODEL_FAST,
         messages=[{"role": "user", "content": [{"text": prompt}]}],
         inferenceConfig={"maxTokens": 2000, "temperature": 0},
-    )
+    ))
     return resp["output"]["message"]["content"][0]["text"]
 
 
@@ -94,6 +95,11 @@ def _parse_json(text: str) -> dict:
 
 
 def _normalize(raw: dict) -> dict:
+    # An empty or gutted object must not ingest as a plausible-looking doc:
+    # fail the message (SQS retry / DLQ) rather than invent metadata.
+    if not raw.get("doc_type"):
+        raise ValueError(f"model output missing doc_type: {json.dumps(raw)[:200]}")
+
     def dates(key):
         out = []
         for d in raw.get(key) or []:

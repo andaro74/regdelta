@@ -47,10 +47,17 @@ def _classify_first(tok: str, stack: list[str]) -> int:
         if set(tok) <= _ROMAN_CHARS:
             # Ambiguous: alpha level 1 ("(i)" after "(h)") vs roman level 3.
             prev1 = stack[0] if stack else None
-            if prev1 and len(tok) == 1 and len(prev1) == 1 and ord(tok) == ord(prev1) + 1:
-                return 1  # continues the alpha sequence: (h) -> (i)
+            alpha_next = (prev1 and len(tok) == 1 and len(prev1) == 1
+                          and ord(tok) == ord(prev1) + 1)
             if len(stack) >= 2:
-                return 3
+                # Inside (x)(n): roman wins when it starts or continues the
+                # roman sequence; only a clean alpha continuation escapes.
+                prev3 = stack[2] if len(stack) >= 3 else None
+                r_prev = _roman_to_int(prev3) if prev3 else None
+                r_tok = _roman_to_int(tok)
+                if tok == "i" or (r_prev is not None and r_tok == r_prev + 1):
+                    return 3
+                return 1 if alpha_next else 3
             return 1
         return 1
     # Uppercase: (A) level 4 (upper-roman deeper levels are out of scope).
@@ -153,7 +160,8 @@ def chunk(parsed_doc: dict) -> list[dict]:
             if cur_paths:
                 emit("\n".join(cur), _citation(sec_cite, _common_prefix(cur_paths)),
                      "regtext", sec["section"])
-            cur, cur_paths, cur_len = [], [], 0
+            # every chunk re-carries the section header for retrieval context
+            cur, cur_paths, cur_len = [header], [], len(header)
 
         for para in sec["paragraphs"]:
             new_path = _paragraph_path(para, stack)

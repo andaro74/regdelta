@@ -12,14 +12,18 @@ Message shapes (from poller):
 """
 import datetime as dt
 import json
+import re
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
 from ingestion import chunker, metadata
 from shared import config
+from shared.util import retry
 
 _clients: dict = {}
+
+_DOC_NUMBER_RE = re.compile(r"^\d{2,4}-\d{3,6}$")  # e.g. 2024-29957
 
 
 def _client(name):
@@ -43,6 +47,39 @@ def _text(el) -> str:
     return " ".join("".join(el.itertext()).split()) if el is not None else ""
 
 
+# ------------------------------------------------------------------- tables
+def _flatten_gpotable(tbl) -> str:
+    """FR GPOTABLE (TTITLE, BOXHD>CHED*, ROW>ENT*) -> pipe-delimited text.
+    These tables carry the actual thresholds (saturated fat, sodium, FGEs) —
+    dropping them would silently gut the corpus."""
+    lines = []
+    title = _text(tbl.find("TTITLE"))
+    if title:
+        lines.append(title)
+    boxhd = tbl.find("BOXHD")
+    if boxhd is not None:
+        heads = [_text(c) for c in boxhd.findall(".//CHED")]
+        if any(heads):
+            lines.append(" | ".join(h for h in heads if h))
+    for row in tbl.findall("ROW"):
+        cells = [_text(e) for e in row.findall("ENT")]
+        if any(cells):
+            lines.append(" | ".join(cells))
+    return "\n".join(lines)
+
+
+def _flatten_html_table(div) -> str:
+    """eCFR DIV.gpotbl_div (TABLE > CAPTION/THEAD/TBODY) -> text."""
+    lines = []
+    for tr in div.iter("TR"):
+        cells = [_text(c) for c in tr if c.tag in ("TH", "TD")]
+        if any(cells):
+            lines.append(" | ".join(cells))
+    caption = div.find(".//CAPTION")
+    cap_text = _text(caption)
+    return "\n".join(([cap_text] if cap_text else []) + lines)
+
+
 # --------------------------------------------------------------- FR parsing
 def parse_fr_xml(xml_bytes: bytes, doc_meta: dict) -> dict:
     """Federal Register full-text XML -> normalized parsed_doc.
@@ -56,9 +93,9 @@ def parse_fr_xml(xml_bytes: bytes, doc_meta: dict) -> dict:
 
     cfr_refs_text = _text(preamb.find("CFR")) if preamb is not None else ""
     cfr_title = cfr_part = None
-    m = cfr_refs_text.split()
-    if len(m) >= 4 and m[1] == "CFR":  # "21 CFR Part 101"
-        cfr_title, cfr_part = m[0], m[-1]
+    m = re.match(r"(\d+)\s+CFR\s+Parts?\s+(\d+)", cfr_refs_text)
+    if m:
+        cfr_title, cfr_part = m.group(1), m.group(2)
 
     dates_el = None
     if preamb is not None:
@@ -85,7 +122,16 @@ def parse_fr_xml(xml_bytes: bytes, doc_meta: dict) -> dict:
                         amdpars.append(t)
                 for sec in el.findall(".//SECTION"):
                     sectno = _text(sec.find("SECTNO")).lstrip("§ ").strip()
-                    paragraphs = [_text(p) for p in sec.findall("P") if _text(p)]
+                    paragraphs = []
+                    for child in sec:  # document order: P's and their tables
+                        if child.tag == "P":
+                            t = _text(child)
+                            if t:
+                                paragraphs.append(t)
+                        elif child.tag == "GPOTABLE":
+                            t = _flatten_gpotable(child)
+                            if t:
+                                paragraphs.append(t)
                     if sectno and paragraphs:
                         regtext_sections.append({
                             "cfr_title": rt_title,
@@ -123,12 +169,12 @@ def parse_ecfr_xml(xml_bytes: bytes, title: str, section: str, version_date: str
     paragraphs: list[str] = []
     if div8 is not None:
         for el in div8:
-            if el.tag == "P":
+            if el.tag in ("P", "EXTRACT"):
                 t = _text(el)
                 if t:
                     paragraphs.append(t)
-            elif el.tag == "EXTRACT":
-                t = _text(el)
+            elif el.tag == "DIV" and "gpotbl" in (el.get("class") or ""):
+                t = _flatten_html_table(el)
                 if t:
                     paragraphs.append(t)
     part = section.split(".")[0]
@@ -163,7 +209,7 @@ def embed(texts: list[str]) -> list[list[float]]:
     for t in texts:
         body = json.dumps({"inputText": t[:30000], "dimensions": config.EMBED_DIM,
                            "normalize": True})
-        resp = rt.invoke_model(modelId=config.EMBED_MODEL, body=body)
+        resp = retry(lambda: rt.invoke_model(modelId=config.EMBED_MODEL, body=body))
         out.append(json.loads(resp["body"].read())["embedding"])
     return out
 
@@ -187,7 +233,7 @@ def _put_vectors(chunks: list[dict]):
     for c in chunks:
         md = {"chunk_text": c["text"], "citation_path": c["citation_path"]}
         for k in ("doc_type", "cfr_title", "cfr_part", "fr_doc_number",
-                  "pub_date", "effective_date", "compliance_date"):
+                  "pub_date", "effective_date", "compliance_date", "version_date"):
             if c.get(k):
                 md[k] = c[k]
         vectors.append({"key": c["chunk_id"],
@@ -208,11 +254,14 @@ def _write_chunk_registry_items(pk: str, chunks: list[dict]):
                                  "chunk_id": c["chunk_id"]})
 
 
-def _resolve_fr_citation(target: str) -> str | None:
-    """'89 FR 106064' -> '2024-29957'. Registry first, then the FR API."""
-    if not target:
-        return None
-    if "FR" not in target.split():  # already a document number
+def _resolve_fr_citation(target: str) -> str:
+    """'89 FR 106064' -> '2024-29957'. Registry first, then the FR API.
+
+    Raises on failure: SUPERSEDES edges are the amendment graph's substance
+    (timeline answers key on document numbers), so an unresolvable target
+    must fail the message — the SQS retry / DLQ path is the honest outcome,
+    not a silently mis-keyed edge."""
+    if _DOC_NUMBER_RE.match(target):  # already a document number
         return target
     item = _client("registry").get_item(
         Key={"pk": f"FRCITE#{target}", "sk": "DOC"}).get("Item")
@@ -220,14 +269,12 @@ def _resolve_fr_citation(target: str) -> str | None:
         return item["doc_number"]
     q = urllib.parse.urlencode({"conditions[term]": f'"{target}"', "per_page": 5,
                                 "fields[]": ["document_number", "citation"]}, doseq=True)
-    try:
-        results = json.loads(_get(f"{config.FR_API}/documents.json?{q}")).get("results", [])
-        for r in results:
-            if r.get("citation") == target:
-                return r["document_number"]
-    except Exception:
-        pass
-    return None
+    results = json.loads(_get(f"{config.FR_API}/documents.json?{q}")).get("results", [])
+    for r in results:
+        if r.get("citation") == target:
+            return r["document_number"]
+    raise ValueError(f"cannot resolve supersedes target {target!r} to an FR "
+                     "document number")
 
 
 # ------------------------------------------------------------ ingest: FR doc
@@ -255,9 +302,28 @@ def ingest_fr_doc(msg: dict) -> str:
     for c, e in zip(chunks, embed([c["text"] for c in chunks])):
         c["embedding"] = e
 
+    # Resolve supersedes targets up front so a resolution failure aborts
+    # before any write (retry then redoes the whole doc, which is safe).
+    edges = [{"target": e["target"], "scope": e["scope"],
+              "doc_number": _resolve_fr_citation(e["target"])}
+             for e in meta["supersedes"]]
+
     chunks_key = _write_corpus(doc_number, raw, parsed, chunks, parsed.get("cfr_part"))
     _put_vectors(chunks)
 
+    if doc_meta.get("citation"):
+        table.put_item(Item={"pk": f"FRCITE#{doc_meta['citation']}", "sk": "DOC",
+                             "doc_number": doc_number})
+    for edge in edges:
+        table.put_item(Item={
+            "pk": f"DOC#{doc_number}", "sk": f"SUPERSEDES#{edge['doc_number']}",
+            "scope": edge["scope"],
+            "target_raw": edge["target"],
+        })
+    _write_chunk_registry_items(f"DOC#{doc_number}", chunks)
+
+    # META is the idempotency marker — written LAST so a partial ingest is
+    # retried in full rather than skipped with pieces missing.
     table.put_item(Item={
         "pk": f"DOC#{doc_number}", "sk": "META",
         "citation": doc_meta.get("citation"),
@@ -273,17 +339,6 @@ def ingest_fr_doc(msg: dict) -> str:
         "chunks_key": chunks_key,
         "ingested_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
     })
-    if doc_meta.get("citation"):
-        table.put_item(Item={"pk": f"FRCITE#{doc_meta['citation']}", "sk": "DOC",
-                             "doc_number": doc_number})
-    for edge in meta["supersedes"]:
-        resolved = _resolve_fr_citation(edge["target"]) or edge["target"]
-        table.put_item(Item={
-            "pk": f"DOC#{doc_number}", "sk": f"SUPERSEDES#{resolved}",
-            "scope": edge["scope"],
-            "target_raw": edge["target"],
-        })
-    _write_chunk_registry_items(f"DOC#{doc_number}", chunks)
     return "ingested"
 
 
@@ -315,14 +370,19 @@ def ingest_cfr_section(msg: dict) -> str:
     for c in chunks:
         c["doc_type"] = meta["doc_type"]
         c["pub_date"] = None
-        c["effective_date"] = date
+        # A snapshot date is not an effective date (regulatory-domain rule:
+        # the three date types are never conflated).
+        c["version_date"] = date
+        c["effective_date"] = None
         c["compliance_date"] = None
     for c, e in zip(chunks, embed([c["text"] for c in chunks])):
         c["embedding"] = e
 
     chunks_key = _write_corpus(parsed["doc_id"], raw, parsed, chunks, part)
     _put_vectors(chunks)
+    _write_chunk_registry_items(pk, chunks)
 
+    # VERSION# is the idempotency marker — written LAST (see ingest_fr_doc).
     table.put_item(Item={
         "pk": pk, "sk": f"VERSION#{date}",
         "doc_id": parsed["doc_id"],
@@ -330,7 +390,6 @@ def ingest_cfr_section(msg: dict) -> str:
         "chunks_key": chunks_key,
         "retrieved_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
     })
-    _write_chunk_registry_items(pk, chunks)
     return "ingested"
 
 

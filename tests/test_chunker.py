@@ -63,14 +63,23 @@ def test_every_chunk_has_citation_path_and_id():
 def test_no_paragraph_split_mid_paragraph():
     doc = _ecfr_10165()
     paragraphs = doc["regtext_sections"][0]["paragraphs"]
-    joined = "\n".join(c["text"] for c in chunker.chunk(doc))
-    for p in paragraphs:
-        assert p in joined, f"paragraph missing/split: {p[:60]!r}"
-    # ...and each paragraph appears intact within exactly one chunk
     chunks = chunker.chunk(doc)
     for p in paragraphs:
         holders = [c for c in chunks if p in c["text"]]
-        assert len(holders) >= 1
+        assert holders, f"paragraph missing/split: {p[:60]!r}"
+
+
+def test_fr_tables_survive_into_chunks():
+    """The GPOTABLE nutrient thresholds are the substance of 'does it apply
+    to us' — parser-level table loss must fail here, not silently."""
+    joined = "\n".join(c["text"] for c in chunker.chunk(_healthy()))
+    assert "saturated fat content must be no greater than" in joined
+    assert "Food group equivalent" in joined
+
+
+def test_ecfr_tables_survive_into_chunks():
+    joined = "\n".join(c["text"] for c in chunker.chunk(_ecfr_10165()))
+    assert "Food group equivalent" in joined or "food group equivalent" in joined
 
 
 def test_regtext_citation_paths_are_cfr_style():

@@ -52,7 +52,8 @@ test:
 	pytest -q
 
 ingest-backfill:
-	aws lambda invoke --region $(REGION) --function-name \
+	aws lambda invoke --region $(REGION) --cli-binary-format raw-in-base64-out \
+	  --function-name \
 	  $$(aws cloudformation describe-stacks --stack-name $(STACK_CORE) --region $(REGION) \
 	     --query "Stacks[0].Outputs[?OutputKey=='PollerFnName'].OutputValue" --output text) \
 	  --payload '{"mode":"backfill"}' /dev/stdout
