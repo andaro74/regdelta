@@ -31,9 +31,11 @@ Python 3.14 · LangGraph · Bedrock (Claude + Titan v2 embeddings, 1024-dim)
 ## Workflow
 - One milestone per session. Read the relevant SPEC/*.md first; its
   "Done when" is the exit criterion. Never mark done until it passes.
-- Work on branch mNN-<slug>. At milestone close, the user runs
-  /close-milestone NN (see .claude/skills/close-milestone): evidence pack
-  in milestones/MNN/, `run_evals.py --record`, ADR if needed, tag.
+- Work on branch mNN-<slug>; the close tag is the short form `mNN` (never
+  the branch name — a same-named branch and tag make git refspecs
+  ambiguous). At milestone close, the user runs /close-milestone NN (see
+  .claude/skills/close-milestone): evidence pack in milestones/MNN/,
+  `run_evals.py --record`, ADR if needed, tag.
 - Baseline discipline: never "improve" src/baseline/naive.py — it is the
   control (ADR-0002). All progress claims are deltas vs its scorecard.
 - Ask before adding dependencies.

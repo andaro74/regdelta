@@ -1,6 +1,6 @@
 # M00b — Naive-RAG baseline (the control)
 
-- Git tag: `m00b-baseline`      Commit: `7f012b8` (run) → tagged at close
+- Git tag: `m00b`      Commit: `7f012b8` (run) → tagged at close
 - Spec: SPEC/00b-baseline-naive-rag.md   ADRs touched: ADR-0002, ADR-0004 (new)
 - Sessions: 1 Claude Code session (shared with M01 close)
 

@@ -1,7 +1,7 @@
 # M01 — Ingestion + amendment graph
 
-- Git tag: `m01-ingestion`   Commits: `2a5c915` (implement), `bc07280`
-  (review fixes), `7f012b8` (region/model alignment)
+- Git tag: `m01`   Branch: `m01-ingestion`   Commits: `2a5c915`
+  (implement), `bc07280` (review fixes), `7f012b8` (region/model alignment)
 - Spec: SPEC/01-data-ingestion.md   ADRs touched: none new
 - Sessions: 2 Claude Code sessions
 

@@ -21,5 +21,6 @@ Run these steps in order; stop and report if any fails.
 5. README: update the Progression table row for this milestone
    (status, pass %, tag).
 6. Git: commit everything as "mNN: close — <one-line summary>", tag
-   `mNN-<slug>`, and show the user the tag + scorecard delta. Do not push
-   unless asked.
+   `mNN` (short form — NOT the branch name, or the tag and branch collide
+   and pushing fails), and show the user the tag + scorecard delta. Do not
+   push unless asked.
