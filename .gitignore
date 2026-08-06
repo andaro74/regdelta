@@ -4,3 +4,4 @@ __pycache__/
 infra/cdk.out/
 loadtest/reports/
 .milestone-active
+infra/cdk.context.json

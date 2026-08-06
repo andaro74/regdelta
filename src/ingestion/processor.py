@@ -1,7 +1,350 @@
-"""SQS processor (SPEC/01). TODO: fetch XML -> chunker.chunk() ->
-metadata.extract() (Claude) -> embed (Titan v2) -> write corpus S3 +
-S3 Vectors + DynamoDB registry incl. SUPERSEDES edges with scope."""
+"""SQS processor (SPEC/01): one message = one document.
+
+fetch XML -> parse -> metadata.extract() (Claude) -> chunker.chunk() ->
+embed (Titan v2, once — embeddings persist with the chunks) -> write
+corpus S3 (raw/parsed/chunks) + S3 Vectors + DynamoDB registry including
+SUPERSEDES edges with scope. Never touches AOSS (architecture rule).
+
+Message shapes (from poller):
+  {"kind": "fr_doc",      "document_number": "2024-29957"}
+  {"kind": "cfr_section", "title": "21", "section": "101.65",
+   "date": "2024-12-01" | "current"}
+"""
+import datetime as dt
+import json
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
+
+from ingestion import chunker, metadata
+from shared import config
+
+_clients: dict = {}
+
+
+def _client(name):
+    if name not in _clients:
+        import boto3
+        if name == "registry":
+            _clients[name] = boto3.resource("dynamodb", region_name=config.REGION) \
+                .Table(config.REGISTRY_TABLE)
+        else:
+            _clients[name] = boto3.client(name, region_name=config.REGION)
+    return _clients[name]
+
+
+def _get(url: str) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": "regdelta-ingest/0.1"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return r.read()
+
+
+def _text(el) -> str:
+    return " ".join("".join(el.itertext()).split()) if el is not None else ""
+
+
+# --------------------------------------------------------------- FR parsing
+def parse_fr_xml(xml_bytes: bytes, doc_meta: dict) -> dict:
+    """Federal Register full-text XML -> normalized parsed_doc.
+
+    Structure (verified against live docs): RULE > PREAMB (AGENCY, CFR,
+    SUBJECT, ACT, SUM, DATES|EFFDATE) + SUPLINF (HD/P prose, then REGTEXT
+    blocks with AMDPAR + SECTION > SECTNO/SUBJECT/P).
+    """
+    root = ET.fromstring(xml_bytes)
+    preamb = root.find("PREAMB")
+
+    cfr_refs_text = _text(preamb.find("CFR")) if preamb is not None else ""
+    cfr_title = cfr_part = None
+    m = cfr_refs_text.split()
+    if len(m) >= 4 and m[1] == "CFR":  # "21 CFR Part 101"
+        cfr_title, cfr_part = m[0], m[-1]
+
+    dates_el = None
+    if preamb is not None:
+        dates_el = preamb.find("DATES") if preamb.find("DATES") is not None else preamb.find("EFFDATE")
+
+    preamble_blocks: list[dict] = []
+    amdpars: list[str] = []
+    regtext_sections: list[dict] = []
+    suplinf = root.find("SUPLINF")
+    if suplinf is not None:
+        heading = None
+        for el in suplinf:
+            if el.tag == "HD":
+                heading = _text(el)
+            elif el.tag == "P":
+                t = _text(el)
+                if t:
+                    preamble_blocks.append({"heading": heading, "text": t})
+            elif el.tag == "REGTEXT":
+                rt_title = el.get("TITLE") or cfr_title
+                for amd in el.findall(".//AMDPAR"):
+                    t = _text(amd)
+                    if t:
+                        amdpars.append(t)
+                for sec in el.findall(".//SECTION"):
+                    sectno = _text(sec.find("SECTNO")).lstrip("§ ").strip()
+                    paragraphs = [_text(p) for p in sec.findall("P") if _text(p)]
+                    if sectno and paragraphs:
+                        regtext_sections.append({
+                            "cfr_title": rt_title,
+                            "cfr_part": el.get("PART") or cfr_part,
+                            "section": sectno,
+                            "subject": _text(sec.find("SUBJECT")),
+                            "paragraphs": paragraphs,
+                        })
+
+    return {
+        "doc_id": doc_meta["document_number"],
+        "source": "federal_register",
+        "fr_doc_number": doc_meta["document_number"],
+        "fr_citation": doc_meta.get("citation"),
+        "title": _text(preamb.find("SUBJECT")) if preamb is not None else doc_meta.get("title"),
+        "agency": _text(preamb.find("AGENCY")) if preamb is not None else None,
+        "action": _text(preamb.find("ACT")) if preamb is not None else None,
+        "summary": _text(preamb.find("SUM")) if preamb is not None else None,
+        "dates_text": _text(dates_el),
+        "cfr_refs_text": cfr_refs_text,
+        "cfr_title": cfr_title,
+        "cfr_part": cfr_part,
+        "preamble": preamble_blocks,
+        "amdpars": amdpars,
+        "regtext_sections": regtext_sections,
+    }
+
+
+# ------------------------------------------------------------- eCFR parsing
+def parse_ecfr_xml(xml_bytes: bytes, title: str, section: str, version_date: str) -> dict:
+    """eCFR versioner XML (DIV8 SECTION) -> normalized parsed_doc."""
+    root = ET.fromstring(xml_bytes)
+    div8 = root if root.tag == "DIV8" else root.find(".//DIV8")
+    head = _text(div8.find("HEAD")) if div8 is not None else ""
+    paragraphs: list[str] = []
+    if div8 is not None:
+        for el in div8:
+            if el.tag == "P":
+                t = _text(el)
+                if t:
+                    paragraphs.append(t)
+            elif el.tag == "EXTRACT":
+                t = _text(el)
+                if t:
+                    paragraphs.append(t)
+    part = section.split(".")[0]
+    return {
+        "doc_id": f"cfr-{title}-{section}@{version_date}",
+        "source": "ecfr",
+        "fr_doc_number": None,
+        "fr_citation": None,
+        "title": head,
+        "cfr_title": title,
+        "cfr_part": part,
+        "cfr_section": section,
+        "version_date": version_date,
+        "preamble": [],
+        "amdpars": [],
+        "regtext_sections": [{
+            "cfr_title": title,
+            "cfr_part": part,
+            "section": section,
+            "subject": head.split(maxsplit=1)[-1] if head else "",
+            "paragraphs": paragraphs,
+        }],
+    }
+
+
+# --------------------------------------------------------------- embeddings
+def embed(texts: list[str]) -> list[list[float]]:
+    """Titan v2, one call per chunk. Computed once at ingest and persisted
+    with the chunks — never re-embedded during index hydration."""
+    rt = _client("bedrock-runtime")
+    out = []
+    for t in texts:
+        body = json.dumps({"inputText": t[:30000], "dimensions": config.EMBED_DIM,
+                           "normalize": True})
+        resp = rt.invoke_model(modelId=config.EMBED_MODEL, body=body)
+        out.append(json.loads(resp["body"].read())["embedding"])
+    return out
+
+
+# ------------------------------------------------------------------- writes
+def _write_corpus(doc_id: str, raw: bytes, parsed: dict, chunks: list[dict],
+                  cfr_part: str | None):
+    s3 = _client("s3")
+    s3.put_object(Bucket=config.CORPUS_BUCKET, Key=f"raw/{doc_id}.xml", Body=raw)
+    s3.put_object(Bucket=config.CORPUS_BUCKET, Key=f"parsed/{doc_id}.json",
+                  Body=json.dumps(parsed, ensure_ascii=False).encode())
+    jsonl = "\n".join(json.dumps(c, ensure_ascii=False) for c in chunks)
+    key = f"chunks/{cfr_part or 'misc'}/{doc_id}.jsonl"
+    s3.put_object(Bucket=config.CORPUS_BUCKET, Key=key, Body=jsonl.encode())
+    return key
+
+
+def _put_vectors(chunks: list[dict]):
+    sv = _client("s3vectors")
+    vectors = []
+    for c in chunks:
+        md = {"chunk_text": c["text"], "citation_path": c["citation_path"]}
+        for k in ("doc_type", "cfr_title", "cfr_part", "fr_doc_number",
+                  "pub_date", "effective_date", "compliance_date"):
+            if c.get(k):
+                md[k] = c[k]
+        vectors.append({"key": c["chunk_id"],
+                        "data": {"float32": c["embedding"]},
+                        "metadata": md})
+    for i in range(0, len(vectors), 100):
+        sv.put_vectors(vectorBucketName=config.VECTOR_BUCKET,
+                       indexName=config.VECTOR_INDEX,
+                       vectors=vectors[i:i + 100])
+
+
+def _write_chunk_registry_items(pk: str, chunks: list[dict]):
+    table = _client("registry")
+    with table.batch_writer() as batch:
+        for c in chunks:
+            batch.put_item(Item={"pk": pk, "sk": f"CHUNK#{c['chunk_id']}",
+                                 "citation": c["citation_path"],
+                                 "chunk_id": c["chunk_id"]})
+
+
+def _resolve_fr_citation(target: str) -> str | None:
+    """'89 FR 106064' -> '2024-29957'. Registry first, then the FR API."""
+    if not target:
+        return None
+    if "FR" not in target.split():  # already a document number
+        return target
+    item = _client("registry").get_item(
+        Key={"pk": f"FRCITE#{target}", "sk": "DOC"}).get("Item")
+    if item:
+        return item["doc_number"]
+    q = urllib.parse.urlencode({"conditions[term]": f'"{target}"', "per_page": 5,
+                                "fields[]": ["document_number", "citation"]}, doseq=True)
+    try:
+        results = json.loads(_get(f"{config.FR_API}/documents.json?{q}")).get("results", [])
+        for r in results:
+            if r.get("citation") == target:
+                return r["document_number"]
+    except Exception:
+        pass
+    return None
+
+
+# ------------------------------------------------------------ ingest: FR doc
+def ingest_fr_doc(msg: dict) -> str:
+    doc_number = msg["document_number"]
+    table = _client("registry")
+    if table.get_item(Key={"pk": f"DOC#{doc_number}", "sk": "META"}).get("Item"):
+        return "skipped"
+
+    doc_meta = json.loads(_get(
+        f"{config.FR_API}/documents/{doc_number}.json"))
+    raw = _get(doc_meta["full_text_xml_url"])
+    parsed = parse_fr_xml(raw, doc_meta)
+    meta = metadata.extract(parsed)
+
+    chunks = chunker.chunk(parsed)
+    eff = meta["effective_dates"][0]["date"] if meta["effective_dates"] \
+        else doc_meta.get("effective_on")
+    comp = meta["compliance_dates"][0]["date"] if meta["compliance_dates"] else None
+    for c in chunks:
+        c["doc_type"] = meta["doc_type"]
+        c["pub_date"] = doc_meta.get("publication_date")
+        c["effective_date"] = eff
+        c["compliance_date"] = comp
+    for c, e in zip(chunks, embed([c["text"] for c in chunks])):
+        c["embedding"] = e
+
+    chunks_key = _write_corpus(doc_number, raw, parsed, chunks, parsed.get("cfr_part"))
+    _put_vectors(chunks)
+
+    table.put_item(Item={
+        "pk": f"DOC#{doc_number}", "sk": "META",
+        "citation": doc_meta.get("citation"),
+        "title": doc_meta.get("title"),
+        "doc_type": meta["doc_type"],
+        "pub_date": doc_meta.get("publication_date"),
+        "effective_dates": json.dumps(meta["effective_dates"]),
+        "compliance_dates": json.dumps(meta["compliance_dates"]),
+        "affected_cfr": json.dumps(meta["affected_cfr"]),
+        "amendatory_instructions": json.dumps(meta["amendatory_instructions"]),
+        "binding": meta["binding"],
+        "chunk_count": len(chunks),
+        "chunks_key": chunks_key,
+        "ingested_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+    })
+    if doc_meta.get("citation"):
+        table.put_item(Item={"pk": f"FRCITE#{doc_meta['citation']}", "sk": "DOC",
+                             "doc_number": doc_number})
+    for edge in meta["supersedes"]:
+        resolved = _resolve_fr_citation(edge["target"]) or edge["target"]
+        table.put_item(Item={
+            "pk": f"DOC#{doc_number}", "sk": f"SUPERSEDES#{resolved}",
+            "scope": edge["scope"],
+            "target_raw": edge["target"],
+        })
+    _write_chunk_registry_items(f"DOC#{doc_number}", chunks)
+    return "ingested"
+
+
+# ------------------------------------------------------- ingest: CFR section
+def latest_version_date(title: str, section: str) -> str:
+    data = json.loads(_get(
+        f"{config.ECFR_API}/versions/title-{title}.json?section={section}"))
+    dates = [v["date"] for v in data.get("content_versions", [])]
+    return max(dates) if dates else dt.date.today().isoformat()
+
+
+def ingest_cfr_section(msg: dict) -> str:
+    title, section = msg["title"], msg["section"]
+    date = msg.get("date", "current")
+    if date == "current":
+        date = latest_version_date(title, section)
+    table = _client("registry")
+    pk = f"CFR#{title}#{section}"
+    if table.get_item(Key={"pk": pk, "sk": f"VERSION#{date}"}).get("Item"):
+        return "skipped"
+
+    part = section.split(".")[0]
+    raw = _get(f"{config.ECFR_API}/full/{date}/title-{title}.xml"
+               f"?part={part}&section={section}")
+    parsed = parse_ecfr_xml(raw, title, section, date)
+    meta = metadata.extract(parsed)
+
+    chunks = chunker.chunk(parsed)
+    for c in chunks:
+        c["doc_type"] = meta["doc_type"]
+        c["pub_date"] = None
+        c["effective_date"] = date
+        c["compliance_date"] = None
+    for c, e in zip(chunks, embed([c["text"] for c in chunks])):
+        c["embedding"] = e
+
+    chunks_key = _write_corpus(parsed["doc_id"], raw, parsed, chunks, part)
+    _put_vectors(chunks)
+
+    table.put_item(Item={
+        "pk": pk, "sk": f"VERSION#{date}",
+        "doc_id": parsed["doc_id"],
+        "chunk_count": len(chunks),
+        "chunks_key": chunks_key,
+        "retrieved_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+    })
+    _write_chunk_registry_items(pk, chunks)
+    return "ingested"
 
 
 def handler(event, context):
-    raise NotImplementedError("SPEC/01")
+    results = []
+    for record in event.get("Records", []):
+        msg = json.loads(record["body"])
+        if msg["kind"] == "fr_doc":
+            results.append({"doc": msg["document_number"],
+                            "result": ingest_fr_doc(msg)})
+        elif msg["kind"] == "cfr_section":
+            results.append({"doc": f"{msg['title']} CFR {msg['section']}",
+                            "result": ingest_cfr_section(msg)})
+        else:
+            raise ValueError(f"unknown message kind: {msg.get('kind')}")
+    print(json.dumps(results))
+    return results
