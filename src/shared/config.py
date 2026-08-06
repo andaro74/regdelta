@@ -2,12 +2,13 @@
 node code (CLAUDE.md rule)."""
 import os
 
-REGION = os.environ.get("AWS_REGION", "us-east-1")
+REGION = os.environ.get("AWS_REGION", "us-west-2")
 
-# Bedrock model ids (inference profiles verified available in-account).
+# Bedrock model ids (inference profiles verified invocable in-account,
+# us-west-2: Claude 5 family and Opus 4.8 are listed but access-denied).
 # MODEL_VERDICT is provisional — SPEC/03 pins the verdict model.
-MODEL_FAST = os.environ.get("MODEL_FAST", "us.anthropic.claude-sonnet-5")
-MODEL_VERDICT = os.environ.get("MODEL_VERDICT", "us.anthropic.claude-opus-5")
+MODEL_FAST = os.environ.get("MODEL_FAST", "us.anthropic.claude-sonnet-4-6")
+MODEL_VERDICT = os.environ.get("MODEL_VERDICT", "us.anthropic.claude-opus-4-6-v1")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "amazon.titan-embed-text-v2:0")
 EMBED_DIM = 1024
 

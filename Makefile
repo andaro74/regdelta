@@ -4,7 +4,7 @@
 
 STACK_CORE   := regdelta-core
 STACK_SEARCH := regdelta-search
-REGION       ?= us-east-1
+REGION       ?= us-west-2
 SSM_ENDPOINT := /regdelta/search/endpoint
 CDK          := cd infra && npx cdk
 
@@ -56,7 +56,7 @@ ingest-backfill:
 	  --function-name \
 	  $$(aws cloudformation describe-stacks --stack-name $(STACK_CORE) --region $(REGION) \
 	     --query "Stacks[0].Outputs[?OutputKey=='PollerFnName'].OutputValue" --output text) \
-	  --payload '{"mode":"backfill"}' /dev/stdout
+	  --payload '{"mode":"backfill"}' backfill-out.json && cat backfill-out.json && rm -f backfill-out.json
 
 demo: up
 	@echo "Demo UI: $$(aws cloudformation describe-stacks --stack-name $(STACK_CORE) \
