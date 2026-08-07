@@ -21,6 +21,16 @@ Corpus: healthy final rule `2024-29957` (389 chunks), delay rule
 (2024-12-01 and current), 101.13, and 74.303 (2025-01-01 and current).
 DLQ empty at completion.
 
+> **The 452 figures above are a snapshot at close, not a fixed quantity.**
+> The daily EventBridge poller keeps running, so the corpus grows on its
+> own: re-verified 2026-08-07 at **790 chunks / 790 vectors** (still equal —
+> the Done-when invariant is the *equality*, not the number). The additional
+> ~25 documents are FDA rules the poller picked up on 2026-08-06 and landed
+> under `chunks/misc/` and `chunks/892/`, outside the two demo rules SPEC/01
+> scopes. Nothing to fix — it is the daily path proving itself unattended —
+> but **M02 should not assume the index contains only demo-relevant text**
+> when it tunes retrieval precision.
+
 ## Scorecard
 No eval row for M01. The golden set requires an answering endpoint, and
 `src/api/api.py` is SPEC/04. M01's exit criterion is the Done-when table
