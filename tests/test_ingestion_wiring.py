@@ -168,6 +168,128 @@ def test_bad_citation_is_rejected_before_the_corpus_and_vector_writes(monkeypatc
         processor.ingest_fr_doc({"document_number": "2024-29957"})
 
 
+# --------------------------------------------------------------------------
+# ADR-0007 — the amendment graph must say what actually happened
+# --------------------------------------------------------------------------
+
+# The real 2026-15920 event: the Jan 2025 Red No. 3 order was administratively
+# stayed by objections on 2025-02-18 and the stay was lifted 2026-08-05 with
+# the original dates CONFIRMED. Two facts about one target document.
+STAY_LIFT_EDGES = [
+    {"target": "90 FR 4628", "scope": "stay_lifted", "applies_to": "21 CFR 74.303",
+     "stay_start": "2025-02-18", "stay_end": "2026-08-05"},
+    {"target": "90 FR 4628", "scope": "dates_confirmed",
+     "applies_to": "21 CFR 74.303; 21 CFR 74.1303"},
+]
+
+
+def _stay_lift_ingest(monkeypatch, table):
+    _stub_ingest(monkeypatch, table, doc_meta={
+        "document_number": "2026-15920",
+        "citation": "91 FR 50475",
+        "full_text_xml_url":
+            "https://www.federalregister.gov/documents/full_text/xml/2026/08/05/2026-15920.xml",
+        "publication_date": "2026-08-05",
+    })
+    monkeypatch.setattr(processor, "parse_fr_xml",
+                        lambda raw, meta: {"doc_id": "2026-15920", "cfr_part": "74"})
+    monkeypatch.setattr(metadata, "extract", lambda parsed: {
+        "doc_type": "order", "effective_dates": [], "compliance_dates": [],
+        "affected_cfr": [], "amendatory_instructions": [],
+        "supersedes": [dict(e) for e in STAY_LIFT_EDGES],
+        "binding": True, "publication_date": "2026-08-05"})
+    monkeypatch.setattr(processor, "_resolve_fr_citation", lambda t: "2025-00830")
+    monkeypatch.setattr(processor, "_write_corpus",
+                        lambda *a, **k: "chunks/74/2026-15920.jsonl")
+    monkeypatch.setattr(processor, "_put_vectors", lambda chunks: None)
+    monkeypatch.setattr(processor, "_write_chunk_registry_items",
+                        lambda pk, chunks: None)
+
+
+def test_two_edges_to_the_same_target_both_survive(monkeypatch):
+    """The sort-key collision. `SUPERSEDES#<target>` omitted the scope, so only
+    one edge could exist per (citing, target) pair — a document that both lifts
+    a stay and confirms dates lost one silently to last-write-wins. Found by SME
+    triage; had to be fixed before any multi-scope vocabulary could land."""
+    table = _FakeTable()
+    _stay_lift_ingest(monkeypatch, table)
+    processor.ingest_fr_doc({"document_number": "2026-15920"})
+    edges = [i for i in table.written if i["sk"].split("#")[0]
+             in ("SUPERSEDES", "STAYS", "LIFTS_STAY", "CONFIRMS")]
+    assert len(edges) == 2, [i["sk"] for i in edges]
+    assert len({i["sk"] for i in edges}) == 2      # distinct keys, no clobber
+
+
+def test_a_confirmation_is_not_recorded_as_supersession(monkeypatch):
+    """Supersession answers "which text governs". 2025-00830 is still the
+    governing order and the document to cite for 2027-01-15 — so any consumer
+    applying "most recent SUPERSEDES wins" must not see this event as one."""
+    table = _FakeTable()
+    _stay_lift_ingest(monkeypatch, table)
+    processor.ingest_fr_doc({"document_number": "2026-15920"})
+    preds = {i["sk"].split("#")[0] for i in table.written if "#" in i["sk"]}
+    assert "LIFTS_STAY" in preds
+    assert "CONFIRMS" in preds
+    assert "SUPERSEDES" not in preds
+
+
+def test_stay_period_is_written_on_the_stayed_document(monkeypatch):
+    """A first-class interval, not an edge pair.
+
+    Decisive reason: a STAYS edge needs a source document and there is none —
+    the stay arose by operation of law under 21 U.S.C. 371(e)(2) and was never
+    separately published, so it is knowable only from the document that lifts
+    it. An edge-pair design cannot ingest the real event at all.
+    """
+    table = _FakeTable()
+    _stay_lift_ingest(monkeypatch, table)
+    processor.ingest_fr_doc({"document_number": "2026-15920"})
+    periods = [i for i in table.written if i["sk"].startswith("STAY_PERIOD#")]
+    assert len(periods) == 1
+    p = periods[0]
+    # Written on the STAYED document, not the one that lifted it.
+    assert p["pk"] == "DOC#2025-00830"
+    assert p["sk"] == "STAY_PERIOD#2025-02-18"
+    assert p["start"] == "2025-02-18" and p["end"] == "2026-08-05"
+    assert p["authority"] == "21 U.S.C. 371(e)(2)"
+    assert p["source_doc"] == "2026-15920"
+    # The field this whole incident is about: suspended, not tolled. The stay
+    # ran ~17.5 months and 2027-01-15 stayed 2027-01-15.
+    assert p["dates_changed"] is False
+
+
+def test_a_genuine_date_change_still_records_supersedes(monkeypatch):
+    """The control case: the healthy delay really did move an effective date,
+    so it must still be SUPERSEDES with the new date attached."""
+    table = _FakeTable()
+    _stub_ingest(monkeypatch, table, doc_meta={
+        "document_number": "2025-03118", "citation": "90 FR 10592",
+        "full_text_xml_url":
+            "https://www.federalregister.gov/documents/full_text/xml/2025/02/25/2025-03118.xml",
+        "publication_date": "2025-02-25",
+    })
+    monkeypatch.setattr(metadata, "extract", lambda parsed: {
+        "doc_type": "delay_notice", "effective_dates": [], "compliance_dates": [],
+        "affected_cfr": [], "amendatory_instructions": [],
+        "supersedes": [{"target": "89 FR 106064", "scope": "effective_date",
+                        "new_date": "2025-04-28", "applies_to": ""}],
+        "binding": True, "publication_date": "2025-02-25"})
+    monkeypatch.setattr(processor, "_resolve_fr_citation", lambda t: "2024-29957")
+    monkeypatch.setattr(processor, "_write_corpus",
+                        lambda *a, **k: "chunks/101/2025-03118.jsonl")
+    monkeypatch.setattr(processor, "_put_vectors", lambda chunks: None)
+    monkeypatch.setattr(processor, "_write_chunk_registry_items",
+                        lambda pk, chunks: None)
+    processor.ingest_fr_doc({"document_number": "2025-03118"})
+    edges = [i for i in table.written if i["sk"].startswith("SUPERSEDES#")]
+    assert len(edges) == 1
+    assert edges[0]["sk"] == "SUPERSEDES#2024-29957#effective_date"
+    assert edges[0]["scope"] == "effective_date"
+    assert edges[0]["new_date"] == "2025-04-28"
+    # No stay interval for a plain date change.
+    assert not [i for i in table.written if i["sk"].startswith("STAY_PERIOD#")]
+
+
 def _hostile_title_doc(monkeypatch, table, *, top_level, section_level):
     _stub_ingest(monkeypatch, table, doc_meta={
         "document_number": "2024-29957",

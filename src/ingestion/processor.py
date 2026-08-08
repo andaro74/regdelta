@@ -350,6 +350,80 @@ def _resolve_fr_citation(target: str) -> str:
                      "document number")
 
 
+# ------------------------------------------------------- amendment graph
+# ADR-0007. Supersession answers "which text governs". A stay changes no text
+# and a confirmation changes nothing at all, so recording either as SUPERSEDES
+# means any consumer applying the natural "most recent SUPERSEDES edge wins"
+# rule concludes the newer document displaced the older — when the older is
+# still the governing order and the one to cite for the date.
+_EDGE_PREDICATE = {
+    "effective_date": "SUPERSEDES",
+    "compliance_date": "SUPERSEDES",
+    "full": "SUPERSEDES",
+    "stay": "STAYS",
+    "stay_lifted": "LIFTS_STAY",
+    "dates_confirmed": "CONFIRMS",
+}
+
+
+def _write_amendment_edge(table, doc_number: str, edge: dict) -> None:
+    """One edge, keyed by predicate AND scope.
+
+    The sort key used to be `SUPERSEDES#<target>`, which collided: only one
+    edge could exist per (citing, target) pair, so a document that both lifted
+    a stay and confirmed dates — or changed an effective and a compliance date
+    — lost one silently to last-write-wins. That had to be fixed before any
+    multi-scope vocabulary could land. Found by SME triage.
+    """
+    predicate = _EDGE_PREDICATE[edge["scope"]]
+    item = {
+        "pk": f"DOC#{doc_number}",
+        "sk": f"{predicate}#{edge['doc_number']}#{edge['scope']}",
+        "predicate": predicate,
+        "scope": edge["scope"],
+        "target_doc": edge["doc_number"],
+        "target_raw": edge["target"],
+    }
+    for k in ("new_date", "stay_start", "stay_end", "applies_to"):
+        if edge.get(k):
+            item[k] = edge[k]
+    table.put_item(Item=item)
+
+
+def _write_stay_period(table, doc_number: str, edge: dict) -> None:
+    """A stay is an interval on the STAYED document, not an edge pair.
+
+    Two reasons, and the first is decisive: a `STAYS` edge needs a source
+    document and for the Red No. 3 stay there is none — it arose by operation
+    of law under 21 U.S.C. 371(e)(2) on the filing of objections and was never
+    separately published, so it is knowable only retrospectively from the
+    document that lifts it. A design requiring a stay edge plus a lift edge
+    cannot ingest the real event at all.
+
+    Second: "what was the deadline on 2025-06-01?" is a containment test
+    against a span, not an inference over two endpoints.
+
+    `dates_changed` is the field this whole incident is about — it records that
+    the stay suspended operation without moving any date. ADR-0007.
+    """
+    start = edge.get("stay_start")
+    if not start:
+        return
+    item = {
+        "pk": f"DOC#{edge['doc_number']}",
+        "sk": f"STAY_PERIOD#{start}",
+        "start": start,
+        "authority": "21 U.S.C. 371(e)(2)",
+        "source_doc": doc_number,
+        "dates_changed": False,
+    }
+    if edge.get("stay_end"):
+        item["end"] = edge["stay_end"]
+    if edge.get("applies_to"):
+        item["scope_sections"] = edge["applies_to"]
+    table.put_item(Item=item)
+
+
 # ------------------------------------------------------------ ingest: FR doc
 def ingest_fr_doc(msg: dict) -> str:
     # Validated before it is used in a key or a URL path. The message body is
@@ -456,8 +530,7 @@ def ingest_fr_doc(msg: dict) -> str:
 
     # Resolve supersedes targets up front so a resolution failure aborts
     # before any write (retry then redoes the whole doc, which is safe).
-    edges = [{"target": e["target"], "scope": e["scope"],
-              "doc_number": _resolve_fr_citation(e["target"])}
+    edges = [{**e, "doc_number": _resolve_fr_citation(e["target"])}
              for e in meta["supersedes"]]
 
     chunks_key = _write_corpus(doc_number, raw, parsed, chunks, cfr_part)
@@ -471,11 +544,9 @@ def ingest_fr_doc(msg: dict) -> str:
         table.put_item(Item={"pk": f"FRCITE#{citation}", "sk": "DOC",
                              "doc_number": doc_number})
     for edge in edges:
-        table.put_item(Item={
-            "pk": f"DOC#{doc_number}", "sk": f"SUPERSEDES#{edge['doc_number']}",
-            "scope": edge["scope"],
-            "target_raw": edge["target"],
-        })
+        _write_amendment_edge(table, doc_number, edge)
+        if edge["scope"] in ("stay", "stay_lifted"):
+            _write_stay_period(table, doc_number, edge)
     _write_chunk_registry_items(f"DOC#{doc_number}", chunks)
 
     # META is the idempotency marker — written LAST so a partial ingest is

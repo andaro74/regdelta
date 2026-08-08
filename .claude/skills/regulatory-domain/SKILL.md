@@ -20,8 +20,53 @@ doc is the authoritative delta.
 
 ## Supersession scoping
 An amendment can supersede another document ENTIRELY or a single aspect
-(e.g., only its effective date). Model edges as
-DOC#a SUPERSEDES DOC#b {scope}. Timeline answers must respect scope.
+(e.g., only its effective date). Edges are predicate-typed and scoped
+(ADR-0007); timeline answers must respect both.
+
+| scope | predicate | meaning |
+|-------|-----------|---------|
+| effective_date | SUPERSEDES | states a NEW effective date for the prior doc |
+| compliance_date | SUPERSEDES | states a NEW compliance date for the prior doc |
+| full | SUPERSEDES | wholly replaces / repeals / withdraws the prior doc |
+| stay | STAYS | suspends the prior doc's effect; no new dates |
+| stay_lifted | LIFTS_STAY | ends a suspension; prior doc operative again |
+| dates_confirmed | CONFIRMS | prior doc's dates stand UNCHANGED; no new dates |
+
+Decision rule: `effective_date`/`compliance_date` only if a NEW date string
+appears. A document repeating dates already set is `dates_confirmed`, not a
+date change — ask whether you could fill in `new_date` from this document.
+`stay_lifted` and `dates_confirmed` are not mutually exclusive; emit both.
+
+**A stay or confirmation is never SUPERSEDES.** Supersession answers which
+text governs; a stay changes no text and a confirmation changes nothing.
+Recording either as SUPERSEDES makes "most recent edge wins" conclude the
+newer document displaced the older, when the older still governs and is the
+one to cite.
+
+## Administrative stays (21 U.S.C. 371(e)(2))
+Filing objections to an FDA order automatically stays the effectiveness of the
+provisions objected to, until final agency action. Semantics:
+
+- **Suspended, not tolled.** The statute has no day-for-day extension. Dates do
+  not move. The Red No. 3 stay ran ~17.5 months and 2027-01-15 stayed
+  2027-01-15.
+- **Not merely unenforceable.** During the stay the provision has no legal
+  effect at all — Red No. 3 remained a lawfully listed food color additive.
+- **The correct answer during a stay is tri-state**, and neither "the deadline
+  moved" nor "there is no deadline": *"the stated date is X, but the provision
+  is administratively stayed as of D pending FDA action on objections — plan to
+  X, treat it as unconfirmed."*
+
+Stays are stored as a first-class interval on the STAYED document
+(`STAY_PERIOD#<start>` with start/end/authority/dates_changed), not as an edge
+pair. **A stay is often never separately published** — it arises by operation
+of law and is documented only retrospectively by the document that lifts it, so
+there may be no source document for a STAYS edge to come from. A corollary
+worth surfacing in verdicts: between an objection filing and the lift
+publication, the corpus cannot know a stay is in force.
+
+Worked example: Red No. 3 order 2025-00830 (90 FR 4628) → stayed 2025-02-18 →
+2026-15920 (91 FR 50475) lifts the stay 2026-08-05 and confirms both dates.
 
 ## Applicability thresholds
 Common pattern: $10M annual food sales splits compliance timelines

@@ -8,6 +8,21 @@ and re-verified end-to-end through the API at M04 (SPEC/04).
 ## Contract (src/retrieval/router.py)
 retrieve(query: str, filters: Filters, k: int) -> list[Chunk]
 - Filters: cfr_title/part, date ranges (pub/effective/compliance), doc_type.
+
+### Date-filter semantics (ADR-0006)
+A date filter selects documents that **establish** that date, never documents
+that merely mention it. Concretely: a `compliance_date` range covering 2028
+returns the "healthy" final rule's chunks (2024-29957, which sets 2028-02-25)
+and **not** the delay notice's (2025-03118, which sets no compliance date at
+all). The notice's chunks carry `compliance_date = null`.
+
+This is not a recall loss — a user asking what is due in 2028 still gets the
+final rule. Returning the notice as well would assert that *the delay* is what
+makes 2028 operative, which is the effective-vs-compliance conflation q01
+exists to trap; the filter would manufacture the error the trap tests for.
+
+The probe set must include a probe that pins this, and a corpus whose stored
+`compliance_date` for 2025-03118 is non-null fails M02 regardless of recall.
 - Router: SSM /regdelta/search/endpoint present+reachable → AOSS tier;
   else → S3 Vectors tier. Cache SSM lookup across warm invocations (60s TTL).
 

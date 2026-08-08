@@ -20,6 +20,7 @@ import pytest
 from conftest import FIXTURES
 
 from ingestion import metadata, processor
+from ingestion.metadata import _date_is_grounded
 from shared import config, fetch, validate
 
 # --------------------------------------------------------------------------
@@ -478,19 +479,93 @@ def test_normalize_rejects_a_malformed_publication_date():
 
 def test_normalize_keeps_valid_metadata_intact():
     """The regression guard: hardening must not change what a good document
-    extracts to. The effective/compliance distinction is the demo's thesis."""
+    extracts to. The effective/compliance distinction is the demo's thesis.
+
+    Note what is asserted about compliance_dates — `[]`. Per ADR-0006 the delay
+    notice establishes only a delayed effective date; the 2028 deadline belongs
+    to the final rule and is reached through the amendment graph.
+    """
     doc = _delay_doc()
     meta = metadata.extract(doc, invoke=lambda p: _model_output(
-        compliance_dates=[{"date": "2028-02-25", "applies_to": "all parties"}],
-        supersedes=[{"target": "89 FR 106064", "scope": "effective_date"}]))
+        supersedes=[{"target": "89 FR 106064", "scope": "effective_date",
+                     "new_date": "2025-04-28"}]))
     assert meta["doc_type"] == "delay_notice"
     assert meta["publication_date"] == "2025-02-25"
     assert meta["effective_dates"] == [{"date": "2025-04-28",
                                        "applies_to": "healthy rule"}]
-    assert meta["compliance_dates"] == [{"date": "2028-02-25",
-                                         "applies_to": "all parties"}]
+    assert meta["compliance_dates"] == []
     assert meta["supersedes"] == [{"target": "89 FR 106064",
-                                   "scope": "effective_date"}]
+                                   "scope": "effective_date",
+                                   "new_date": "2025-04-28",
+                                   "applies_to": ""}]
+
+
+# --------------------------------------------------------------------------
+# ADR-0006 — the fabricated compliance date that started all of this
+# --------------------------------------------------------------------------
+
+def test_the_original_fabricated_compliance_date_is_now_refused():
+    """The exact defect found in the live corpus.
+
+    `DOC#2025-03118` carried compliance_date 2028-01-01, stamped on all six of
+    its chunks as a retrieval filter value. The delay notice's only reference to
+    2028 is prose — "the compliance date in the final rule is not until 2028" —
+    with no month or day anywhere. The extractor reasoned correctly that the
+    date was unchanged and then manufactured day-precision the source never
+    contained. January 1 is the classic default-fill artifact of a bare year.
+
+    It was 55 days early, in the direction that manufactures a false deadline.
+    No shape validator could catch it: 2028-01-01 is well-formed, real, and
+    inside the plausibility window. Only the source text can.
+    """
+    doc = _delay_doc()
+    with pytest.raises(validate.ValidationError, match="does not appear at day"):
+        metadata.extract(doc, invoke=lambda p: _model_output(
+            compliance_dates=[{"date": "2028-01-01",
+                               "applies_to": "unchanged from 89 FR 106064"}]))
+
+
+def test_even_the_true_compliance_date_is_refused_on_the_delay_notice():
+    """2028-02-25 is the correct deadline — and still wrong here.
+
+    ADR-0006: a document carries only the dates it establishes. The delay notice
+    does not set a compliance date, so borrowing the final rule's true one is
+    still misattribution. It would also make a compliance-date range filter
+    return the notice, asserting that the DELAY is what makes 2028 operative —
+    the effective-vs-compliance conflation q01 exists to trap.
+    """
+    doc = _delay_doc()
+    with pytest.raises(validate.ValidationError, match="does not appear at day"):
+        metadata.extract(doc, invoke=lambda p: _model_output(
+            compliance_dates=[{"date": "2028-02-25", "applies_to": "all parties"}]))
+
+
+def test_grounding_accepts_the_forms_the_federal_register_actually_uses():
+    src = ("This rule is effective February 25, 2025. The compliance date of "
+           "this final rule is February 25, 2028.")
+    assert _date_is_grounded("2028-02-25", src)
+    assert _date_is_grounded("2025-02-25", src)
+    for variant in ("25 February 2028", "2028-02-25", "Feb. 25, 2028",
+                    "February 25 2028", "02/25/2028"):
+        assert _date_is_grounded("2028-02-25", f"see {variant} for details"), variant
+
+
+def test_grounding_rejects_a_bare_year_however_suggestive():
+    """The asymmetry that makes this work: a source containing only "2028" must
+    not ground any date in 2028."""
+    src = "the compliance date in the final rule is not until 2028"
+    for iso in ("2028-01-01", "2028-02-25", "2028-12-31"):
+        assert not _date_is_grounded(iso, src), iso
+
+
+def test_a_date_change_scope_without_a_new_date_is_refused():
+    """A scope that asserts a date moved and cannot say to what is a
+    contradiction — and per ADR-0007 the right answer is usually
+    'dates_confirmed', which is a materially different fact."""
+    doc = _delay_doc()
+    with pytest.raises(validate.ValidationError, match="carries no new_date"):
+        metadata.extract(doc, invoke=lambda p: _model_output(
+            supersedes=[{"target": "89 FR 106064", "scope": "effective_date"}]))
 
 
 def test_ecfr_extract_doc_type_is_in_the_enum():

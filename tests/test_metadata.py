@@ -3,10 +3,12 @@ these exercise prompt construction, JSON parsing, and normalization —
 including the supersession-scope semantics the demo hinges on."""
 import json
 
+import pytest
 from conftest import FIXTURES
 
 from ingestion import metadata
 from ingestion.processor import parse_ecfr_xml, parse_fr_xml
+from shared import validate
 
 DELAY_META = {"document_number": "2025-03118", "citation": "90 FR 10592"}
 
@@ -17,7 +19,8 @@ DELAY_MODEL_OUTPUT = json.dumps({
     "compliance_dates": [],
     "affected_cfr": ["21 CFR 101.65"],
     "amendatory_instructions": [],
-    "supersedes": [{"target": "89 FR 106064", "scope": "effective_date"}],
+    "supersedes": [{"target": "89 FR 106064", "scope": "effective_date",
+                   "new_date": "2025-04-28"}],
     "binding": True,
 })
 
@@ -39,8 +42,13 @@ def test_prompt_carries_dates_and_identity():
 def test_supersedes_scope_preserved():
     meta = metadata.extract(_delay_doc(), invoke=lambda p: DELAY_MODEL_OUTPUT)
     assert meta["doc_type"] == "delay_notice"
+    # ADR-0007 added new_date/applies_to to the edge shape. The scoping itself
+    # — effective_date only, never compliance_date — is the demo's whole thesis
+    # and is what this test exists to pin.
     assert meta["supersedes"] == [{"target": "89 FR 106064",
-                                  "scope": "effective_date"}]
+                                   "scope": "effective_date",
+                                   "new_date": "2025-04-28",
+                                   "applies_to": ""}]
     assert meta["effective_dates"][0]["date"] == "2025-04-28"
     assert meta["compliance_dates"] == []
 
@@ -60,14 +68,27 @@ def test_normalization_drops_bad_entries():
             {"action": "REVISE", "target": "21 CFR 101.65(d)"},   # case-fixed
             {"action": "obliterate", "target": "21 CFR 1.1"},     # invalid action
         ],
-        "supersedes": [{"target": "89 FR 106064", "scope": "sideways"}],  # -> full
+        "supersedes": [],
     })
     meta = metadata.extract(_delay_doc(), invoke=lambda p: sloppy)
     assert meta["effective_dates"] == [{"date": "2025-02-25", "applies_to": ""}]
     assert meta["compliance_dates"] == []
     assert meta["amendatory_instructions"] == [
         {"action": "revise", "target": "21 CFR 101.65(d)"}]
-    assert meta["supersedes"][0]["scope"] == "full"
+
+
+def test_unknown_scope_raises_instead_of_defaulting_to_full():
+    """ADR-0007. `scope if scope in _SCOPES else "full"` degraded an
+    unrecognized value to WHOLESALE REPLACEMENT — the most destructive reading
+    available — so a prompt/enum skew or a near-miss like "stay lifted" would
+    have recorded that a confirming notice wholly replaced the order it
+    confirms. Worse than the mislabel it was covering for."""
+    sloppy = json.dumps({
+        "doc_type": "final_rule",
+        "supersedes": [{"target": "89 FR 106064", "scope": "sideways"}],
+    })
+    with pytest.raises(validate.ValidationError, match="not one of"):
+        metadata.extract(_delay_doc(), invoke=lambda p: sloppy)
 
 
 # --------------------------------------------------------- injection (HIGH-1)
