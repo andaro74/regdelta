@@ -67,7 +67,13 @@ Return ONLY a JSON object, no prose, with this shape:
 # and have the remainder read as prompt. Tolerates a missing closing bracket
 # and internal whitespace ("</ document>", "< /document>"), which are not
 # real tags but are cheap to cover.
-_ENVELOPE_RE = re.compile(r"<\s*/?\s*document\b[^>]*>?", re.IGNORECASE)
+#
+# No "[^>]*" catch-all for attributes: the envelope tag carries none, and a
+# greedy tail with an optional terminator eats to end-of-string when no later
+# ">" exists — "See < document 5 for the DATES section..." would lose the rest
+# of the digest, which is preamble prose that can carry compliance-date
+# language. Fails safe (deletion, never injection) but loses content silently.
+_ENVELOPE_RE = re.compile(r"<\s*/?\s*document\s*/?\s*>?", re.IGNORECASE)
 
 
 def _strip_envelope_tags(text: str) -> str:
