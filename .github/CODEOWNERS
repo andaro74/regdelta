@@ -1,33 +1,48 @@
-# RegDelta — ownership boundaries. Enforced via branch protection
-# ("Require review from Code Owners"). See docs/governance/ROLES.md.
+# RegDelta — ownership boundaries. See docs/governance/ROLES.md.
 #
-# Replace @regdelta-* with real GitHub teams (org/teams) or usernames.
-# Solo-operator mode: create 2-3 free accounts to play the roles, or map
-# all teams to yourself and let the PR template checklist carry the roles.
+# NOT mechanically enforced. This repo has a single human, so a required
+# code-owner review is unsatisfiable — the author cannot approve their own
+# PR, and every @regdelta-* placeholder resolved to nothing (all five 404'd,
+# and team syntax needs an org this repo does not have). The file enforced
+# exactly zero of the boundaries it appeared to. See ADR-0005.
+#
+# The seat names below are therefore a routing map, not a gate: they say
+# which role subagent must review a path (.claude/agents/) and which
+# checklist item in the PR template carries the attestation. The real
+# enforcement is the agent pass plus the eval gate — which is what actually
+# caught M01's merge-blocking HIGH.
+#
+# Owner mapped to the one account that can hold it. Re-split the seats if
+# this repo ever moves to an org with real teams.
 
 # Product owns WHAT to build and when it's acceptable
-/SPEC/                          @regdelta-pm
-/milestones/                    @regdelta-pm
+/SPEC/                          @andaro74
+/milestones/                    @andaro74
 
 # The SME owns what CORRECT means. Engineering may never self-approve
 # changes to ground truth — this is the core AI-accountability boundary.
-/evals/golden_questions.json    @regdelta-sme
-/.claude/skills/regulatory-domain/  @regdelta-sme
+# /evals/ is eng+SME co-owned (SPEC/02 prerequisite C, M00b finding 5):
+# without it, retrieval_truth.json and run_evals.py — the code that decides
+# whether ground truth was met — would have no owner at all. Last match
+# wins, so the golden-set line below stays SME-only.
+/evals/                         @andaro74
+/evals/golden_questions.json    @andaro74
+/.claude/skills/regulatory-domain/  @andaro74
 
 # Security owns what the tooling and infrastructure MAY DO
-/.claude/settings.json          @regdelta-security
-/.claude/agents/security-reviewer.md  @regdelta-security
-/infra/                         @regdelta-security @regdelta-lead
-/.github/workflows/             @regdelta-security
+/.claude/settings.json          @andaro74
+/.claude/agents/security-reviewer.md  @andaro74
+/infra/                         @andaro74
+/.github/workflows/             @andaro74
 
 # The tech lead owns the technical constitution
-/CLAUDE.md                      @regdelta-lead
-/docs/adr/                      @regdelta-lead
-/src/retrieval/router.py        @regdelta-lead   # the tier seam is an interface contract
+/CLAUDE.md                      @andaro74
+/docs/adr/                      @andaro74
+/src/retrieval/router.py        @andaro74   # the tier seam is an interface contract
 
 # Engineering owns that it works (default owner for the rest of src)
-/src/                           @regdelta-eng
+/src/                           @andaro74
 
 # Governance docs change how everyone works — lead + PM co-own
-/docs/governance/               @regdelta-lead @regdelta-pm
-/.github/CODEOWNERS             @regdelta-lead @regdelta-security
+/docs/governance/               @andaro74
+/.github/CODEOWNERS             @andaro74
