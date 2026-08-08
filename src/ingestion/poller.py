@@ -21,6 +21,16 @@ _clients: dict = {}
 # looking like a quiet day with no new rules.
 _rejected: list[str] = []
 
+# Records that PASSED validation, counted before the registry idempotency
+# filter. The total-rejection alarm keys on this, not on the enqueued count:
+# with POLL_LOOKBACK_DAYS=7 and a daily schedule, days 2-7 of any document's
+# window are exactly the steady state where every valid record is already
+# ingested and `messages` is legitimately empty. Keying the alarm on enqueued
+# count made one junk record raise "the upstream response shape has probably
+# changed" every day until it aged out — a false alarm, daily, which is how an
+# alarm stops being believed. Caught by security re-review.
+_accepted: list[str] = []
+
 
 def _client(name):
     if name not in _clients:
@@ -60,9 +70,12 @@ def _new_fr_docs(since: str) -> list[str]:
             # This value reaches an S3 object key and a DynamoDB partition key
             # in the processor, and it comes from a response body.
             try:
-                docs.append(validate.doc_number(r.get("document_number")))
+                doc = validate.doc_number(r.get("document_number"))
             except validate.ValidationError as e:
                 _rejected.append(str(e))
+            else:
+                docs.append(doc)
+                _accepted.append(doc)
         # `next_page_url` is response-controlled; get_json re-checks the
         # allowlist on it (and on any redirect) before opening a connection.
         url = data.get("next_page_url")
@@ -90,6 +103,7 @@ def _new_cfr_versions() -> list[dict]:
         dates, rejected = processor.valid_version_dates(
             data.get("content_versions"))
         _rejected.extend(rejected)
+        _accepted.extend(dates)
         if not dates:
             continue
         latest = max(dates)
@@ -119,6 +133,7 @@ def _backfill_messages() -> list[dict]:
 def handler(event, context):
     mode = (event or {}).get("mode", "daily")
     _rejected.clear()  # warm invocations reuse the module
+    _accepted.clear()
     if mode == "backfill":
         messages = _backfill_messages()
     else:
@@ -140,10 +155,10 @@ def handler(event, context):
     # CloudWatch. A raise surfaces on the Lambda error metric, which can carry
     # an alarm. Engineering review; a proper EMF metric for the partial case
     # is infra work and belongs with SPEC/05's observability.
-    if _rejected and not messages:
+    if _rejected and not _accepted:
         raise ValueError(
             f"every record this poll failed validation ({len(_rejected)} "
-            f"rejected, 0 enqueued) — the upstream response shape has probably "
+            f"rejected, 0 accepted) — the upstream response shape has probably "
             f"changed: {_rejected[:3]}")
 
     # Checked after the raise above, so a total-rejection poll enqueues

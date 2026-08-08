@@ -318,10 +318,14 @@ def _resolve_fr_citation(target: str) -> str:
         raise ValueError(f"supersedes target {target!r} did not confirm against "
                          "the FR API")
 
-    # `target` is model output and reaches a partition key below. The write
-    # side already validated this shape; validating here too keeps the read
-    # and write paths symmetric and turns a malformed target into a legible
-    # error instead of a wasted API round trip.
+    # `target` is model output and reaches a partition key below.
+    #
+    # THIS IS THE ONLY VALIDATION OF THIS VALUE. metadata._normalize keeps it
+    # as `str(s["target"])` with no shape check, so removing this line reopens
+    # HIGH-1. An earlier version of this comment claimed "the write side
+    # already validated this shape" — it does not, and a future refactor
+    # trusting that would have deleted the real check. Flagged by security
+    # re-review.
     validate.fr_citation(target, field="supersedes target")
 
     item = _client("registry").get_item(
@@ -378,7 +382,25 @@ def ingest_fr_doc(msg: dict) -> str:
             f"{doc_number!r}; refusing to attribute one document's text to "
             "another")
 
-    raw = _get(doc_meta["full_text_xml_url"])
+    # The id check above is not sufficient on its own: the TEXT comes from a
+    # second, independently response-controlled field. Leaving
+    # `document_number` correct and pointing `full_text_xml_url` at another
+    # document's XML on the same allowlisted host passes the equality check and
+    # still stores, keys, filters and cites doc B's paragraphs as doc A —
+    # demonstrated by security review against the delay rule's DATES chunk,
+    # the highest-value chunk in the corpus. check_url constrains host and
+    # scheme, not path, so the path is checked here.
+    #
+    # The FR full-text URL is deterministic:
+    # https://www.federalregister.gov/documents/full_text/xml/YYYY/MM/DD/<doc>.xml
+    xml_url = doc_meta["full_text_xml_url"]
+    if not urllib.parse.urlsplit(xml_url).path.endswith(f"/{doc_number}.xml"):
+        raise ValueError(
+            f"full_text_xml_url {xml_url!r} does not name document "
+            f"{doc_number!r}; refusing to attribute one document's text to "
+            "another")
+
+    raw = _get(xml_url)
     parsed = parse_fr_xml(raw, doc_meta)
     meta = metadata.extract(parsed)
 
@@ -405,11 +427,21 @@ def ingest_fr_doc(msg: dict) -> str:
     citation = validate.fr_citation(doc_meta["citation"],
                                     field="response citation") \
         if doc_meta.get("citation") else None
-    # cfr_part reaches the chunks/<part>/ S3 key segment and is set by a
-    # parsing regex, not a validator (security review LOW-1).
+    # Both come from the same parsing regex rather than a validator, and both
+    # reach output: cfr_part is the chunks/<part>/ S3 key segment, cfr_title is
+    # interpolated into chunker's citation_path — the string this product
+    # renders as the citation for each claim, which CLAUDE.md treats as
+    # correctness rather than presentation. The first pass validated only
+    # cfr_part; the sibling was flagged by security re-review.
     cfr_part = parsed.get("cfr_part")
     if cfr_part is not None:
         cfr_part = validate.cfr_part(cfr_part, field="parsed cfr_part")
+    if parsed.get("cfr_title") is not None:
+        validate.cfr_title(parsed["cfr_title"], field="parsed cfr_title")
+    for sec in parsed.get("regtext_sections", []):
+        # REGTEXT TITLE= overrides the preamble value per section.
+        if sec.get("cfr_title") is not None:
+            validate.cfr_title(sec["cfr_title"], field="REGTEXT TITLE")
     for c in chunks:
         c["doc_type"] = meta["doc_type"]
         c["pub_date"] = pub

@@ -16,6 +16,11 @@ from conftest import FIXTURES
 from ingestion import chunker, metadata, poller, processor
 from shared import config, fetch, validate
 
+# Arabic-Indic ONE. Built with chr() rather than written literally so this
+# file needs no RUF001 ignore; the literal payloads live in
+# test_input_validation.py, where reading them as characters is the point.
+UNICODE_DIGIT_TITLE = "2" + chr(0x661)
+
 
 class _FakeTable:
     def __init__(self, items=None):
@@ -94,7 +99,8 @@ def test_chunk_cap_runs_before_embed(monkeypatch):
                         lambda name: table if name == "registry" else None)
     monkeypatch.setattr(processor, "_get", lambda url: json.dumps({
         "document_number": "2024-29957", "citation": "89 FR 106064",
-        "full_text_xml_url": "https://www.federalregister.gov/x.xml",
+        "full_text_xml_url":
+            "https://www.federalregister.gov/documents/full_text/xml/2024/12/27/2024-29957.xml",
         "publication_date": "2024-12-27",
     }).encode())
     monkeypatch.setattr(processor, "parse_fr_xml",
@@ -145,7 +151,8 @@ def test_bad_citation_is_rejected_before_the_corpus_and_vector_writes(monkeypatc
     _stub_ingest(monkeypatch, table, doc_meta={
         "document_number": "2024-29957",
         "citation": "89 FR 106064#DOC",          # forges the composite key
-        "full_text_xml_url": "https://www.federalregister.gov/x.xml",
+        "full_text_xml_url":
+            "https://www.federalregister.gov/documents/full_text/xml/2024/12/27/2024-29957.xml",
         "publication_date": "2024-12-27",
     })
 
@@ -161,6 +168,93 @@ def test_bad_citation_is_rejected_before_the_corpus_and_vector_writes(monkeypatc
         processor.ingest_fr_doc({"document_number": "2024-29957"})
 
 
+def _hostile_title_doc(monkeypatch, table, *, top_level, section_level):
+    _stub_ingest(monkeypatch, table, doc_meta={
+        "document_number": "2024-29957",
+        "citation": "89 FR 106064",
+        "full_text_xml_url":
+            "https://www.federalregister.gov/documents/full_text/xml/2024/12/27/2024-29957.xml",
+        "publication_date": "2024-12-27",
+    })
+    monkeypatch.setattr(processor, "parse_fr_xml", lambda raw, meta: {
+        "doc_id": "2024-29957", "cfr_part": "101", "cfr_title": top_level,
+        "regtext_sections": [{"cfr_title": section_level, "section": "101.65",
+                              "paragraphs": ["x"]}]})
+    monkeypatch.setattr(processor, "_write_corpus",
+                        lambda *a, **k: AssertionError("wrote before validating"))
+    monkeypatch.setattr(processor, "_put_vectors", lambda chunks: None)
+
+
+@pytest.mark.parametrize("top_level,section_level", [
+    ("99999", "21"),                       # unbounded length, preamble value
+    ("21", "99999"),                       # REGTEXT TITLE= overrides per section
+    # Arabic-Indic ONE, written as an escape so this file needs no RUF001
+    # ignore. The literal payloads live in test_input_validation.py, which is
+    # where reading them as characters is the point.
+    (UNICODE_DIGIT_TITLE, "21"),        # same \d gap that cfr_part had
+    ("0 CFR - see attacker", "21"),        # reaches the rendered citation_path
+])
+def test_hostile_cfr_title_is_rejected(monkeypatch, top_level, section_level):
+    """cfr_part was validated in the first pass and cfr_title — its sibling out
+    of the same parsing regex — was not. It is interpolated into chunker's
+    citation_path, the string this product renders as the citation for each
+    claim, which CLAUDE.md treats as correctness not presentation. Security
+    re-review."""
+    table = _FakeTable()
+    _hostile_title_doc(monkeypatch, table, top_level=top_level,
+                       section_level=section_level)
+    with pytest.raises(validate.ValidationError, match=r"cfr_title|REGTEXT"):
+        processor.ingest_fr_doc({"document_number": "2024-29957"})
+
+
+def test_real_cfr_title_still_ingests(monkeypatch):
+    """Guard against a check strict enough to reject title 21."""
+    table = _FakeTable()
+    _hostile_title_doc(monkeypatch, table, top_level="21", section_level="21")
+    monkeypatch.setattr(processor, "_write_corpus",
+                        lambda *a, **k: "chunks/101/2024-29957.jsonl")
+    monkeypatch.setattr(processor, "_write_chunk_registry_items",
+                        lambda pk, chunks: None)
+    assert processor.ingest_fr_doc({"document_number": "2024-29957"}) == "ingested"
+
+
+def test_full_text_url_naming_another_document_is_refused(monkeypatch):
+    """The id equality check alone is bypassable: the TEXT comes from a second,
+    independently response-controlled field. Leaving document_number correct
+    and pointing full_text_xml_url at another document's XML passed the check
+    and stored doc B's paragraphs keyed, filtered and cited as doc A. check_url
+    constrains host and scheme, not path. Security re-review."""
+    table = _FakeTable()
+    _stub_ingest(monkeypatch, table, doc_meta={
+        "document_number": "2024-29957",              # correct, so the id check passes
+        "citation": "89 FR 106064",
+        # ...but the text is the delay rule's.
+        "full_text_xml_url":
+            "https://www.federalregister.gov/documents/full_text/xml/2025/02/25/2025-03118.xml",
+        "publication_date": "2024-12-27",
+    })
+    with pytest.raises(ValueError, match="does not name document"):
+        processor.ingest_fr_doc({"document_number": "2024-29957"})
+
+
+def test_real_full_text_url_shape_is_accepted(monkeypatch):
+    """Guard against a path check so strict it DLQs the real corpus."""
+    table = _FakeTable()
+    _stub_ingest(monkeypatch, table, doc_meta={
+        "document_number": "2024-29957",
+        "citation": "89 FR 106064",
+        "full_text_xml_url":
+            "https://www.federalregister.gov/documents/full_text/xml/2024/12/27/2024-29957.xml",
+        "publication_date": "2024-12-27",
+    })
+    monkeypatch.setattr(processor, "_write_corpus",
+                        lambda *a, **k: "chunks/101/2024-29957.jsonl")
+    monkeypatch.setattr(processor, "_put_vectors", lambda chunks: None)
+    monkeypatch.setattr(processor, "_write_chunk_registry_items",
+                        lambda pk, chunks: None)
+    assert processor.ingest_fr_doc({"document_number": "2024-29957"}) == "ingested"
+
+
 def test_response_for_a_different_document_is_refused(monkeypatch):
     """Well-formed but not the document we asked for. Without this check the
     chunk_ids, vector keys and fr_doc_number filter attribute one document's
@@ -169,10 +263,13 @@ def test_response_for_a_different_document_is_refused(monkeypatch):
     _stub_ingest(monkeypatch, table, doc_meta={
         "document_number": "2025-03118",         # asked for 2024-29957
         "citation": "90 FR 10592",
-        "full_text_xml_url": "https://www.federalregister.gov/x.xml",
+        # Internally consistent with the WRONG document, so only the
+        # requested-vs-returned check can catch this one.
+        "full_text_xml_url":
+            "https://www.federalregister.gov/documents/full_text/xml/2025/02/25/2025-03118.xml",
         "publication_date": "2025-02-25",
     })
-    with pytest.raises(ValueError, match="refusing to attribute"):
+    with pytest.raises(ValueError, match="FR API returned document"):
         processor.ingest_fr_doc({"document_number": "2024-29957"})
 
 
@@ -309,6 +406,29 @@ def test_poller_does_not_raise_on_a_genuinely_quiet_day(monkeypatch):
     result = poller.handler({"mode": "daily"}, None)
     assert result["enqueued"] == 0
     assert "rejected" not in result
+
+
+def test_poller_does_not_raise_when_valid_records_are_merely_already_ingested(
+        monkeypatch):
+    """The steady state, and the reason the alarm keys on ACCEPTED not ENQUEUED.
+
+    With a 7-day lookback and a daily schedule, days 2-7 of any document's
+    window have every valid record already in the registry, so `messages` is
+    legitimately empty. Keying the raise on the enqueued count made one junk
+    record fire "the upstream response shape has probably changed" every day
+    until it aged out. Security re-review.
+    """
+    sent = []
+    _poller_stub(monkeypatch, [{"document_number": "2024-29957"},
+                               {"document_number": "2025-03118"},
+                               {"document_number": "2025-00830"},
+                               {"document_number": "../../etc/passwd"}], sent)
+    # Everything valid is already ingested — the normal steady state.
+    monkeypatch.setattr(poller, "_registry_has", lambda pk, sk: True)
+    result = poller.handler({"mode": "daily"}, None)
+    assert result["enqueued"] == 0
+    assert result["rejected_count"] == 1
+    assert sent == []
 
 
 def test_poller_still_returns_on_partial_rejection(monkeypatch):
