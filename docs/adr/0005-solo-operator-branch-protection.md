@@ -39,6 +39,14 @@ Configure protection to what a single-human repo can actually honor.
 status check `eval-gate / unit` (ruff + pytest), block force-push, block
 deletion, no bypass actors.
 
+> **Config drift, recorded 2026-08-07:** applying the above removed the
+> entire `required_status_checks` rule rather than only the `golden-set`
+> context, so `eval-gate / unit` is **not currently required** — a red ruff
+> or pytest does not block merge. The workflow still runs on every PR, so
+> the failure is visible; it just is not a gate. Restoring it is pending.
+> This decision record describes the intended configuration; until the
+> restore lands, the live ruleset is weaker than what is written here.
+
 **Dropped:** `required_approving_review_count` → 0;
 `require_code_owner_review` → false; `eval-gate / golden-set` removed from
 required checks **until M04**, when the staging API and OIDC role exist and
@@ -74,6 +82,9 @@ since M00b finding 5) so `run_evals.py` has an owner of record.
   approved PR" no longer holds for the review dimension.
 - `eval-gate / golden-set` must be restored to required checks at M04.
   Tracked as an M04 exit item; nothing enforces the restoration.
+- `eval-gate / unit` must be restored to required checks (see the drift note
+  above) — an M02 exit item. Two deferred restorations now depend on a human
+  remembering, which is the weakest link in this ADR and is stated as such.
 
 ## Note for anyone reading this repo as a work sample
 The interesting artifact here is not the final config. It is that the
