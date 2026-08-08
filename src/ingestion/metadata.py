@@ -64,9 +64,24 @@ Return ONLY a JSON object, no prose, with this shape:
 """
 
 # Stripped from the payload so ingested text cannot close the envelope early
-# and have the remainder read as prompt. Matches the tags with or without a
-# closing bracket, so a partial "<document" cannot smuggle one either.
-_ENVELOPE_RE = re.compile(r"</?document\b[^>]*>?", re.IGNORECASE)
+# and have the remainder read as prompt. Tolerates a missing closing bracket
+# and internal whitespace ("</ document>", "< /document>"), which are not
+# real tags but are cheap to cover.
+_ENVELOPE_RE = re.compile(r"<\s*/?\s*document\b[^>]*>?", re.IGNORECASE)
+
+
+def _strip_envelope_tags(text: str) -> str:
+    """Remove document tags, to a FIXPOINT.
+
+    A single re.sub pass is not enough: it replaces non-overlapping matches
+    and never re-scans its own output, so a payload can split a tag around a
+    decoy and have the pass reassemble a live delimiter —
+    "</docu</document>ment>" collapses to "</document>". Looping until no
+    match remains closes that. Found by security re-review (HIGH-1a) after
+    the first fix shipped with exactly this bypass."""
+    while _ENVELOPE_RE.search(text):
+        text = _ENVELOPE_RE.sub("", text)
+    return text
 
 
 def _document_digest(parsed_doc: dict, limit: int = 12000) -> str:
@@ -95,7 +110,8 @@ def _document_digest(parsed_doc: dict, limit: int = 12000) -> str:
         if sum(len(p) for p in parts) > limit:
             break
     digest = "\n\n".join(p for p in parts if p)[:limit]
-    return _ENVELOPE_RE.sub("", digest)
+    # After truncation, so a tag bisected by [:limit] is still removed.
+    return _strip_envelope_tags(digest)
 
 
 def _bedrock_invoke(prompt: str) -> str:

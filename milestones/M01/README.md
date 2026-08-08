@@ -106,6 +106,51 @@ to `/dev/stdout`, which does not exist here; and reading UTF-8 FR/eCFR XML
 under the cp1252 default raised decode errors. Both fixed, but they cost
 real time during an otherwise clean deploy.
 
+**8. The ingestion path could have poisoned the amendment graph, and no
+security review had run on it.** The milestone closed with an
+eng-code-reviewer pass only. Running security-reviewer before the merge to
+`main` found a merge-blocking HIGH: document text was concatenated into the
+extraction prompt with no data/instruction boundary, and the digest's labels
+are forgeable (a paragraph beginning `Amendatory instructions:` is
+indistinguishable from the real AMDPAR block). Model output then flowed
+unverified into `sk=SUPERSEDES#<model-chosen target>` — and per CLAUDE.md
+timeline questions are answered from that graph, not by vector similarity,
+so the edge is authoritative, silent, and durable. `META` is the idempotency
+marker, so it would never be re-derived.
+
+**The M00b finding-8 deferral did not cover this**, which is the part worth
+remembering. That acceptance was reasoned from "no tools, no side effects,
+string-matched output." Ingestion inverts all three. A deferral's scope is
+load-bearing, and it does not travel to a path that looks similar.
+
+Fixed before merge: `<document>` envelope with a data-not-instructions
+preamble; `_resolve_fr_citation` now requires registry or FR API confirmation
+rather than accepting anything shaped like a document number;
+`tests/fixtures/fr_injection_probe.xml` plus 13 tests.
+
+**The first fix was itself wrong, and the re-review caught it.** Stripping
+the envelope tags with a single `re.sub` is bypassable: the pass replaces
+non-overlapping matches and never re-scans its output, so
+`</docu</document>ment>` collapses into a live `</document>`. It now strips
+to a fixpoint. I shipped a commit message asserting a property that was
+false — the reason to re-review a security fix is that the fix is code too.
+
+**Residual risk, recorded deliberately:** existence verification proves a
+target is a *real* FR document, not the *right* one. An injection naming a
+genuine but unrelated document number passes the check and still produces a
+false edge. That is inherent to LLM-based extraction; the envelope is the
+only defense. So the SPEC/03 injection traps M00b finding 8 requires should
+probe *that* case, not just the obviously-fake target used here.
+`fr_injection_probe.xml` is the artifact an SME-approved golden-set trap
+should be built from — the golden set is SME-owned, so it could not be added
+in this milestone.
+
+Deferred to before M02 close (recorded, not fixed): unvalidated dates and
+`doc_type`, no scheme/host allowlist on fetch URLs, unvalidated ids reaching
+S3 keys and DynamoDB partition keys, and no document size or chunk cap.
+MEDIUM-1 couples directly to M02 — it filters on the metadata left
+unvalidated.
+
 **What I'd redo:** verify table extraction against the *fixture* before
 writing the chunker, not after. Finding 2 was invisible until someone
 grepped the output for text that should obviously have been there — and the
