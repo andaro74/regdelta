@@ -12,6 +12,17 @@ A delay of the effective date does NOT move the compliance date unless the
 notice says so explicitly. (Demo trap: "healthy" delay to 2025-04-28 left
 compliance at 2028-02-25.)
 
+**Many documents set no compliance date at all.** A repeal or delisting states
+only an effective date: after it, the listing is gone and the product is
+adulterated. The operative deadline for a regulated party is then *derived*
+from the repeal — it is NOT a compliance_date to be stored. Per ADR-0006 a
+document carries only the dates it establishes, so `compliance_date` stays
+null and a compliance-date range filter returns nothing for such a document.
+Deriving and explaining the real deadline is the timeline agent's job
+(SPEC/03), and the verdict must say which kind of date it is reasoning from.
+Recording a repeal's effective date as a compliance date would commit exactly
+the conflation this product exists to expose.
+
 ## Amendatory instructions
 FR rules modify the CFR via imperative edits: "In § 101.65, revise
 paragraph (d)(2)…", actions ∈ {add, revise, remove, redesignate}. Parse to
@@ -83,6 +94,11 @@ number "2024-29957". Every verdict row carries ≥1 of each when applicable.
 ## Known demo facts (ground truth for evals)
 - Healthy rule: pub 2024-12-27, effective delayed to 2025-04-28,
   compliance 2028-02-25 (unchanged by the delay).
-- Red No. 3: order 2025-01-15; food compliance 2027-01-15; ingested drugs
-  2028-01-18; pre-compliance-date manufactured inventory not adulterated;
+- Red No. 3: order 2025-00830 / 90 FR 4628, **published 2025-01-16**
+  (FDA announced it on the 15th — the announcement date is NOT the
+  publication date and appears nowhere in the document; do not cite it);
+  food use **effective** 2027-01-15; ingested drugs **effective** 2028-01-18.
+  This order sets **no compliance date** — see "The three dates" above.
+  Inventory manufactured before the effective date is not adulterated;
   TTB formula re-approval required if an approved alcohol formula changes.
+  Stayed 2025-02-18 → 2026-08-05, dates confirmed unchanged (91 FR 50475).

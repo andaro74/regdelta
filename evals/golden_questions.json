@@ -51,9 +51,11 @@
     {
       "id": "q08", "subset": ["timeline"],
       "question": "List publication, effective, and compliance dates for the Red No. 3 revocation as they apply to food.",
-      "must_contain": ["January 15, 2027"],
-      "must_contain_any": [["January 15, 2025", "2025-01-15"]],
-      "must_not_contain": ["January 18, 2028 applies to food"]
+      "note": "SME correction 2026-08-08. This asked for the publication date but accepted 'January 15, 2025', which is FDA's ANNOUNCEMENT date. 90 FR 4628 published 2025-01-16, and the string 'January 15, 2025' appears nowhere in the document — so the old assertion failed a correct, citable answer and passed an uncitable one. It is also the likeliest cause of q08 being the only question that flapped in the M00b baseline (1/3); see milestones/M00b. Do not 'correct' this back. The order states EFFECTIVE dates and sets no compliance date at all (ADR-0006), so an answer that says so is right; must_contain_any below accepts either that observation or a derived deadline, but must_not_contain forbids asserting a compliance date the order does not set.",
+      "must_contain": ["January 15, 2027", "January 16, 2025"],
+      "must_contain_any": [["effective", "takes effect"],
+                           ["no compliance date", "does not set a compliance date", "no separate compliance date", "deadline is the effective date"]],
+      "must_not_contain": ["January 18, 2028 applies to food", "January 15, 2025"]
     },
     {
       "id": "q09", "subset": ["honesty"],

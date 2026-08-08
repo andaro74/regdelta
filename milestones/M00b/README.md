@@ -28,7 +28,7 @@ questions are stable; one flaps.
 | q05 | retrieval | ❌ fail | 0/3 stable | content correct, **cited nothing** |
 | q06 | retrieval | ✅ pass | 3/3 stable | passes only after ADR-0004 |
 | q07 | applicability | ❌ fail | 0/3 stable | no company-profile reasoning |
-| q08 | timeline | ❌ fail | **1/3 FLAPPY** | see finding 3 |
+| q08 | timeline | ❌ fail | **1/3 FLAPPY** | see finding 3 — flap was **assertion-side**, not model-side; question corrected 2026-08-08 |
 | q09 | honesty | ✅ pass | 3/3 stable | weak accept list — see finding 4 |
 | q10 | hitl | ❌ fail | 0/3 stable | no HITL path exists; correct failure |
 
@@ -85,6 +85,28 @@ already records that. So a correct answer fails and a wrong one passes.
 Compounding it, effective and compliance coincide for food, so asking for
 three distinct dates is ambiguous. Both the flapping and the direction of
 error point at the question, not the model. SME-owned; drafted, not applied.
+
+> **RESOLVED 2026-08-08 — human SME sign-off.** q08 corrected: the accepted
+> publication date is now `January 16, 2025`, and `January 15, 2025` is
+> explicitly forbidden. Confirmed against the live FR API, and the string
+> `January 15, 2025` appears **nowhere** in 2025-00830 — so the old assertion
+> did not merely accept a wrong date, it required a claim the corpus cannot
+> cite, which CLAUDE.md treats as a bug rather than a style issue.
+>
+> One part of this finding was itself wrong: **effective and compliance do
+> NOT coincide for food.** The order states only *effective* dates and sets no
+> compliance date at all. The real deadline must be derived from the repeal
+> (ADR-0006, and the regulatory-domain skill). q08 now accepts an answer that
+> says so and forbids asserting a compliance date the order never set.
+>
+> **Consequence for this scorecard, stated plainly: q08's recorded result is
+> not trustworthy as a measurement.** Its 1/3 flap was assertion-side, so the
+> baseline's `3/10` contains one question decided partly by coin-flip. The
+> scorecard is NOT being rewritten — it is frozen evidence of what was
+> actually measured, and editing it would be worse than annotating it. But
+> **every future "N/10 vs the 3/10 baseline" claim must carry this caveat**,
+> and a like-for-like comparison should either exclude q08 or note that its
+> baseline value was measured against a defective assertion (ADR-0002).
 
 **4. q09 cannot distinguish success from refusal.** Its accept list
 includes `"cannot determine"`, so an honest refusal scores identically to
