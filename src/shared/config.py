@@ -51,7 +51,20 @@ ALLOWED_FETCH_SCHEMES = frozenset({"https"})
 
 # Response size cap. `r.read()` was unbounded, so one oversized (or hostile)
 # response could exhaust Lambda memory before anything validated it.
-MAX_FETCH_BYTES = int(os.environ.get("MAX_FETCH_BYTES", str(24 * 1024 * 1024)))
+#
+# 8 MiB, lowered from 24 MiB. The cap bounds the *source* bytes, not memory:
+# ET.fromstring builds a tree several times the source size, then chunks, then
+# embeddings — all inside a 1024 MB processor (infra/core/core_stack.py:140).
+# libexpat's billion-laughs guard is active but only caps amplification at
+# ~100x above an 8 MiB threshold, so a 24 MiB source was not bounded to 24 MiB
+# of parsed text. Flagged by security review of this branch.
+#
+# 8 MiB is sized off the real corpus, not off the hazard: the largest demo
+# document is the "healthy" final rule at 389 chunks (~930 KB of chunk text,
+# a few MB of raw FR XML). That is several times headroom while keeping the
+# parsed tree comfortably inside the function. Raise this only together with
+# memory_size, and only against a document that actually needs it.
+MAX_FETCH_BYTES = int(os.environ.get("MAX_FETCH_BYTES", str(8 * 1024 * 1024)))
 
 # Chunk cap. embed() issues one Bedrock call per chunk, so chunk count is a
 # direct spend multiplier on a number derived from fetched document length.

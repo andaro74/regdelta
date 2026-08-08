@@ -53,3 +53,20 @@ combine-as-imports = true
 # CDK stacks are constructor-heavy and legitimately reference construct IDs
 # that are not snake_case.
 "infra/**" = ["N803", "N806"]
+
+# tests/ came under lint at M02. It was previously outside the CI ruff target
+# entirely, which meant ~700 lines of new test code landed unlinted — and the
+# B023 late-binding rule this config exists for is most common in exactly the
+# closure-heavy fixtures tests are made of. B, F and the rest now apply here.
+#
+# N803: the fakes mimic boto3's real signatures (`get_item(Key=...)`,
+# `put_item(Item=...)`, `send_message(QueueUrl=..., MessageBody=...)`).
+# Renaming them to snake_case would make the stand-ins stop matching the API
+# they stand in for, which is worse than the naming violation.
+"tests/**" = ["N803"]
+
+# RUF001 flags ambiguous Unicode in strings. In this file the Arabic-Indic,
+# Devanagari and fullwidth digits ARE the test payloads: they are what `\d`
+# accepted before the re.ASCII fix, and spelling them with escapes would hide
+# the very thing under test. Scoped to the one file that needs it.
+"tests/test_input_validation.py" = ["N803", "RUF001"]

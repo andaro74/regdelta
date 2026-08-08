@@ -132,14 +132,29 @@ def handler(event, context):
                     for d in _new_fr_docs(since)]
         messages += [{"kind": "cfr_section", **v} for v in _new_cfr_versions()]
 
+    # Total rejection is a contract break, not a data-quality blip: it means
+    # the FR/eCFR response shape changed or records are being injected, and
+    # ingestion has silently stopped. Raising is what makes it visible —
+    # otherwise the handler returns `enqueued: 0` with a print, indistinguish-
+    # able from an ordinary quiet week to anything but a human reading
+    # CloudWatch. A raise surfaces on the Lambda error metric, which can carry
+    # an alarm. Engineering review; a proper EMF metric for the partial case
+    # is infra work and belongs with SPEC/05's observability.
+    if _rejected and not messages:
+        raise ValueError(
+            f"every record this poll failed validation ({len(_rejected)} "
+            f"rejected, 0 enqueued) — the upstream response shape has probably "
+            f"changed: {_rejected[:3]}")
+
+    # Checked after the raise above, so a total-rejection poll enqueues
+    # nothing. `enqueued` in the result below counts what was actually sent.
     sqs = _client("sqs")
     for msg in messages:
         sqs.send_message(QueueUrl=config.QUEUE_URL, MessageBody=json.dumps(msg))
+
     result = {"mode": mode, "enqueued": len(messages),
               "messages": messages}
-    # Reported, never silent: a validation rejection here means the FR/eCFR
-    # response shape changed or something is injecting records, and either way
-    # "enqueued: 0" alone would read as an ordinary quiet day.
+    # Partial rejection is reported, never silent.
     if _rejected:
         result["rejected"] = list(_rejected)
         result["rejected_count"] = len(_rejected)

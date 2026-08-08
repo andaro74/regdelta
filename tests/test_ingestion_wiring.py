@@ -275,15 +275,61 @@ def test_poller_skips_a_malformed_id_and_reports_it(monkeypatch):
 
 def test_poller_rejections_do_not_leak_across_invocations(monkeypatch):
     """`_rejected` is module state and Lambda reuses warm containers, so a
-    stale list would inflate the next invocation's report."""
+    stale list would inflate the next invocation's report — including turning a
+    later clean poll into a spurious total-rejection raise."""
     sent = []
-    _poller_stub(monkeypatch, [{"document_number": "bad id"}], sent)
+    _poller_stub(monkeypatch, [{"document_number": "2024-29957"},
+                               {"document_number": "bad id"}], sent)
     first = poller.handler({"mode": "daily"}, None)
     assert first["rejected_count"] == 1
 
-    _poller_stub(monkeypatch, [{"document_number": "2024-29957"}], sent)
+    _poller_stub(monkeypatch, [{"document_number": "2025-03118"}], sent)
     second = poller.handler({"mode": "daily"}, None)
     assert "rejected" not in second
+    assert second["enqueued"] == 1
+
+
+def test_poller_raises_when_every_record_is_rejected(monkeypatch):
+    """Total rejection means the upstream shape changed and ingestion has
+    stopped. Returning `enqueued: 0` normally is indistinguishable from a quiet
+    week to anything but a human reading CloudWatch; a raise reaches the Lambda
+    error metric, which an alarm can watch."""
+    sent = []
+    _poller_stub(monkeypatch, [{"document_number": "../../etc/passwd"},
+                               {"document_number": "also bad"}], sent)
+    with pytest.raises(ValueError, match="every record this poll failed"):
+        poller.handler({"mode": "daily"}, None)
+    assert sent == []
+
+
+def test_poller_does_not_raise_on_a_genuinely_quiet_day(monkeypatch):
+    """Zero results with zero rejections is normal and must stay silent."""
+    sent = []
+    _poller_stub(monkeypatch, [], sent)
+    result = poller.handler({"mode": "daily"}, None)
+    assert result["enqueued"] == 0
+    assert "rejected" not in result
+
+
+def test_poller_still_returns_on_partial_rejection(monkeypatch):
+    """One bad record among good ones is a data-quality blip, not a contract
+    break — report it and keep going."""
+    sent = []
+    _poller_stub(monkeypatch, [{"document_number": "2024-29957"},
+                               {"document_number": "bad"}], sent)
+    result = poller.handler({"mode": "daily"}, None)
+    assert result["enqueued"] == 1
+    assert result["rejected_count"] == 1
+
+
+def test_fetch_cap_is_sized_for_the_real_corpus_and_the_function(monkeypatch):
+    """The cap bounds source bytes; ET builds a tree several times that inside
+    a 1024 MB function. Pinning both ends so neither drifts silently."""
+    assert config.MAX_FETCH_BYTES == 8 * 1024 * 1024
+    # Comfortably over the largest real FR document, well under the point
+    # where the parsed tree threatens the processor's memory.
+    assert config.MAX_FETCH_BYTES > 4 * 1024 * 1024
+    assert config.MAX_FETCH_BYTES < 16 * 1024 * 1024
 
 
 def test_poller_caps_pagination_on_a_self_referencing_next_page(monkeypatch):

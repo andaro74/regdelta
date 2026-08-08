@@ -8,13 +8,14 @@ REGION       ?= us-west-2
 SSM_ENDPOINT := /regdelta/search/endpoint
 CDK          := cd infra && npx cdk
 
-.PHONY: help bootstrap core up down status smoke evals test demo ingest-backfill synth diff
+.PHONY: help bootstrap core up down status smoke evals lint test demo ingest-backfill synth diff
 
 help:
 	@echo "make core            - deploy/update persistent stack"
 	@echo "make up / make down  - create/destroy AOSS hot tier"
 	@echo "make status          - tier state"
 	@echo "make smoke / evals   - golden-set checks (definition of done)"
+	@echo "make lint            - ruff (same scope as the eval gate)"
 	@echo "make test            - pytest"
 	@echo "make ingest-backfill - one-shot backfill of the demo corpus"
 	@echo "make demo            - up + smoke + print demo URL"
@@ -55,6 +56,11 @@ baseline:
 	  sleep 2; \
 	  python evals/run_evals.py --mode naive --api-url http://127.0.0.1:8000 --record; \
 	  status=$$?; kill $$(cat .baseline.pid); rm -f .baseline.pid; exit $$status
+
+# Same scope as the eval-gate `unit` job, so a green local run means a green
+# gate. Keep the two in step.
+lint:
+	ruff check src evals infra tests
 
 test:
 	pytest -q

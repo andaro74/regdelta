@@ -25,7 +25,12 @@ jobs:
       # the day of the pip resolve. Rule selection lives in ruff.toml, also
       # explicit, for the same reason.
       - run: pip install ruff==0.16.2 pytest==9.1.1 boto3==1.43.67
-      - run: ruff check src evals infra
+      # `tests` added at M02. It was outside this target, so test code was the
+      # one unlinted directory in the repo — and B023 late-binding closures,
+      # the rule ruff.toml exists for, are most common in test fixtures.
+      # Scoped per-file-ignores for the boto3-mimicking fakes and the
+      # deliberate Unicode payloads live in ruff.toml.
+      - run: ruff check src evals infra tests
       - run: pytest -q
 
   golden-set:
