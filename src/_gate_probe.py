@@ -6,9 +6,10 @@ has yet been tested against `required_status_checks: [{context: "unit"}]`.
 A required check whose context string does not match the reported check-run
 name sits pending forever — which is exactly how PR #1 deadlocked.
 
-This file contains a deliberate F401. Expected: `unit` fails, the PR reports
-BLOCKED, and the gate is proven to gate. Delete this file and close the PR
-once observed; it must never reach main.
-"""
+Two-phase probe, because BLOCKED alone is ambiguous — an unmatched context
+sits pending and also reports BLOCKED.
 
-import json  # noqa-free on purpose: unused, trips F401
+Phase 1 (commit 1): deliberate F401 -> unit FAILS -> expect BLOCKED.
+Phase 2 (this commit): violation removed -> unit PASSES -> expect CLEAN.
+Only CLEAN in phase 2 proves the context resolves. Delete and close after.
+"""
