@@ -8,23 +8,26 @@ and re-verified end-to-end through the API at M04 (SPEC/04).
 ## Contract (src/retrieval/router.py)
 retrieve(query: str, filters: Filters, k: int) -> list[Chunk]
 - Filters: cfr_title/part, date ranges (pub/effective/compliance), doc_type.
+- Router: SSM /regdelta/search/endpoint present+reachable → AOSS tier;
+  else → S3 Vectors tier. Cache SSM lookup across warm invocations (60s TTL).
 
 ### Date-filter semantics (ADR-0006)
 A date filter selects documents that **establish** that date, never documents
 that merely mention it. Concretely: a `compliance_date` range covering 2028
 returns the "healthy" final rule's chunks (2024-29957, which sets 2028-02-25)
 and **not** the delay notice's (2025-03118, which sets no compliance date at
-all). The notice's chunks carry `compliance_date = null`.
+all).
 
 This is not a recall loss — a user asking what is due in 2028 still gets the
 final rule. Returning the notice as well would assert that *the delay* is what
 makes 2028 operative, which is the effective-vs-compliance conflation q01
 exists to trap; the filter would manufacture the error the trap tests for.
+The claim is pinned by the probe pair under "Probe set floor", not left as an
+assertion.
 
-The probe set must include a probe that pins this, and a corpus whose stored
-`compliance_date` for 2025-03118 is non-null fails M02 regardless of recall.
-- Router: SSM /regdelta/search/endpoint present+reachable → AOSS tier;
-  else → S3 Vectors tier. Cache SSM lookup across warm invocations (60s TTL).
+This section states observable retrieval behaviour only. The stored field
+shape that produces it belongs to SPEC/01 and ADR-0006; the corpus
+precondition is Done-when criterion 5.
 
 ## Tier A — S3 Vectors (always-on)
 - QueryVectors on index `chunks` with metadata pre-filter, topK=k*3.
@@ -50,7 +53,8 @@ src/retrieval/{router.py, s3vectors_tier.py, aoss_tier.py, fusion.py}
 infra/lambdas/reindex/handler.py (implement its TODO)
 tests/test_reindex_parity.py (new — the partial-index failure test)
 evals/retrieval_truth.json (new — see Done when)
-evals/run_retrieval.py (new — harness, calls router.retrieve() in-process)
+evals/run_retrieval.py (new — harness, calls router.retrieve() in-process;
+  also hosts the criterion-5 date-attribution preflight)
 Makefile (new targets `retrieval-evals` and `retrieval-parity`; `up`
   decoupled from the golden set)
 
@@ -59,7 +63,10 @@ Answer synthesis and every prose assertion (M04) · trap scoring of any
 kind (see "No trap score" below) · agent graph, HITL, and timeline /
 amendment-graph reasoning (M03) · reranking unless it earns the measured
 clause under "Optional" above · index tuning beyond what the probe set
-requires.
+requires · **the extractor fix and re-ingestion that ADR-0006 requires** —
+M02 *gates on* the corpus being correct (criterion 5) but does not produce
+the correction; the producer is SPEC/01's · **the amendment-graph traversal
+that reaches 2028-02-25 from the delay notice** (M03).
 
 ## Done when
 Measured at the retrieval contract, not through an answering endpoint.
@@ -96,8 +103,30 @@ non-zero on 2 and 3. **All three steps must run for (A) to be satisfied.**
    edit requiring PM approval. Full-set identity is *not* required: BM25
    hybrid and vector+GSI fusion legitimately differ in the tail. Criterion
    1 is what must hold identically.
+
+   **Filtered probes: Jaccard is computed over the in-filter result set
+   only.** A filtered probe returns few in-filter hits and a long arbitrary
+   tail, and the two tiers' tails legitimately differ (see above) — so one
+   filter probe could drag the per-probe minimum under 0.60 and fail M02 for
+   a reason unrelated to correctness. Settled here, **before first
+   measurement**, precisely because the floor may not be renegotiated
+   afterwards. Pure-negative probes (empty `expected_chunk_ids`) contribute
+   no Jaccard term, mirroring their carve-out in criterion 1.
 4. **MRR: reported, not gating.** Instrumentation for M03 to compare
    against. It is not a criterion and may never be cited as one.
+5. **Date attribution (gating, preflight).** Before any probe runs, the
+   harness asserts that document `2025-03118`'s compliance dates are
+   **empty** — `[]` in `corpus/parsed/2025-03118.json`, `compliance_date`
+   absent or null on every line of `corpus/chunks/101/2025-03118.jsonl`, and
+   `compliance_dates` equal to `[]` in its DynamoDB `META` item. Any of the
+   three non-empty → exit non-zero with `date_attribution_failed`, before
+   recall is computed. Runs on both tiers. A corpus that fails this fails M02
+   regardless of recall. Ruling and rationale: ADR-0006.
+
+   > Says **empty**, not "non-null". An earlier draft said a non-null value
+   > fails — but ADR-0006 prescribes `[]`, which *is* non-null, so the exact
+   > value the SME approved would have failed this criterion. It also now
+   > names the three stores; "stored" alone was ambiguous across four.
 
 **(B) Hydration count-parity — AOSS only, separate from (A).** Hydration
 exists on one tier and is a deploy-time property, so it is not part of the
@@ -123,6 +152,25 @@ distractor probes** — e.g. the drugs-only Red No. 3 compliance chunk
 distractors a precision collapse is invisible, and a 3-probe set that
 engineering authored, selected k for, and needs 100% on is self-certifying.
 
+**The date-attribution probe PAIR (both count toward the ≥8 floor).** One
+probe would pin only half of it:
+
+- **(a) negative** — `filters` carrying a `compliance_date` range covering
+  2028; `must_not_return` lists every `2025-03118` chunk id;
+  `expected_chunk_ids` lists the `2024-29957` chunk(s) carrying 2028-02-25.
+  Counts toward the ≥2 distractor floor.
+- **(b) positive** — an **unfiltered** query asking whether the compliance
+  date changed, with `expected_chunk_ids` including the delay notice's
+  "compliance date is unchanged" chunk.
+
+(b) is not optional garnish. ADR-0006 states the prose remains reachable by
+BM25/semantic retrieval "which is how q01 should assemble it" — so (b) is what
+turns "this is not a recall loss" from a claim into an assertion, and it is
+q01's retrieval precondition at M04. Without it, retrieval could quietly
+deprioritise the notice, M02 goes green, q01 fails at M04, and ADR-0006's own
+escape hatch ("the fix belongs in amendment-graph traversal") gets reached for
+under deadline.
+
 ### Note on `make up`
 `make up` currently runs `make smoke` → `run_evals.py` → the SPEC/04 API,
 so the AOSS run of (A) cannot execute while that coupling exists. M02
@@ -134,7 +182,8 @@ rather than keeping it).
 Recall@8 and MRR are retrieval metrics, **not trap scores**. M02 reports
 no trap score — the M00b q03 tightening is still open, and SPEC/00b bars
 any later milestone from reporting one until it closes. q01 appears here
-as a recall probe only; the recorded artifact must say so.
+as a recall probe only; the recorded artifact must say so. The ADR-0006
+probe pair is likewise a recall/precision probe, not a trap score.
 
 ### Why not the golden set here
 `run_evals.py` resolves an API URL unconditionally (`run_evals.py:124`,
@@ -148,9 +197,17 @@ relocated, not dropped, and SPEC/04 is where that becomes auditable.
 
 ### Ground truth ownership
 `evals/retrieval_truth.json` is a NEW file: `{probe_id, question_id, query,
-expected_chunk_ids[], must_not_return[], corpus_snapshot, note}`. It is
-**engineering-authored and SME-countersigned** via the `/evals/` rule in
-(C). Authoring norm: which chunk carries a string is a corpus fact,
+filters, expected_chunk_ids[], must_not_return[], corpus_snapshot, note}`.
+
+`filters` is an object matching the Contract's `Filters` parameter, or `null`
+for an unfiltered probe; the harness passes it to `router.retrieve()`
+unmodified. It was missing from the first draft of this schema — no Done-when
+criterion had exercised filters before criterion 5, which made the
+date-attribution probe unauthorable against the stated shape. Two engineers
+would have produced two defensible probe sets.
+
+The file is **engineering-authored and SME-countersigned** via the `/evals/`
+rule in (C). Authoring norm: which chunk carries a string is a corpus fact,
 verifiable by reading the chunk, so those entries should pass review on
 inspection. The carve-outs below name where SME judgment is load-bearing
 rather than confirmatory.
@@ -177,7 +234,17 @@ Two carve-outs where the SME's signature is the substance, not a formality:
   (SPEC/00), the same class as q01. So is any judgment about which source
   is *authoritative*.
 
-`corpus_snapshot` records the corpus the file was authored against. An
+A probe whose distinction is **already settled by an accepted ADR** cites
+that ADR in `note` and inherits its sign-off; the carve-out is satisfied by
+the citation, not by a second signature. The date-attribution pair is such a
+case — ADR-0006 carries human SME approval. Without this rule the SME is
+either asked to re-approve a ruling they just signed, or engineering
+self-approves on the theory that the ADR covers it.
+
+`corpus_snapshot` records the corpus the file was authored against, and must
+be **at or after the re-ingestion required by ADR-0006 and ADR-0007** —
+re-ingestion changes chunk ids exactly as a chunker change does, so probes
+authored against an earlier snapshot are not valid evidence for M02. An
 expected chunk_id absent from `corpus/chunks/` is a **hard failure, never
 a skip** — chunk ids change when the chunker changes.
 
