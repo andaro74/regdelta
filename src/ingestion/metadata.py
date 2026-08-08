@@ -152,7 +152,24 @@ def _normalize(raw: dict) -> dict:
     # direction: an out-of-enum value does not error at query time, it just
     # matches no filter, so the document is missing from exactly the queries
     # meant to surface it. Deferred as MEDIUM-1 at M01 close.
-    doc_type = validate.doc_type(raw["doc_type"], field="model doc_type")
+    #
+    # `.strip().lower()` first, matching what `action` and `scope` already do
+    # two blocks below. Without it a Bedrock formatting wobble on this one
+    # field DLQ'd the whole document while the identical wobble on the
+    # adjacent fields was absorbed — inconsistent strictness rather than a
+    # deliberate policy. Caught by engineering review.
+    doc_type = validate.doc_type(
+        str(raw["doc_type"]).strip().lower(), field="model doc_type")
+
+    # cfr_section is produced deterministically by the eCFR branch of
+    # extract(), which never reaches _normalize. Accepting it from the model
+    # would let a Federal Register rule be labelled a CFR snapshot — a
+    # doc_type filter for "the current regulation text" would then return a
+    # rule document. The enum is shared; this path's subset is not.
+    if doc_type == "cfr_section":
+        raise validate.ValidationError(
+            "model returned doc_type='cfr_section' for a Federal Register "
+            "document; that value is reserved for eCFR snapshots")
 
     def dates(key):
         out = []

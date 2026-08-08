@@ -10,6 +10,7 @@ the processor re-checks before writing).
 import json
 import urllib.parse
 
+from ingestion import processor
 from shared import config, validate
 from shared.fetch import get_json
 
@@ -46,7 +47,13 @@ def _new_fr_docs(since: str) -> list[str]:
     }
     url = f"{config.FR_API}/documents.json?{urllib.parse.urlencode(params, doseq=True)}"
     docs = []
-    while url:
+    # `next_page_url` is response-controlled and check_url constrains only the
+    # host, not the hop count — a self-referencing next_page_url on an
+    # allowlisted host would loop until the Lambda timeout with `docs` and
+    # `_rejected` growing unbounded. Same family as the MAX_FETCH_BYTES cap.
+    for _ in range(config.MAX_POLL_PAGES):
+        if not url:
+            break
         data = get_json(url)
         for r in data.get("results", []):
             # Validated here, at the boundary, not where it becomes a key.
@@ -59,6 +66,12 @@ def _new_fr_docs(since: str) -> list[str]:
         # `next_page_url` is response-controlled; get_json re-checks the
         # allowlist on it (and on any redirect) before opening a connection.
         url = data.get("next_page_url")
+    else:
+        if url:
+            raise ValueError(
+                f"FR document list exceeded MAX_POLL_PAGES "
+                f"({config.MAX_POLL_PAGES}); refusing to keep following "
+                "response-supplied next_page_url")
     return [d for d in docs if not _registry_has(f"DOC#{d}", "META")]
 
 
@@ -70,16 +83,13 @@ def _new_cfr_versions() -> list[dict]:
         section = validate.cfr_section(section)
         data = get_json(f"{config.ECFR_API}/versions/title-{title}.json"
                         f"?section={section}")
-        dates = []
-        for v in data.get("content_versions", []):
-            # A version date becomes a DynamoDB sort key (VERSION#<date>) and
-            # a path segment in the eCFR full-text URL. max() over unvalidated
-            # strings also picks the lexicographic maximum, so one malformed
-            # entry could win and mask the real latest version.
-            try:
-                dates.append(validate.iso_date(v.get("date")))
-            except validate.ValidationError as e:
-                _rejected.append(str(e))
+        # Shared with processor.latest_version_date so the two cannot drift
+        # apart again: the poller enqueuing a message the processor refuses is
+        # a silent daily DLQ. A version date becomes a DynamoDB sort key
+        # (VERSION#<date>) and a path segment in the eCFR full-text URL.
+        dates, rejected = processor.valid_version_dates(
+            data.get("content_versions"))
+        _rejected.extend(rejected)
         if not dates:
             continue
         latest = max(dates)

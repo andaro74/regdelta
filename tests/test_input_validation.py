@@ -50,9 +50,53 @@ def test_doc_number_rejects_key_hostile_input(value):
         validate.doc_number(value)
 
 
-@pytest.mark.parametrize("value", ["2024-29957", "2025-03118", "05-1234"])
+@pytest.mark.parametrize("value", [
+    "2024-29957", "2025-03118", "05-1234", "94-30245", "2010-1234",
+    # Letter-prefixed numbers the FR API returns for roughly 1994-2011. The
+    # first version rejected these, so a supersedes target naming a pre-2011
+    # rule would fail to resolve and DLQ. Flagged by engineering review.
+    "E9-12345", "X05-1234", "C1-2011-1234",
+])
 def test_doc_number_accepts_real_fr_numbers(value):
     assert validate.doc_number(value) == value
+
+
+# `\d` in a str pattern is Unicode category Nd, so the first version accepted
+# all of these — and via parse_fr_xml's doc_id they reached vector keys and
+# CHUNK# sort keys. Fixed with re.ASCII / explicit [0-9]. Security review.
+UNICODE_DIGIT_IDS = [
+    "٢٠٢٤-٢٩٩٥٧",  # Arabic-Indic
+    "२०२४-२९९५७",  # Devanagari
+    "２０２４-２９９５７",  # fullwidth
+]
+
+
+@pytest.mark.parametrize("value", UNICODE_DIGIT_IDS)
+def test_doc_number_rejects_unicode_digits(value):
+    with pytest.raises(validate.ValidationError):
+        validate.doc_number(value)
+
+
+def test_cfr_title_and_section_reject_unicode_digits():
+    with pytest.raises(validate.ValidationError):
+        validate.cfr_title("２１")          # fullwidth "21"
+    with pytest.raises(validate.ValidationError):
+        validate.cfr_section("١٠١.٦٥")
+
+
+def test_doc_number_rejects_a_trailing_newline():
+    r"""`\Z` is absolute end-of-string; `$` would match before a trailing
+    newline and let "2024-29957\n" through."""
+    with pytest.raises(validate.ValidationError):
+        validate.doc_number("2024-29957\n")
+
+
+def test_cfr_part_accepts_real_parts_and_rejects_key_hostile_input():
+    for value in ("101", "74", "1308"):
+        assert validate.cfr_part(value) == value
+    for value in ("101/..", "101#", "１０１", "", "101.65"):
+        with pytest.raises(validate.ValidationError):
+            validate.cfr_part(value)
 
 
 def test_doc_number_rejects_non_strings():
@@ -84,8 +128,16 @@ def test_fr_citation_accepts_real_citations(value):
     assert validate.fr_citation(value) == value
 
 
-@pytest.mark.parametrize("value", ["89 FR 106064#DOC", "89 FR", "FR 106064",
-                                   "89 fr 106064", "", "89 FR 106064 extra"])
+@pytest.mark.parametrize("value", [
+    "89 FR 106064#DOC", "89 FR", "FR 106064", "89 fr 106064", "",
+    "89 FR 106064 extra",
+    # `\s+` matched all of these. The resulting partition key can never be
+    # matched by a lookup on the normalized citation, so supersedes resolution
+    # would fall through to the API path forever without erroring. Fixed with
+    # a literal single space. Security review.
+    "89\nFR\n106064", "89\tFR\t106064", "89 FR 106064",
+    "89  FR  106064", "89 FR 106064\n",
+])
 def test_fr_citation_rejects_key_hostile_input(value):
     with pytest.raises(validate.ValidationError):
         validate.fr_citation(value)
@@ -375,6 +427,29 @@ def test_normalize_rejects_out_of_enum_doc_type():
     doc = _delay_doc()
     with pytest.raises(validate.ValidationError, match="doc_type"):
         metadata.extract(doc, invoke=lambda p: _model_output(doc_type="delay"))
+
+
+@pytest.mark.parametrize("value", ["Final_Rule", "FINAL_RULE", " final_rule ",
+                                   "final_rule\n"])
+def test_normalize_absorbs_case_and_whitespace_like_action_and_scope(value):
+    """`action` and `scope` already did `.lower()`. doc_type comparing exactly
+    meant a Bedrock formatting wobble on one field DLQ'd the whole document
+    while the same wobble on the adjacent fields was absorbed — inconsistent
+    strictness rather than policy. Engineering review."""
+    doc = _delay_doc()
+    meta = metadata.extract(doc, invoke=lambda p: _model_output(doc_type=value))
+    assert meta["doc_type"] == "final_rule"
+
+
+def test_normalize_rejects_cfr_section_from_the_model():
+    """cfr_section is the eCFR branch's deterministic value and never passes
+    through _normalize. Accepting it here would label a Federal Register rule
+    as a CFR snapshot, so a doc_type filter for current regulation text would
+    return a rule document."""
+    doc = _delay_doc()
+    with pytest.raises(validate.ValidationError, match="reserved for eCFR"):
+        metadata.extract(doc, invoke=lambda p: _model_output(
+            doc_type="cfr_section"))
 
 
 def test_normalize_rejects_a_malformed_effective_date():

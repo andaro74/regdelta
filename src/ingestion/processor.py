@@ -318,16 +318,30 @@ def _resolve_fr_citation(target: str) -> str:
         raise ValueError(f"supersedes target {target!r} did not confirm against "
                          "the FR API")
 
+    # `target` is model output and reaches a partition key below. The write
+    # side already validated this shape; validating here too keeps the read
+    # and write paths symmetric and turns a malformed target into a legible
+    # error instead of a wasted API round trip.
+    validate.fr_citation(target, field="supersedes target")
+
     item = _client("registry").get_item(
         Key={"pk": f"FRCITE#{target}", "sk": "DOC"}).get("Item")
     if item:
-        return item["doc_number"]
+        # Both returns below become `SUPERSEDES#<doc_number>` — a DynamoDB
+        # sort key on the amendment graph, which CLAUDE.md designates
+        # authoritative for timeline answers. The first pass of this branch
+        # validated the id the *caller* supplied and the id `parse_fr_xml`
+        # read back, but missed these two: same deferral, same source class.
+        # Found independently by both role-gate reviews.
+        return validate.doc_number(item["doc_number"],
+                                   field="registry doc_number")
     q = urllib.parse.urlencode({"conditions[term]": f'"{target}"', "per_page": 5,
                                 "fields[]": ["document_number", "citation"]}, doseq=True)
     results = json.loads(_get(f"{config.FR_API}/documents.json?{q}")).get("results", [])
     for r in results:
         if r.get("citation") == target:
-            return r["document_number"]
+            return validate.doc_number(r["document_number"],
+                                       field="FR search result document_number")
     raise ValueError(f"cannot resolve supersedes target {target!r} to an FR "
                      "document number")
 
@@ -346,6 +360,24 @@ def ingest_fr_doc(msg: dict) -> str:
 
     doc_meta = json.loads(_get(
         f"{config.FR_API}/documents/{doc_number}.json"))
+
+    # The response must be about the document we asked for. parse_fr_xml
+    # validates that the returned id is *well-formed*, which is a different
+    # property: with only that check, a response carrying another document's
+    # number produced chunk_ids, vector keys and `fr_doc_number` filter values
+    # attributing doc B's text to doc A, while the S3 keys and the DynamoDB pk
+    # used the requested id. Retrieval would then answer with the delay rule's
+    # paragraphs cited to the healthy final rule — a confident wrong citation,
+    # which CLAUDE.md calls a bug rather than a style issue. Caught by security
+    # review, reproduced against tests/fixtures/fr_2025-03118_delay.xml.
+    returned = validate.doc_number(doc_meta.get("document_number"),
+                                   field="response document_number")
+    if returned != doc_number:
+        raise ValueError(
+            f"FR API returned document {returned!r} for a request for "
+            f"{doc_number!r}; refusing to attribute one document's text to "
+            "another")
+
     raw = _get(doc_meta["full_text_xml_url"])
     parsed = parse_fr_xml(raw, doc_meta)
     meta = metadata.extract(parsed)
@@ -363,6 +395,21 @@ def ingest_fr_doc(msg: dict) -> str:
     comp = meta["compliance_dates"][0]["date"] if meta["compliance_dates"] else None
     pub = validate.optional_iso_date(doc_meta.get("publication_date"),
                                      field="response publication_date")
+    # Validated HERE, not at its put_item below. It used to run after
+    # _write_corpus and _put_vectors, so a rejected citation left the S3
+    # objects and the vector entries written and then raised — chunks
+    # retrievable and citable with no registry record, which is the exact
+    # "partial document answers with citations" state _capped refuses. Every
+    # other check in this function already ran before the first write; this
+    # one was the exception. Caught by engineering review.
+    citation = validate.fr_citation(doc_meta["citation"],
+                                    field="response citation") \
+        if doc_meta.get("citation") else None
+    # cfr_part reaches the chunks/<part>/ S3 key segment and is set by a
+    # parsing regex, not a validator (security review LOW-1).
+    cfr_part = parsed.get("cfr_part")
+    if cfr_part is not None:
+        cfr_part = validate.cfr_part(cfr_part, field="parsed cfr_part")
     for c in chunks:
         c["doc_type"] = meta["doc_type"]
         c["pub_date"] = pub
@@ -381,16 +428,14 @@ def ingest_fr_doc(msg: dict) -> str:
               "doc_number": _resolve_fr_citation(e["target"])}
              for e in meta["supersedes"]]
 
-    chunks_key = _write_corpus(doc_number, raw, parsed, chunks, parsed.get("cfr_part"))
+    chunks_key = _write_corpus(doc_number, raw, parsed, chunks, cfr_part)
     _put_vectors(chunks)
 
     # The citation becomes a partition key (FRCITE#<citation>), so an
     # unvalidated value could carry `#` and forge the registry's composite-key
     # structure — the same layout _resolve_fr_citation reads back when it
-    # resolves a supersedes target.
-    if doc_meta.get("citation"):
-        citation = validate.fr_citation(doc_meta["citation"],
-                                        field="response citation")
+    # resolves a supersedes target. Validated above, before any write.
+    if citation:
         table.put_item(Item={"pk": f"FRCITE#{citation}", "sk": "DOC",
                              "doc_number": doc_number})
     for edge in edges:
@@ -403,12 +448,16 @@ def ingest_fr_doc(msg: dict) -> str:
 
     # META is the idempotency marker — written LAST so a partial ingest is
     # retried in full rather than skipped with pieces missing.
+    # Validated values, not the raw response fields. The registry is what
+    # CLAUDE.md designates authoritative for timeline answers, so it must not
+    # be the copy holding unvalidated data — `""` in particular reached META
+    # while the chunks correctly got None. Caught by engineering review.
     table.put_item(Item={
         "pk": f"DOC#{doc_number}", "sk": "META",
-        "citation": doc_meta.get("citation"),
+        "citation": citation,
         "title": doc_meta.get("title"),
         "doc_type": meta["doc_type"],
-        "pub_date": doc_meta.get("publication_date"),
+        "pub_date": pub,
         "effective_dates": json.dumps(meta["effective_dates"]),
         "compliance_dates": json.dumps(meta["compliance_dates"]),
         "affected_cfr": json.dumps(meta["affected_cfr"]),
@@ -422,18 +471,52 @@ def ingest_fr_doc(msg: dict) -> str:
 
 
 # ------------------------------------------------------- ingest: CFR section
+def valid_version_dates(content_versions: list) -> tuple[list[str], list[str]]:
+    """Split eCFR `content_versions[]` into valid dates and rejection reasons.
+
+    One policy, shared by the poller and the processor. They previously
+    disagreed — the poller skipped bad entries and took max() of the rest,
+    while `latest_version_date` raised on the first one — so a single malformed
+    entry let the poller enqueue a `cfr_section` message the processor could
+    never complete: three receives, then the DLQ, every day, off identical
+    data. Caught independently by both role-gate reviews.
+
+    Skip-and-report is the surviving policy, because the tolerant path is also
+    the *visible* one: rejections surface in the poller result, whereas a
+    strict processor fails inside SQS where only a DLQ depth shows it.
+    """
+    dates, rejected = [], []
+    for v in content_versions or []:
+        try:
+            # Validated before max(): these become a path segment in the eCFR
+            # URL, an S3 key component, and the VERSION# sort key. max() over
+            # raw strings is a lexicographic pick, so one malformed entry can
+            # win and both mask the real latest version and propagate.
+            dates.append(validate.iso_date(v.get("date"),
+                                           field="content_versions[].date"))
+        except validate.ValidationError as e:
+            rejected.append(str(e))
+    return dates, rejected
+
+
 def latest_version_date(title: str, section: str) -> str:
     data = json.loads(_get(
         f"{config.ECFR_API}/versions/title-{title}.json?section={section}"))
-    # Validated before max(): these become a path segment in the eCFR URL, an
-    # S3 key component, and the VERSION# sort key. max() over raw strings is a
-    # lexicographic pick, so a single malformed entry can win and both mask
-    # the real latest version and propagate into all three.
-    dates = [validate.iso_date(v.get("date"), field="content_versions[].date")
-             for v in data.get("content_versions", [])]
-    # Explicit UTC — this becomes a version_date in an S3 key and a registry
-    # sort key, so a local-timezone shift would fork the snapshot. [DTZ011]
-    return max(dates) if dates else dt.datetime.now(dt.UTC).date().isoformat()
+    dates, rejected = valid_version_dates(data.get("content_versions"))
+    if not dates:
+        # Was `dt.datetime.now(dt.UTC).date().isoformat()` — it fabricated
+        # TODAY as the version date whenever eCFR returned nothing usable, and
+        # that invented value became the /full/<date>/ URL, the S3 key, the
+        # VERSION# sort key and the chunks' version_date filter. An invented
+        # point-in-time snapshot label is precisely what validate.py exists to
+        # prevent ("a repaired date would be an invented regulatory
+        # deadline"), and it sat one line under the validation this branch
+        # added. Caught by engineering review.
+        raise ValueError(
+            f"eCFR returned no usable content_versions for title-{title} "
+            f"section {section}"
+            + (f"; rejected {len(rejected)}: {rejected[:3]}" if rejected else ""))
+    return max(dates)
 
 
 def ingest_cfr_section(msg: dict) -> str:

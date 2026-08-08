@@ -61,6 +61,12 @@ MAX_FETCH_BYTES = int(os.environ.get("MAX_FETCH_BYTES", str(24 * 1024 * 1024)))
 # citation, which is worse than a DLQ entry.
 MAX_CHUNKS_PER_DOC = int(os.environ.get("MAX_CHUNKS_PER_DOC", "2000"))
 
+# Pagination cap. `next_page_url` is response-controlled and the host
+# allowlist bounds where the poller goes, not how many times — a
+# self-referencing page would loop until the Lambda timeout. 100 pages x 100
+# per_page is 10k documents, far past any real FDA week.
+MAX_POLL_PAGES = int(os.environ.get("MAX_POLL_PAGES", "100"))
+
 # doc_type is a filter key in the SPEC/02 retrieval contract. An out-of-enum
 # value does not error — it silently matches no filter, so the document
 # becomes invisible to exactly the queries that should find it. The prompt in

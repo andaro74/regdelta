@@ -32,16 +32,38 @@ class ValidationError(ValueError):
     """Untrusted input failed a boundary check. Fails the message on purpose."""
 
 
-# FR document numbers: "2024-29957", also older "05-1234". Anchored, so no
-# separators, whitespace, or path characters survive.
-_DOC_NUMBER_RE = re.compile(r"\A\d{2,4}-\d{3,6}\Z")
+# EVERY pattern here is re.ASCII and anchored \A...\Z.
+#
+# re.ASCII is load-bearing, not tidiness. In a str pattern `\d` means Unicode
+# category Nd, so `\d{4}-\d{5}` accepted document numbers written in
+# Arabic-Indic, Devanagari or fullwidth digits — all of which reached vector
+# keys and CHUNK# sort keys through parse_fr_xml's doc_id. They carry no `/`,
+# `..` or `#`, so nothing was overwritten, but the module header claimed no
+# separators survive and that was false for these. Found by security review of
+# this branch; the literal payloads are in tests/test_input_validation.py
+# (UNICODE_DIGIT_IDS).
+#
+# \Z is Python's absolute end-of-string. `$` would be the bug — it matches
+# before a trailing newline, so "2024-29957\n" would pass.
+_ASCII = re.ASCII
+
+# FR document numbers. Modern ones are "2024-29957"; the FR API also returns
+# "05-1234", "94-30245", and letter-prefixed numbers for roughly 1994-2011
+# ("E9-12345", "X05-1234", "C1-2011-1234"). The demo corpus is 2024-2025, but
+# a supersedes target naming an older rule is exactly the case that must
+# resolve rather than DLQ, so the prefixed forms are accepted.
+_DOC_NUMBER_RE = re.compile(r"\A[A-Z]{0,2}[0-9]{1,4}(?:-[0-9]{4})?-[0-9]{3,6}\Z",
+                            _ASCII)
 
 # CFR title is a small integer ("21"). Part/section is "101.65" or "74.303";
 # a bare part ("101") is also valid input to the versioner.
-_CFR_TITLE_RE = re.compile(r"\A\d{1,2}\Z")
-_CFR_SECTION_RE = re.compile(r"\A\d{1,4}(?:\.\d{1,4}[a-z]?)?\Z")
+_CFR_TITLE_RE = re.compile(r"\A[0-9]{1,2}\Z", _ASCII)
+_CFR_SECTION_RE = re.compile(r"\A[0-9]{1,4}(?:\.[0-9]{1,4}[a-z]?)?\Z", _ASCII)
 
-_ISO_DATE_RE = re.compile(r"\A\d{4}-\d{2}-\d{2}\Z")
+# Part alone — the S3 key segment in chunks/<part>/<doc_id>.jsonl.
+_CFR_PART_RE = re.compile(r"\A[0-9]{1,4}\Z", _ASCII)
+
+_ISO_DATE_RE = re.compile(r"\A[0-9]{4}-[0-9]{2}-[0-9]{2}\Z", _ASCII)
 
 
 def is_doc_number(value: object) -> bool:
@@ -68,6 +90,19 @@ def cfr_title(value: object, *, field: str = "title") -> str:
 def cfr_section(value: object, *, field: str = "section") -> str:
     if not isinstance(value, str) or not _CFR_SECTION_RE.match(value):
         raise ValidationError(f"{field} is not a CFR section: {value!r}")
+    return value
+
+
+def cfr_part(value: object, *, field: str = "cfr_part") -> str:
+    """Part number used as the `chunks/<part>/` S3 key segment.
+
+    On the FR path this comes from a parsing regex in processor.parse_fr_xml
+    rather than from any validator — so it was constrained to digits only
+    incidentally, with the same Unicode-\\d gap and no length bound. It is the
+    one key component the first pass of this branch missed.
+    """
+    if not isinstance(value, str) or not _CFR_PART_RE.match(value):
+        raise ValidationError(f"{field} is not a CFR part: {value!r}")
     return value
 
 
@@ -117,8 +152,14 @@ def optional_iso_date(value: object, *, field: str = "date") -> str | None:
 
 
 # "89 FR 106064" — volume, "FR", page. Becomes the FRCITE#<citation>
-# partition key, so `#` and control characters must not survive.
-_FR_CITATION_RE = re.compile(r"\A\d{1,4}\s+FR\s+\d{1,7}\Z")
+# partition key.
+#
+# A literal single space, not `\s+`: `\s` matches \n, \r, \t, \x0b, \x0c and
+# (without re.ASCII) NBSP, so "89\nFR\n106064" passed while the comment here
+# claimed control characters could not survive. That value writes a partition
+# key no lookup can ever match, so supersedes resolution would fall through to
+# the API path forever without erroring. Found by security review.
+_FR_CITATION_RE = re.compile(r"\A[0-9]{1,4} FR [0-9]{1,7}\Z", _ASCII)
 
 
 def fr_citation(value: object, *, field: str = "citation") -> str:
