@@ -88,6 +88,33 @@ exact error the trap tests for.
   belongs in amendment-graph traversal — not in denormalizing a date back onto
   a document that never set one.**
 
+## Residual risk, recorded deliberately
+Three limits, all found by role-gate review of the implementation. None is
+fixed here; each is stated so nobody reads the closed defect as broader
+coverage than it is.
+
+**1. Decision 1 (attribution) is enforced only by prompt.** The grounding check
+enforces decision 2 — a date must appear in the source. It cannot tell whose
+date it is. A notice that quotes the underlying date verbatim ("the compliance
+date of February 25, 2028 remains unchanged") — a common FR construction —
+grounds cleanly, and the borrowed-date failure returns with nothing
+deterministic behind it. The observed defect is closed on both layers only
+because 2028-01-01 was *also* ungrounded.
+
+**2. Grounding binds a date to the DOCUMENT, not to a field.** Any full date in
+the 12000-char digest will ground any date field. That is what makes a forged
+`stay_start` cheap, and it is why the stay write needs its own corroboration
+gate (ADR-0007).
+
+**3. The digest is what the model saw, so grounding cannot reject a date the
+model was shown.** `extract()` passes one digest object to both the prompt and
+`_normalize`, which is load-bearing: re-deriving full text for grounding would
+reintroduce the entire false-negative class. Note separately that
+`_document_digest` includes preamble blocks but never `regtext_sections`, so
+GPOTABLE content — where tiered compliance dates typically live — is outside
+extraction altogether. Not reached on the current corpus; recorded because
+SPEC/02's `compliance_date` filter may be expected to cover it.
+
 ## Golden set
 Unaffected, and no edit is proposed. q01 already cites the final rule rather
 than the notice, so it was authored consistent with this decision; approving it

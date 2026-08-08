@@ -23,9 +23,19 @@ UNICODE_DIGIT_TITLE = "2" + chr(0x661)
 
 
 class _FakeTable:
+    """Minimal DynamoDB Table stand-in.
+
+    `query` and `delete_item` were added when engineering review pointed out
+    that a put-only fake cannot detect a missing delete path — and the missing
+    delete path was a HIGH: stale `SUPERSEDES#<target>` items survive
+    re-ingestion, so the graph would hold both the false edge ADR-0007 exists
+    to remove and its correct replacement.
+    """
+
     def __init__(self, items=None):
-        self.items = items or {}
+        self.items = dict(items or {})
         self.written = []
+        self.deleted = []
 
     def get_item(self, Key):
         hit = self.items.get((Key["pk"], Key["sk"]))
@@ -33,6 +43,17 @@ class _FakeTable:
 
     def put_item(self, Item):
         self.written.append(Item)
+        self.items[(Item["pk"], Item["sk"])] = Item
+
+    def delete_item(self, Key):
+        self.deleted.append((Key["pk"], Key["sk"]))
+        self.items.pop((Key["pk"], Key["sk"]), None)
+
+    def query(self, KeyConditionExpression=None, ProjectionExpression=None):
+        # The only shape the code issues: pk equality. Compare on the rendered
+        # expression so the fake does not have to model boto3's condition tree.
+        want = KeyConditionExpression._values[1]
+        return {"Items": [{"sk": sk} for (pk, sk) in self.items if pk == want]}
 
     def batch_writer(self):
         return _FakeBatch(self)
@@ -183,6 +204,19 @@ STAY_LIFT_EDGES = [
 ]
 
 
+def _corroborated(extra=None):
+    """A registry holding the STAYED document, so a stay may be asserted on it.
+
+    `_resolve_fr_citation` proves a target EXISTS in the Federal Register, not
+    that we hold it — so without a corroboration gate an injected
+    `{"scope": "stay", "target": "<any real FR citation>"}` plants a forged
+    open-ended suspension on an arbitrary document. Security review.
+    """
+    items = {("DOC#2025-00830", "META"): {"pk": "DOC#2025-00830", "sk": "META"}}
+    items.update(extra or {})
+    return _FakeTable(items)
+
+
 def _stay_lift_ingest(monkeypatch, table):
     _stub_ingest(monkeypatch, table, doc_meta={
         "document_number": "2026-15920",
@@ -211,7 +245,7 @@ def test_two_edges_to_the_same_target_both_survive(monkeypatch):
     one edge could exist per (citing, target) pair — a document that both lifts
     a stay and confirms dates lost one silently to last-write-wins. Found by SME
     triage; had to be fixed before any multi-scope vocabulary could land."""
-    table = _FakeTable()
+    table = _corroborated()
     _stay_lift_ingest(monkeypatch, table)
     processor.ingest_fr_doc({"document_number": "2026-15920"})
     edges = [i for i in table.written if i["sk"].split("#")[0]
@@ -224,7 +258,7 @@ def test_a_confirmation_is_not_recorded_as_supersession(monkeypatch):
     """Supersession answers "which text governs". 2025-00830 is still the
     governing order and the document to cite for 2027-01-15 — so any consumer
     applying "most recent SUPERSEDES wins" must not see this event as one."""
-    table = _FakeTable()
+    table = _corroborated()
     _stay_lift_ingest(monkeypatch, table)
     processor.ingest_fr_doc({"document_number": "2026-15920"})
     preds = {i["sk"].split("#")[0] for i in table.written if "#" in i["sk"]}
@@ -241,7 +275,7 @@ def test_stay_period_is_written_on_the_stayed_document(monkeypatch):
     separately published, so it is knowable only from the document that lifts
     it. An edge-pair design cannot ingest the real event at all.
     """
-    table = _FakeTable()
+    table = _corroborated()
     _stay_lift_ingest(monkeypatch, table)
     processor.ingest_fr_doc({"document_number": "2026-15920"})
     periods = [i for i in table.written if i["sk"].startswith("STAY_PERIOD#")]
@@ -249,9 +283,10 @@ def test_stay_period_is_written_on_the_stayed_document(monkeypatch):
     p = periods[0]
     # Written on the STAYED document, not the one that lifted it.
     assert p["pk"] == "DOC#2025-00830"
-    assert p["sk"] == "STAY_PERIOD#2025-02-18"
+    assert p["sk"] == "STAY_PERIOD#2025-02-18#2026-15920"
     assert p["start"] == "2025-02-18" and p["end"] == "2026-08-05"
-    assert p["authority"] == "21 U.S.C. 371(e)(2)"
+    # Only present when the document named it — no longer hardcoded.
+    assert "authority" not in p
     assert p["source_doc"] == "2026-15920"
     # The field this whole incident is about: suspended, not tolled. The stay
     # ran ~17.5 months and 2027-01-15 stayed 2027-01-15.
@@ -288,6 +323,126 @@ def test_a_genuine_date_change_still_records_supersedes(monkeypatch):
     assert edges[0]["new_date"] == "2025-04-28"
     # No stay interval for a plain date change.
     assert not [i for i in table.written if i["sk"].startswith("STAY_PERIOD#")]
+
+
+def test_stale_old_format_edges_are_deleted_on_reingest(monkeypatch):
+    """The false fact ADR-0007 exists to remove must not survive its own fix.
+
+    Edges were `SUPERSEDES#<target>`; they are now
+    `<PREDICATE>#<target>#<scope>`. Without a delete path a re-ingest writes the
+    new keys and leaves the old, so the registry holds BOTH
+    `SUPERSEDES#2025-00830 {scope: effective_date}` — the claim that the
+    confirming notice moved the dates — and its correct replacement. A timeline
+    agent scanning `begins_with(sk, "SUPERSEDES#")` still reads the false one.
+    """
+    stale = ("DOC#2026-15920", "SUPERSEDES#2025-00830")
+    table = _corroborated({stale: {"pk": stale[0], "sk": stale[1],
+                                   "scope": "effective_date"}})
+    _stay_lift_ingest(monkeypatch, table)
+    processor.ingest_fr_doc({"document_number": "2026-15920"})
+    assert stale in table.deleted
+    assert stale not in table.items
+
+
+def test_reingest_that_reclassifies_a_scope_does_not_orphan_the_old_edge(monkeypatch):
+    """Scope in the key removed the old scheme's self-healing overwrite.
+
+    Under `SUPERSEDES#<target>` a re-ingest replaced in place. Now a re-ingest
+    that reclassifies — the entire point of this change for 2026-15920 — would
+    leave the previous edge readable forever, so every future model change that
+    reclassifies a scope adds a contradictory edge instead of replacing one.
+    """
+    orphan = ("DOC#2026-15920", "SUPERSEDES#2025-00830#effective_date")
+    table = _corroborated({orphan: {"pk": orphan[0], "sk": orphan[1],
+                                    "scope": "effective_date"}})
+    _stay_lift_ingest(monkeypatch, table)
+    processor.ingest_fr_doc({"document_number": "2026-15920"})
+    assert orphan in table.deleted
+    surviving = {sk for (pk, sk) in table.items if pk == "DOC#2026-15920"}
+    assert surviving == {"LIFTS_STAY#2025-00830#stay_lifted",
+                         "CONFIRMS#2025-00830#dates_confirmed", "META"}
+
+
+def test_a_stay_cannot_be_planted_on_a_document_we_do_not_hold(monkeypatch):
+    """`_resolve_fr_citation` proves a target EXISTS, not that it is ours.
+
+    Without a corroboration gate, an injected `{"scope": "stay", "target":
+    "<any real FR citation>"}` writes an open-ended suspension into an
+    arbitrary document's partition — one that need not have a META at all.
+    Grounding does not help: it is existence-only over the whole digest, so any
+    full date in the document is an admissible stay_start. Security review.
+    """
+    table = _FakeTable()          # deliberately NOT corroborated
+    _stay_lift_ingest(monkeypatch, table)
+    with pytest.raises(ValueError, match="not in the corpus"):
+        processor.ingest_fr_doc({"document_number": "2026-15920"})
+
+
+def test_two_documents_asserting_the_same_stay_do_not_clobber(monkeypatch):
+    """The collision ADR-0007 fixed for edges, reintroduced on the new item
+    type in the same commit. Verified by security review: the second write
+    dropped `end`, so the graph reported Red No. 3 as still stayed today."""
+    table = _corroborated()
+    _stay_lift_ingest(monkeypatch, table)
+    processor.ingest_fr_doc({"document_number": "2026-15920"})
+
+    # A second, different document describing the same stay start.
+    monkeypatch.setattr(processor, "_resolve_fr_citation", lambda t: "2025-00830")
+    _stub_ingest(monkeypatch, table, doc_meta={
+        "document_number": "2025-09999", "citation": "90 FR 99999",
+        "full_text_xml_url":
+            "https://www.federalregister.gov/documents/full_text/xml/2025/03/01/2025-09999.xml",
+        "publication_date": "2025-03-01",
+    })
+    monkeypatch.setattr(metadata, "extract", lambda parsed: {
+        "doc_type": "order", "effective_dates": [], "compliance_dates": [],
+        "affected_cfr": [], "amendatory_instructions": [],
+        "supersedes": [{"target": "90 FR 4628", "scope": "stay",
+                        "stay_start": "2025-02-18", "applies_to": ""}],
+        "binding": True, "publication_date": "2025-03-01"})
+    monkeypatch.setattr(processor, "_write_corpus", lambda *a, **k: "k.jsonl")
+    monkeypatch.setattr(processor, "_put_vectors", lambda chunks: None)
+    monkeypatch.setattr(processor, "_write_chunk_registry_items",
+                        lambda pk, chunks: None)
+    processor.ingest_fr_doc({"document_number": "2025-09999"})
+
+    periods = {sk: item for (pk, sk), item in table.items.items()
+               if pk == "DOC#2025-00830" and sk.startswith("STAY_PERIOD#")}
+    assert len(periods) == 2, periods
+    lift = periods["STAY_PERIOD#2025-02-18#2026-15920"]
+    assert lift["end"] == "2026-08-05"      # survived the second write
+
+
+def test_normalize_emits_the_key_names_the_write_path_reads(monkeypatch):
+    """Closes the coupling gap engineering review named.
+
+    The wiring tests inject a hand-written edge dict as the return of a
+    monkeypatched `metadata.extract`, so they never see `_normalize`'s real
+    output. Rename either side and every test still passes while ingest writes
+    stays with no interval. This pins the contract between them.
+    """
+    doc = processor.parse_fr_xml(
+        (FIXTURES / "fr_2025-03118_delay.xml").read_bytes(),
+        {"document_number": "2025-03118", "citation": "90 FR 10592"})
+    out = metadata.extract(doc, invoke=lambda p: json.dumps({
+        "doc_type": "delay_notice",
+        "supersedes": [{"target": "89 FR 106064", "scope": "stay_lifted",
+                        "stay_start": "2024-12-27", "stay_end": "2025-04-28",
+                        "applies_to": "21 CFR 101.65"}],
+    }))
+    edge = out["supersedes"][0]
+    # Exactly the keys _write_amendment_edge and _write_stay_period read.
+    assert {"target", "scope", "applies_to", "stay_start", "stay_end"} <= set(edge)
+    assert processor._EDGE_PREDICATE[edge["scope"]] == "LIFTS_STAY"
+
+
+def test_scope_vocabulary_and_predicate_map_cannot_drift():
+    """They were two copies of one invariant in two modules. A scope added to
+    one gave an unguarded KeyError in the other — fired AFTER _write_corpus and
+    _put_vectors, leaving chunks retrievable with no registry record."""
+    assert set(processor._EDGE_PREDICATE) == set(metadata._SCOPES)
+    assert processor._EDGE_PREDICATE is metadata.EDGE_PREDICATE
+    assert set(metadata._SCOPES) >= metadata.STAY_SCOPES
 
 
 def _hostile_title_doc(monkeypatch, table, *, top_level, section_level):

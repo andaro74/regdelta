@@ -17,6 +17,8 @@ import urllib.error
 import urllib.parse
 import xml.etree.ElementTree as ET
 
+from boto3.dynamodb.conditions import Key
+
 from ingestion import chunker, metadata
 from shared import config, validate
 from shared.fetch import get_bytes
@@ -356,17 +358,46 @@ def _resolve_fr_citation(target: str) -> str:
 # means any consumer applying the natural "most recent SUPERSEDES edge wins"
 # rule concludes the newer document displaced the older — when the older is
 # still the governing order and the one to cite for the date.
-_EDGE_PREDICATE = {
-    "effective_date": "SUPERSEDES",
-    "compliance_date": "SUPERSEDES",
-    "full": "SUPERSEDES",
-    "stay": "STAYS",
-    "stay_lifted": "LIFTS_STAY",
-    "dates_confirmed": "CONFIRMS",
-}
+# Imported, not duplicated. This mapping and metadata._SCOPES were two copies
+# of one invariant; adding a scope to one gave an unguarded KeyError in the
+# other, and that KeyError fires AFTER _write_corpus and _put_vectors — leaving
+# chunks retrievable and citable with no registry record, the exact state
+# _capped and the citation-ordering fix exist to refuse. _SCOPES is now derived
+# from this mapping in metadata.py, so drift is unrepresentable.
+_EDGE_PREDICATE = metadata.EDGE_PREDICATE
+_EDGE_PREFIXES = tuple(sorted(set(_EDGE_PREDICATE.values())))
 
 
-def _write_amendment_edge(table, doc_number: str, edge: dict) -> None:
+def _delete_stale_edges(table, doc_number: str, keep: set) -> None:
+    """Remove amendment edges this document previously asserted and no longer does.
+
+    Two reasons, both found by engineering review:
+
+    1. **The old key scheme survives re-ingestion.** Edges were written as
+       `SUPERSEDES#<target>`; they are now `<PREDICATE>#<target>#<scope>`, so a
+       re-ingest writes the new keys and leaves the old ones in place. The
+       registry would hold BOTH `SUPERSEDES#2025-00830 {scope: effective_date}`
+       — the false fact ADR-0007 exists to delete — and the correct
+       `LIFTS_STAY#`/`CONFIRMS#` pair. A timeline agent scanning
+       `begins_with(sk, "SUPERSEDES#")` still reads the false one.
+    2. **Scope in the key removed the old scheme's self-healing.** Under
+       `SUPERSEDES#<target>` a re-ingest overwrote in place. Now a re-ingest
+       that reclassifies a scope — the entire point of this change for
+       2026-15920 — orphans the previous edge permanently. Without this, every
+       future prompt or model change that reclassifies a scope adds a
+       contradictory edge rather than replacing one.
+    """
+    existing = table.query(
+        KeyConditionExpression=Key("pk").eq(f"DOC#{doc_number}"),
+        ProjectionExpression="sk",
+    ).get("Items", [])
+    for item in existing:
+        sk = item["sk"]
+        if sk.startswith(_EDGE_PREFIXES) and sk not in keep:
+            table.delete_item(Key={"pk": f"DOC#{doc_number}", "sk": sk})
+
+
+def _write_amendment_edge(table, doc_number: str, edge: dict) -> str:
     """One edge, keyed by predicate AND scope.
 
     The sort key used to be `SUPERSEDES#<target>`, which collided: only one
@@ -384,10 +415,12 @@ def _write_amendment_edge(table, doc_number: str, edge: dict) -> None:
         "target_doc": edge["doc_number"],
         "target_raw": edge["target"],
     }
-    for k in ("new_date", "stay_start", "stay_end", "applies_to"):
+    for k in ("new_date", "stay_start", "stay_end", "applies_to",
+              "stay_authority"):
         if edge.get(k):
             item[k] = edge[k]
     table.put_item(Item=item)
+    return item["sk"]
 
 
 def _write_stay_period(table, doc_number: str, edge: dict) -> None:
@@ -405,18 +438,48 @@ def _write_stay_period(table, doc_number: str, edge: dict) -> None:
 
     `dates_changed` is the field this whole incident is about — it records that
     the stay suspended operation without moving any date. ADR-0007.
+
+    **This is a cross-partition write** — ingesting document A writes an item
+    under document B's partition, which nothing else in this codebase does. Two
+    consequences the first version got wrong, both found by security review:
+
+    - The sort key must carry the ASSERTING document. `STAY_PERIOD#<start>`
+      alone meant any second document naming the same stay start replaced the
+      first — verified to drop `end`, so the graph reported Red No. 3 as still
+      stayed today. That is the very last-write-wins collision ADR-0007 fixed
+      for edges, reintroduced on the new item type in the same commit.
+    - The target must be a document we actually hold. `_resolve_fr_citation`
+      proves a target EXISTS, not that it is relevant, so without this gate an
+      injected `{"scope": "stay", "target": "<any real FR citation>"}` plants a
+      forged open-ended suspension on an arbitrary document — including one
+      with no META of its own. Grounding does not help: it is existence-only
+      over the whole digest, so any full date in the document is an admissible
+      stay_start.
+
+    Consumers must MERGE multiple `STAY_PERIOD#` items rather than assume one.
     """
-    start = edge.get("stay_start")
-    if not start:
-        return
+    start = edge["stay_start"]      # guaranteed by metadata._normalize
+    target = edge["doc_number"]
+    if not table.get_item(
+            Key={"pk": f"DOC#{target}", "sk": "META"}).get("Item"):
+        raise ValueError(
+            f"refusing to write a STAY_PERIOD into DOC#{target}: that document "
+            "is not in the corpus, so this claim cannot be corroborated. A stay "
+            "may only be asserted against a document we hold")
     item = {
-        "pk": f"DOC#{edge['doc_number']}",
-        "sk": f"STAY_PERIOD#{start}",
+        "pk": f"DOC#{target}",
+        # Namespaced by the asserting document: two documents may describe the
+        # same stay, and both claims must survive for a consumer to reconcile.
+        "sk": f"STAY_PERIOD#{start}#{doc_number}",
         "start": start,
-        "authority": "21 U.S.C. 371(e)(2)",
         "source_doc": doc_number,
         "dates_changed": False,
     }
+    # Only if the document named it. Hardcoding 21 U.S.C. 371(e)(2) made every
+    # stay claim a 701(e)(2) objection stay, when stays also arise under
+    # 5 U.S.C. 705, by court order, and pending reconsideration.
+    if edge.get("stay_authority"):
+        item["authority"] = edge["stay_authority"]
     if edge.get("stay_end"):
         item["end"] = edge["stay_end"]
     if edge.get("applies_to"):
@@ -543,10 +606,14 @@ def ingest_fr_doc(msg: dict) -> str:
     if citation:
         table.put_item(Item={"pk": f"FRCITE#{citation}", "sk": "DOC",
                              "doc_number": doc_number})
+    written_edge_keys = set()
     for edge in edges:
-        _write_amendment_edge(table, doc_number, edge)
-        if edge["scope"] in ("stay", "stay_lifted"):
+        written_edge_keys.add(_write_amendment_edge(table, doc_number, edge))
+        if edge["scope"] in metadata.STAY_SCOPES:
             _write_stay_period(table, doc_number, edge)
+    # After the writes, so a failure mid-loop leaves the old edges in place
+    # rather than deleting them and then failing to write replacements.
+    _delete_stale_edges(table, doc_number, written_edge_keys)
     _write_chunk_registry_items(f"DOC#{doc_number}", chunks)
 
     # META is the idempotency marker — written LAST so a partial ingest is

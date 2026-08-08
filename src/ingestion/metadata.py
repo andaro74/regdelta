@@ -20,14 +20,48 @@ _ACTIONS = {"add", "revise", "remove", "redesignate"}
 # the prior document stops governing. The distinction is load-bearing: CLAUDE.md
 # answers timeline questions from the amendment graph, so a confirmation
 # recorded as a date change tells the timeline agent the deadline moved.
-_SCOPES = {
-    "effective_date", "compliance_date",
-    "stay", "stay_lifted", "dates_confirmed",
-    "full",
+#
+# The predicate mapping lives HERE, next to the vocabulary, and `_SCOPES` is
+# DERIVED from it. It was duplicated in processor.py — an unpinned cross-module
+# invariant where adding a scope in one place gave an unguarded KeyError in the
+# other, fired AFTER _write_corpus and _put_vectors and so leaving chunks
+# retrievable and citable with no registry record. Both reviews flagged the
+# drift; deriving one from the other removes it rather than testing for it.
+EDGE_PREDICATE = {
+    "effective_date": "SUPERSEDES",
+    "compliance_date": "SUPERSEDES",
+    "full": "SUPERSEDES",
+    "stay": "STAYS",
+    "stay_lifted": "LIFTS_STAY",
+    "dates_confirmed": "CONFIRMS",
 }
+_SCOPES = frozenset(EDGE_PREDICATE)
 
 # Scopes that assert a NEW date and therefore require `new_date`.
 _DATE_CHANGE_SCOPES = {"effective_date", "compliance_date"}
+
+# Scopes asserting something about a suspension. Both require `stay_start`;
+# `stay_lifted` additionally requires `stay_end`, because a scope whose entire
+# meaning is that the stay ENDED must not record an open-ended one. Previously
+# a missing stay_start returned silently from _write_stay_period, so the graph
+# asserted a stay had ended while holding no record that one existed — and a
+# point-in-time query, the decisive reason ADR-0007 chose an interval, then
+# answered as if the document was never stayed.
+STAY_SCOPES = frozenset({"stay", "stay_lifted"})
+_STAY_SCOPES = STAY_SCOPES
+
+# `applies_to` is free-form model output persisted to the graph CLAUDE.md
+# designates authoritative, which SPEC/03's timeline agent will read into an
+# LLM context. Every other value on those items is validated, enum-checked or
+# constant; this one was a bare `str()` — a stored prompt-injection payload
+# landing before its consumer exists, which is the wrong order. A CFR-section
+# list is short, so the cap is generous for real content and hostile to prose.
+_APPLIES_TO_MAX = 200
+_APPLIES_TO_RE = re.compile(r"\A[0-9A-Za-z §.()\-;,/&']*\Z")
+
+# En dash, used by the Federal Register in date ranges. Built with chr() so
+# no ambiguous-Unicode literal appears in this file.
+_RANGE_DASH = chr(0x2013)
 
 _MONTHS = ("january", "february", "march", "april", "may", "june", "july",
            "august", "september", "october", "november", "december")
@@ -81,9 +115,13 @@ about FDA food regulation. Apply these domain rules exactly:
   that leaves the prior text intact is never "full".
   stay_lifted and dates_confirmed are NOT mutually exclusive: a document that
   lifts a stay and confirms the original dates emits one entry for each.
-  For a stay or stay_lifted entry, also report stay_start and/or stay_end as
-  full calendar dates when the document states them, and applies_to naming the
-  amendatory instruction or CFR sections affected.
+  A "stay" or "stay_lifted" entry MUST carry stay_start as a full calendar
+  date, and "stay_lifted" MUST also carry stay_end — a stay you cannot date is
+  not recordable. Report stay_authority verbatim if the document names the
+  legal basis (e.g. "21 U.S.C. 371(e)(2)", "5 U.S.C. 705", a court order);
+  omit it if the document does not — never assume one.
+  applies_to names the amendatory instruction or CFR sections affected; keep it
+  to citations and short party descriptions, not prose.
   Otherwise supersedes is an empty list.
 - binding is true for final rules and orders; false for guidance, requests,
   and "FDA encourages..." language.
@@ -209,16 +247,43 @@ def _date_is_grounded(iso: str, source: str) -> bool:
     forms = {month, month[:3]}
     if month == "september":
         forms.add("sept")
-    mon = "(?:" + "|".join(sorted(forms, key=len, reverse=True)) + ")"
+    mon = r"\b(?:" + "|".join(sorted(forms, key=len, reverse=True)) + ")"
+    any_mon = r"\b(?:" + "|".join(_MONTHS) + r"|" + \
+        "|".join(m2[:3] for m2 in _MONTHS) + ")"
+    ord_ = r"(?:st|nd|rd|th)?"
+    # A trailing list or range before the shared year: 'January 15 and
+    # January 18, 2027', 'February 25-March 3, 2028', 'January 1 through
+    # December 31, 2026'. Without this the FIRST date in every such
+    # construction is ungroundable and DLQs a correctly-extracted document,
+    # and the Red No. 3 documents use exactly this form. Found by both reviews.
+    tail = (rf"(?:\s*(?:,|and|through|to|{_RANGE_DASH}|-|&)\s*"
+            rf"(?:{any_mon}\.?\s*)?[0-9]{{1,2}}{ord_})*")
     hay = " ".join(source.lower().split())
     patterns = [
-        rf"{mon}\.?\s+0?{d}\s*,?\s*{y}",        # february 25, 2028 / feb. 25 2028
-        rf"0?{d}\s+{mon}\.?\s*,?\s*{y}",        # 25 february 2028
-        rf"{y}-{m:02d}-{d:02d}",                # 2028-02-25
-        rf"{m:02d}/{d:02d}/{y}",                # 02/25/2028
-        rf"\b{m}/{d}/{y}\b",                    # 2/25/2028
+        # february 25, 2028 · feb. 25 2028 · february 25th, 2028
+        rf"{mon}\.?\s+0?{d}{ord_}\b{tail}\s*,?\s*{y}",
+        # 25 february 2028 · 25th february 2028
+        rf"\b0?{d}{ord_}\s+{mon}\.?\s*,?\s*{y}",
+        # Anchored: without \b, "12028-02-2500" grounded 2028-02-25.
+        rf"\b{y}-{m:02d}-{d:02d}\b",
+        rf"\b{m:02d}/{d:02d}/{y}\b",
+        rf"\b{m}/{d}/{y}\b",
     ]
     return any(re.search(p, hay) for p in patterns)
+
+
+def _authority_is_grounded(authority: str, source: str) -> bool:
+    """Is this statutory citation actually in the document?
+
+    Same discipline as `_date_is_grounded`, for the same reason: a cited
+    statute the source never named is a fabricated legal basis in the store
+    CLAUDE.md designates authoritative. Compared on digits and section marks
+    only, so "21 U.S.C. 371(e)(2)" matches "21 U.S.C. 371(e)(2)" written with
+    different spacing or punctuation.
+    """
+    def key(s: str) -> str:
+        return re.sub(r"[^0-9a-z]", "", s.lower())
+    return key(authority) in key(source)
 
 
 def _parse_json(text: str) -> dict:
@@ -229,14 +294,17 @@ def _parse_json(text: str) -> dict:
     return json.loads(text[start:end + 1])
 
 
-def _normalize(raw: dict, source: str | None = None) -> dict:
+def _normalize(raw: dict, source: str) -> dict:
     """Validate and ground model output.
 
     `source` is the digest the model was shown. Every date is checked to appear
     in it at day precision (ADR-0006) — the deterministic half of the fix for a
-    fabricated compliance date that no shape validator could have caught. It
-    defaults to None so existing unit tests that exercise normalization alone
-    still work; the ingestion path always supplies it, pinned by a test.
+    fabricated compliance date that no shape validator could have caught.
+
+    REQUIRED, not defaulted. It briefly defaulted to None "so tests that
+    exercise normalization alone still work", which was false — there were no
+    such callers — and the default silently disabled the ADR-0006 control for
+    the next caller who forgot it. Engineering review.
     """
     # An empty or gutted object must not ingest as a plausible-looking doc:
     # fail the message (SQS retry / DLQ) rather than invent metadata.
@@ -270,13 +338,34 @@ def _normalize(raw: dict, source: str | None = None) -> dict:
     def one_date(value, field):
         """Validate shape, then ground against the source (ADR-0006)."""
         iso = validate.iso_date(value, field=field)
-        if source is not None and not _date_is_grounded(iso, source):
+        if not _date_is_grounded(iso, source):
             raise validate.ValidationError(
                 f"{field} {iso!r} does not appear at day precision in the "
                 "source document — refusing an invented date. The source may "
                 "state only a year or a relative period; a date this system "
                 "cannot point at in the text is not a deadline it may assert")
         return iso
+
+    def clean_applies_to(value, field):
+        """Bound and charset-restrict free-form model text before it is stored.
+
+        This is the only unvalidated model string that reached the amendment
+        graph. It never touches a key — traced — so this is not key injection;
+        it is stored prompt injection, landing in the store SPEC/03's timeline
+        agent will read into an LLM context. Security review.
+        """
+        if value is None:
+            return ""
+        text = " ".join(str(value).split())
+        if len(text) > _APPLIES_TO_MAX:
+            raise validate.ValidationError(
+                f"{field} is {len(text)} chars, over the {_APPLIES_TO_MAX} cap; "
+                "this field names CFR sections or party classes, not prose")
+        if not _APPLIES_TO_RE.match(text):
+            raise validate.ValidationError(
+                f"{field} contains characters outside the citation charset: "
+                f"{text[:80]!r}")
+        return text
 
     def dates(key):
         out = []
@@ -291,7 +380,8 @@ def _normalize(raw: dict, source: str | None = None) -> dict:
                 # failure this product exists to prevent. A DLQ entry is
                 # visible; an absent deadline is not.
                 out.append({"date": one_date(d["date"], f"model {key}[].date"),
-                            "applies_to": d.get("applies_to", "")})
+                            "applies_to": clean_applies_to(
+                                d.get("applies_to"), f"model {key}[].applies_to")})
         return out
 
     amendatory = []
@@ -318,7 +408,8 @@ def _normalize(raw: dict, source: str | None = None) -> dict:
         entry = {
             "target": str(s["target"]),
             "scope": scope,
-            "applies_to": str(s.get("applies_to") or ""),
+            "applies_to": clean_applies_to(s.get("applies_to"),
+                                           "model supersedes[].applies_to"),
         }
         # A date-change scope without a date is a contradiction: it asserts a
         # date moved and cannot say to what. Grounded like any other date.
@@ -334,6 +425,39 @@ def _normalize(raw: dict, source: str | None = None) -> dict:
         for k in ("stay_start", "stay_end"):
             if s.get(k):
                 entry[k] = one_date(s[k], f"model supersedes[].{k}")
+
+        # Enforced HERE, so a stay with no interval DLQs before any write
+        # rather than being dropped silently downstream. _write_stay_period
+        # used to return early on a missing stay_start, so the graph could
+        # assert a stay had ended while holding no record that one existed —
+        # and the point-in-time containment query that is ADR-0007's decisive
+        # argument for the interval then answered as if there had been no stay.
+        # Both reviews flagged it.
+        if scope in _STAY_SCOPES and not entry.get("stay_start"):
+            raise validate.ValidationError(
+                f"supersedes scope {scope!r} for target {entry['target']!r} "
+                "carries no stay_start; a suspension with no interval cannot "
+                "be recorded, and a point-in-time query would read the "
+                "document as never stayed")
+        if scope == "stay_lifted" and not entry.get("stay_end"):
+            raise validate.ValidationError(
+                f"supersedes scope 'stay_lifted' for target {entry['target']!r} "
+                "carries no stay_end; a scope whose meaning is that the stay "
+                "ENDED must not record an open-ended suspension")
+
+        # The statutory basis, when the document states one. It used to be
+        # hardcoded to 21 U.S.C. 371(e)(2) at the write site — inventing a
+        # citation for every stay, when stays also arise under 5 U.S.C. 705, by
+        # court order, and pending reconsideration. That is ADR-0006's own
+        # failure mode (manufactured precision on a liability-bearing value)
+        # committed while implementing ADR-0006. Grounded the same way: only
+        # recorded if the document actually contains it.
+        if scope in _STAY_SCOPES:
+            authority = clean_applies_to(s.get("stay_authority"),
+                                         "model supersedes[].stay_authority")
+            if authority and _authority_is_grounded(authority, source):
+                entry["stay_authority"] = authority
+
         supersedes.append(entry)
 
     return {
