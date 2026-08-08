@@ -20,7 +20,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.14" }
-      - run: pip install ruff pytest boto3
+      # Pinned. Unpinned, the enforced rule set is whatever the latest ruff
+      # happens to default to, so identical code passes or fails depending on
+      # the day of the pip resolve. Rule selection lives in ruff.toml, also
+      # explicit, for the same reason.
+      - run: pip install ruff==0.16.2 pytest==9.1.1 boto3==1.43.67
       - run: ruff check src evals infra
       - run: pytest -q
 

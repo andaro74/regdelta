@@ -84,7 +84,10 @@ def handler(event, context):
         messages = _backfill_messages()
     else:
         import datetime as dt
-        since = (dt.date.today()
+        # Explicit UTC: the FR API publishes on UTC dates, and a naive
+        # local "today" would silently shift the lookback window by a day
+        # for anyone running this outside UTC. [DTZ011]
+        since = (dt.datetime.now(dt.UTC).date()
                  - dt.timedelta(days=config.POLL_LOOKBACK_DAYS)).isoformat()
         messages = [{"kind": "fr_doc", "document_number": d}
                     for d in _new_fr_docs(since)]

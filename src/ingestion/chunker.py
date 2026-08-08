@@ -70,7 +70,7 @@ def _paragraph_path(text: str, stack: list[str]) -> list[str]:
     if not markers:
         return stack  # continuation paragraph — inherits current path
     depth = _classify_first(markers[0], stack)
-    path = stack[: depth - 1] + [markers[0]]
+    path = [*stack[: depth - 1], markers[0]]
     for tok in markers[1:]:
         path.append(tok)
     return path
@@ -155,7 +155,13 @@ def chunk(parsed_doc: dict) -> list[dict]:
         cur_paths: list[list[str]] = []
         cur_len = len(header)
 
-        def flush_sec():
+        # sec_cite/sec/header bound as defaults, not captured: the closure is
+        # defined inside the loop, so a free variable would resolve at CALL
+        # time. Every call today happens in the same iteration, making this
+        # latent rather than live — but deferring one call (collecting these
+        # to flush later, say) would silently attribute every chunk to the
+        # LAST section. Binding costs nothing and removes the trap. [B023]
+        def flush_sec(sec_cite=sec_cite, sec=sec, header=header):
             nonlocal cur, cur_paths, cur_len
             if cur_paths:
                 emit("\n".join(cur), _citation(sec_cite, _common_prefix(cur_paths)),

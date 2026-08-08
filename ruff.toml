@@ -1,0 +1,55 @@
+# Lint config for the eval-gate `unit` job.
+#
+# WHY THIS FILE EXISTS: the workflow ran `ruff check` with no config and an
+# unpinned install, so the enforced rule set was "whatever this release's
+# defaults happen to be". The gate first fired on PR #1 (it only triggers on
+# pull_request -> main, and that was the repo's first PR) and reported 26
+# errors across three milestones of never-linted code. Two of them were the
+# same latent-closure bug class; the rest were style.
+#
+# `select` is therefore EXPLICIT. Do not rely on ruff's defaults: they change
+# between releases, and a gate whose meaning drifts with a transitive pip
+# resolve is not a gate. The workflow pins the ruff version to match.
+
+target-version = "py314"
+line-length = 100
+
+[lint]
+select = [
+    "E4", "E7", "E9",  # pycodestyle essentials (not E5 — see line-length note)
+    "F",               # pyflakes
+    "I",               # import sorting
+    "B",               # bugbear — B023 late-binding closures are why this is on
+    "SIM",             # simplify
+    "N",               # pep8-naming
+    "RUF",             # ruff-specific, incl. RUF100 unused-noqa
+    "FURB",            # refurb
+    "DTZ",             # naive datetimes — this product is ABOUT dates
+    "EXE",             # shebang/executable-bit agreement
+    "BLE",             # blind except
+]
+
+# E501 (line length) is deliberately not selected. Several regulatory string
+# literals and citation regexes read worse wrapped, and reflowing them is a
+# large diff across code no one is otherwise touching. line-length above is
+# what the formatter would use if it is ever adopted.
+
+[lint.isort]
+# Without this, isort splits `from aws_cdk import (Duration, aws_iam as iam,
+# ...)` into one import block per aliased submodule — eight consecutive
+# `from aws_cdk import (...)` statements in a single CDK stack. Valid, and
+# much worse to read. Keep aliased and plain members in one block.
+combine-as-imports = true
+
+[lint.per-file-ignores]
+# run_evals.py decides whether ground truth was met. M00b finding 5 flagged
+# that it has no CODEOWNER while golden_questions.json does, so engineering
+# can self-approve edits to the code that grades the answers. SIM102 here
+# would restructure the boolean logic of check() for style alone. Not worth
+# the risk in a file with that ownership gap — revisit once SPEC/02 (C) adds
+# /evals/ to CODEOWNERS.
+"evals/run_evals.py" = ["SIM102"]
+
+# CDK stacks are constructor-heavy and legitimately reference construct IDs
+# that are not snake_case.
+"infra/**" = ["N803", "N806"]

@@ -34,12 +34,12 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_GET(self):  # noqa: N802 — stdlib naming
+    def do_GET(self):
         if urllib.parse.urlparse(self.path).path == "/health":
             return self._send(200, {"tier": "s3vectors", "surface": "local-shim"})
         self._send(404, {"error": "not found"})
 
-    def do_POST(self):  # noqa: N802 — stdlib naming
+    def do_POST(self):
         url = urllib.parse.urlparse(self.path)
         if url.path != "/query":
             return self._send(404, {"error": "not found"})

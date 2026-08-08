@@ -210,7 +210,12 @@ def embed(texts: list[str]) -> list[list[float]]:
     for t in texts:
         body = json.dumps({"inputText": t[:30000], "dimensions": config.EMBED_DIM,
                            "normalize": True})
-        resp = retry(lambda: rt.invoke_model(modelId=config.EMBED_MODEL, body=body))
+        # body bound as a default: retry() calls this back, and a free
+        # variable would resolve at call time against the loop's latest
+        # value. Safe today because retry() is synchronous within the
+        # iteration; not safe if it ever queues. [B023]
+        resp = retry(lambda body=body: rt.invoke_model(
+            modelId=config.EMBED_MODEL, body=body))
         out.append(json.loads(resp["body"].read())["embedding"])
     return out
 
@@ -319,7 +324,11 @@ def ingest_fr_doc(msg: dict) -> str:
         c["pub_date"] = doc_meta.get("publication_date")
         c["effective_date"] = eff
         c["compliance_date"] = comp
-    for c, e in zip(chunks, embed([c["text"] for c in chunks])):
+    # strict=: a short embed() return would otherwise truncate silently and
+    # leave trailing chunks with no embedding — which SPEC/01's Done-when
+    # ("every chunk JSONL line contains a 1024-dim embedding") would then
+    # fail far downstream, in S3, instead of here. [B905]
+    for c, e in zip(chunks, embed([c["text"] for c in chunks]), strict=True):
         c["embedding"] = e
 
     # Resolve supersedes targets up front so a resolution failure aborts
@@ -367,7 +376,9 @@ def latest_version_date(title: str, section: str) -> str:
     data = json.loads(_get(
         f"{config.ECFR_API}/versions/title-{title}.json?section={section}"))
     dates = [v["date"] for v in data.get("content_versions", [])]
-    return max(dates) if dates else dt.date.today().isoformat()
+    # Explicit UTC — this becomes a version_date in an S3 key and a registry
+    # sort key, so a local-timezone shift would fork the snapshot. [DTZ011]
+    return max(dates) if dates else dt.datetime.now(dt.UTC).date().isoformat()
 
 
 def ingest_cfr_section(msg: dict) -> str:
@@ -395,7 +406,11 @@ def ingest_cfr_section(msg: dict) -> str:
         c["version_date"] = date
         c["effective_date"] = None
         c["compliance_date"] = None
-    for c, e in zip(chunks, embed([c["text"] for c in chunks])):
+    # strict=: a short embed() return would otherwise truncate silently and
+    # leave trailing chunks with no embedding — which SPEC/01's Done-when
+    # ("every chunk JSONL line contains a 1024-dim embedding") would then
+    # fail far downstream, in S3, instead of here. [B905]
+    for c, e in zip(chunks, embed([c["text"] for c in chunks]), strict=True):
         c["embedding"] = e
 
     chunks_key = _write_corpus(parsed["doc_id"], raw, parsed, chunks, part)

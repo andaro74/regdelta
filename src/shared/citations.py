@@ -15,8 +15,8 @@ part is a broader instrument than a section, and canonicalizing it to
 import re
 
 CFR_RE = re.compile(
-    r"\b(\d+)\s+CFR\s*(?:§{1,2}\s*)?(\d+\.\d+(?:\([a-z0-9]+\))*)", re.I)
-FR_RE = re.compile(r"\b(\d+)\s+FR\s+(\d+)\b", re.I)
+    r"\b(\d+)\s+CFR\s*(?:§{1,2}\s*)?(\d+\.\d+(?:\([a-z0-9]+\))*)", re.IGNORECASE)
+FR_RE = re.compile(r"\b(\d+)\s+FR\s+(\d+)\b", re.IGNORECASE)
 
 
 def extract_citations(text: str) -> list[str]:

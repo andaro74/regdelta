@@ -29,7 +29,7 @@ def git_sha() -> str:
     try:
         return subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], text=True).strip()
-    except Exception:
+    except Exception:  # noqa: BLE001 — provenance is best-effort; never fail a run over it
         return "nogit"
 
 
@@ -50,7 +50,7 @@ def resolve_api_url(cli: str | None) -> str:
         out = boto3.client("cloudformation").describe_stacks(
             StackName="regdelta-core")["Stacks"][0]["Outputs"]
         return next(o["OutputValue"] for o in out if o["OutputKey"] == "ApiUrl")
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure here means "no endpoint", incl. no creds
         sys.exit("No API URL. Use --api-url, $REGDELTA_API_URL, or deploy regdelta-core.")
 
 
@@ -157,7 +157,7 @@ def main() -> int:
                 with urllib.request.urlopen(f"{api_url.rstrip('/')}/health",
                                             timeout=10) as r:
                     tier = json.loads(r.read()).get("tier", "unknown")
-            except Exception:
+            except Exception:  # noqa: BLE001 — tier is provenance, not a result
                 tier = "unknown"
         out = record({
             "sha": git_sha(),

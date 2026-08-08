@@ -122,6 +122,7 @@ def _document_digest(parsed_doc: dict, limit: int = 12000) -> str:
 
 def _bedrock_invoke(prompt: str) -> str:
     import boto3  # lazy: unit tests never touch AWS
+
     from shared.util import retry
     client = boto3.client("bedrock-runtime", region_name=config.REGION)
     resp = retry(lambda: client.converse(

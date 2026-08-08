@@ -5,10 +5,10 @@ their Titan v2 embeddings; NEVER re-embed here.
 Contract (SPEC/02): raise on any count mismatch — a failed Trigger fails
 `make up`, which is exactly right: never report success on a partial index.
 """
-import json
 import os
 
 import boto3
+
 # TODO(SPEC/02): layer deps -> opensearch-py + requests-aws4auth
 # from opensearchpy import OpenSearch, RequestsHttpConnection, helpers
 # from requests_aws4auth import AWS4Auth

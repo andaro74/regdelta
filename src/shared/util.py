@@ -8,7 +8,7 @@ def retry(fn, attempts: int = 4, base_delay: float = 2.0):
     for i in range(attempts):
         try:
             return fn()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             name = type(e).__name__
             retryable = "Throttling" in name or "Throttling" in str(e) \
                 or "ServiceUnavailable" in name or "TooManyRequests" in str(e)
