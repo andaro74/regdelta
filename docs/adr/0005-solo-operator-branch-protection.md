@@ -21,36 +21,62 @@ independent reasons:
    repo, not an org, so `@org/team` syntax could not have resolved either.
    **CODEOWNERS was enforcing none of the boundaries it appeared to.**
 
-2. **`eval-gate / golden-set` was a required check that cannot pass.** The
-   job is `if: vars.EVAL_GATE_ENABLED == 'true'`, deliberately off until the
-   staging API exists at M04 (see `68ccbd3`). It reports `SKIPPED`, and a
-   skipped check does **not** satisfy a required status check — verified
-   empirically: with the review requirement removed, PR #1 remained
-   `BLOCKED` on this alone.
+2. **Both required-check contexts were written in the UI display format and
+   matched nothing.** The ruleset required `eval-gate / unit` and
+   `eval-gate / golden-set`. GitHub Actions reports a check run named for the
+   *job* (`unit`), carrying the workflow name in a separate field; the
+   `workflow / job` string is a rendering, not the context. Neither required
+   context ever resolved, so both sat pending forever and no PR to `main`
+   could go green.
 
 Both are the same failure: a gate whose passing condition no one had
 checked was reachable. Asserting a control and never exercising it is the
 exact failure mode this product exists to catch in regulatory text.
 
+### Correction — the first version of this ADR named the wrong cause
+
+As originally written, cause 2 said `golden-set` reported `SKIPPED`, that a
+skipped check does not satisfy a required check, and that this was "verified
+empirically." **That was wrong, and the verification claim was the worst part
+of it** — the observation behind it (PR #1 still `BLOCKED` after the review
+requirement was lifted) is equally explained by a context that never matched,
+and nothing had been run to tell the two apart.
+
+Isolated afterwards with a two-phase probe (PR #3) and a single-variable A/B/A
+(PR #4), both closed unmerged and kept as evidence:
+
+| context | `unit` conclusion | mergeStateStatus |
+|---------|-------------------|------------------|
+| `unit` | FAILURE (deliberate F401) | BLOCKED |
+| `unit` | SUCCESS | **CLEAN** |
+| `eval-gate / unit` | SUCCESS | **BLOCKED** (stable, 9 reads) |
+| `unit` | SUCCESS (same commit) | **CLEAN** |
+
+Same PR, same commit, same passing check — only the context string changed,
+and the verdict flipped with it. So the display format is what deadlocked
+PR #1. The `SKIPPED` conclusion was never shown to block anything, and the
+`golden-set` removal was not what unblocked the merge.
+
+Two consequences worth carrying:
+- **Use the bare job name as the context.** `unit`, not `eval-gate / unit`.
+  When `golden-set` is restored at M04 it must be `golden-set`, and it must
+  be probed the same way rather than assumed.
+- **Whether a `SKIPPED` required check blocks is still unknown here.** It was
+  never isolated, and this record no longer claims otherwise. That question
+  has to be answered at M04, when there is a job that can actually skip.
+
 ## Decision
 Configure protection to what a single-human repo can actually honor.
 
 **Kept (still real):** PR required for `main` (no direct pushes), required
-status check `eval-gate / unit` (ruff + pytest), block force-push, block
-deletion, no bypass actors.
-
-> **Config drift, recorded 2026-08-07:** applying the above removed the
-> entire `required_status_checks` rule rather than only the `golden-set`
-> context, so `eval-gate / unit` is **not currently required** — a red ruff
-> or pytest does not block merge. The workflow still runs on every PR, so
-> the failure is visible; it just is not a gate. Restoring it is pending.
-> This decision record describes the intended configuration; until the
-> restore lands, the live ruleset is weaker than what is written here.
+status check **`unit`** (ruff + pytest — bare job name, see the correction
+above), block force-push, block deletion, no bypass actors. Verified live by
+PR #3/#4: a red lint blocks the merge, a green one clears it.
 
 **Dropped:** `required_approving_review_count` → 0;
-`require_code_owner_review` → false; `eval-gate / golden-set` removed from
-required checks **until M04**, when the staging API and OIDC role exist and
-the job can actually run.
+`require_code_owner_review` → false; `golden-set` removed from required
+checks **until M04**, when the staging API and OIDC role exist and the job
+can actually run.
 
 **CODEOWNERS is retained as a routing map, not a gate**, with owners mapped
 to `@andaro74` so the file is at least valid. The seat names now say which
@@ -80,14 +106,22 @@ since M00b finding 5) so `run_evals.py` has an owner of record.
   **This is a real reduction in assurance and should be stated as one** —
   ADR-0003's "every accountability claim is showable as a blocked or
   approved PR" no longer holds for the review dimension.
-- `eval-gate / golden-set` must be restored to required checks at M04.
-  Tracked as an M04 exit item; nothing enforces the restoration.
-- `eval-gate / unit` must be restored to required checks (see the drift note
-  above) — an M02 exit item. Two deferred restorations now depend on a human
-  remembering, which is the weakest link in this ADR and is stated as such.
+- `golden-set` must be restored to required checks at M04, as `golden-set`
+  and not `eval-gate / golden-set`, and probed rather than assumed. Tracked
+  as an M04 exit item; nothing enforces the restoration, which depends on a
+  human remembering and is the weakest link in this ADR.
+- `unit` is restored and verified live, so this is no longer outstanding.
 
 ## Note for anyone reading this repo as a work sample
 The interesting artifact here is not the final config. It is that the
 governance scaffold was wrong in a way that was invisible until exercised,
 and that both defects were found by trying to merge rather than by reading
 the policy. A gate is a hypothesis until something fails against it.
+
+The second-order lesson is sharper. The first version of this ADR explained
+the deadlock with a plausible mechanism and called it "verified empirically"
+on the strength of an observation that did not discriminate between two
+candidate causes. It took a deliberately failing probe and a single-variable
+A/B/A to find out which was real — and the answer was the other one. A
+correct-sounding root cause in a decision record is itself an unverified
+claim, and this project's whole premise is that those get checked.
