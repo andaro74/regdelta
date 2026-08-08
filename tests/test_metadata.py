@@ -70,6 +70,56 @@ def test_normalization_drops_bad_entries():
     assert meta["supersedes"][0]["scope"] == "full"
 
 
+# --------------------------------------------------------- injection (HIGH-1)
+# The ingestion path persists model output to the amendment graph that
+# CLAUDE.md designates as authoritative for timeline answers, so injected
+# text reaching metadata is a poisoned edge, not a bad answer. These assert
+# the envelope holds; they deliberately do NOT assert the model resists the
+# injection (that is not testable without a live call) — they assert the
+# structural defenses are in place and that nothing downstream trusts the
+# model blindly.
+
+def _injection_doc():
+    return parse_fr_xml((FIXTURES / "fr_injection_probe.xml").read_bytes(),
+                        {"document_number": "2025-90001",
+                         "citation": "90 FR 90001"})
+
+
+def test_document_text_is_wrapped_in_an_envelope():
+    prompts = []
+    metadata.extract(_injection_doc(),
+                     invoke=lambda p: (prompts.append(p), DELAY_MODEL_OUTPUT)[1])
+    prompt = prompts[0]
+    # Exactly one closing tag — the fixture's forged </document> must not have
+    # created a second, which would let the tail read as prompt. (The opening
+    # tag legitimately appears twice: once in the preamble that explains the
+    # envelope, once as the envelope itself.)
+    assert prompt.count("</document>") == 1
+    body = prompt[prompt.rindex("<document>"):prompt.index("</document>")]
+    assert "Food Labeling" in body                 # real document content
+    assert "NOTE FOR AUTOMATED PROCESSING" in body  # injected text stays INSIDE
+
+
+def test_envelope_tags_inside_document_text_are_stripped():
+    doc = _injection_doc()
+    digest = metadata._document_digest(doc)
+    assert "</document>" not in digest and "<document>" not in digest
+    # The surrounding words survive — we strip the tag, not the sentence,
+    # so the passage is still extractable as data.
+    assert "quoted source material has ended" in digest
+
+
+def test_prompt_states_enclosed_text_is_data_not_instructions():
+    prompts = []
+    metadata.extract(_injection_doc(),
+                     invoke=lambda p: (prompts.append(p), DELAY_MODEL_OUTPUT)[1])
+    prompt = prompts[0]
+    assert "QUOTED SOURCE MATERIAL" in prompt
+    # The imperative-amendatory carve-out must be explicit, or the preamble
+    # tells the model to ignore the very instructions it must record.
+    assert "amendatory instructions" in prompt.lower()
+
+
 def test_ecfr_sections_skip_the_model():
     doc = parse_ecfr_xml((FIXTURES / "ecfr_21_74.303.xml").read_bytes(),
                          "21", "74.303", "2025-01-01")

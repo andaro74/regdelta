@@ -13,6 +13,7 @@ Message shapes (from poller):
 import datetime as dt
 import json
 import re
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -261,8 +262,27 @@ def _resolve_fr_citation(target: str) -> str:
     (timeline answers key on document numbers), so an unresolvable target
     must fail the message — the SQS retry / DLQ path is the honest outcome,
     not a silently mis-keyed edge."""
-    if _DOC_NUMBER_RE.match(target):  # already a document number
-        return target
+    if _DOC_NUMBER_RE.fullmatch(target):
+        # Shape alone is NOT existence. This branch used to return the target
+        # unchecked, so a model-emitted (or injected) "2024-99999" became an
+        # edge key pointing at a document that need not exist — security
+        # review HIGH-1. Verify against the registry, then the FR API.
+        if _client("registry").get_item(
+                Key={"pk": f"DOC#{target}", "sk": "META"}).get("Item"):
+            return target
+        try:
+            doc = json.loads(_get(f"{config.FR_API}/documents/"
+                                  f"{urllib.parse.quote(target, safe='')}.json"))
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                raise ValueError(
+                    f"supersedes target {target!r} is not a real FR document") from e
+            raise  # transient: let SQS retry
+        if doc.get("document_number") == target:
+            return target
+        raise ValueError(f"supersedes target {target!r} did not confirm against "
+                         "the FR API")
+
     item = _client("registry").get_item(
         Key={"pk": f"FRCITE#{target}", "sk": "DOC"}).get("Item")
     if item:
