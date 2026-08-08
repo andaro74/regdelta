@@ -423,6 +423,39 @@ def _write_amendment_edge(table, doc_number: str, edge: dict) -> str:
     return item["sk"]
 
 
+def _merge_stay_intervals(edges: list[dict]) -> list[dict]:
+    """Collapse a document's stay edges into one interval per (target, start).
+
+    Found on the first live re-ingest, not by any test. 2026-15920 legitimately
+    emits BOTH a `stay` edge (start 2025-02-18, no end) and a `stay_lifted`
+    edge (same start, end 2026-08-05) — one document describing both ends of
+    one suspension. Written separately they produce the same
+    `STAY_PERIOD#<start>#<doc>` key, so the second silently replaced the first.
+    We kept `end` only because `stay_lifted` happened to be emitted last;
+    reversed, the graph would report Red No. 3 as still stayed today.
+
+    That is the same last-write-wins clobber security review caught across
+    documents, one level down — namespacing by the asserting document does not
+    help when a single document supplies both halves. Merging is the right fix
+    rather than adding scope to the key: a stay and its lift are ONE interval,
+    and splitting them across two items would push the reconciliation onto
+    every consumer.
+    """
+    merged: dict[tuple, dict] = {}
+    for e in edges:
+        if e["scope"] not in metadata.STAY_SCOPES:
+            continue
+        key = (e["doc_number"], e["stay_start"])
+        cur = merged.setdefault(key, {"doc_number": e["doc_number"],
+                                      "target": e["target"],
+                                      "stay_start": e["stay_start"]})
+        # Later values fill gaps but never overwrite a known endpoint.
+        for field in ("stay_end", "stay_authority", "applies_to"):
+            if e.get(field) and not cur.get(field):
+                cur[field] = e[field]
+    return list(merged.values())
+
+
 def _write_stay_period(table, doc_number: str, edge: dict) -> None:
     """A stay is an interval on the STAYED document, not an edge pair.
 
@@ -609,8 +642,8 @@ def ingest_fr_doc(msg: dict) -> str:
     written_edge_keys = set()
     for edge in edges:
         written_edge_keys.add(_write_amendment_edge(table, doc_number, edge))
-        if edge["scope"] in metadata.STAY_SCOPES:
-            _write_stay_period(table, doc_number, edge)
+    for interval in _merge_stay_intervals(edges):
+        _write_stay_period(table, doc_number, interval)
     # After the writes, so a failure mid-loop leaves the old edges in place
     # rather than deleting them and then failing to write replacements.
     _delete_stale_edges(table, doc_number, written_edge_keys)

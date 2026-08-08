@@ -57,7 +57,25 @@ _STAY_SCOPES = STAY_SCOPES
 # landing before its consumer exists, which is the wrong order. A CFR-section
 # list is short, so the cap is generous for real content and hostile to prose.
 _APPLIES_TO_MAX = 200
-_APPLIES_TO_RE = re.compile(r"\A[0-9A-Za-z §.()\-;,/&']*\Z")
+
+# A charset WHITELIST was wrong here and DLQ'd a real document on the first
+# live run: the delay notice's applies_to is
+#   '21 CFR Part 101; Food Labeling: Nutrient Content Claims; Definition of
+#    Term "Healthy"'
+# and the colon and quotes are ordinary in a rule title. That is the same
+# false-negative class both reviews flagged for date grounding — an
+# over-strict check turning a correct extraction into an ingestion outage.
+#
+# The field legitimately holds rule titles, so its content is close to
+# arbitrary prose and a whitelist cannot bound it. What actually needs
+# blocking is the small set of characters that could give the value STRUCTURE
+# in a downstream prompt: `<` `>` would let it forge the `</document>`
+# envelope that was M01's HIGH-1, braces enable format-string style
+# injection, and backticks fence markdown. Length is capped separately, and
+# whitespace is already collapsed. The durable defence remains consumer-side:
+# SPEC/03's timeline agent must render this inside a data boundary, not as
+# graph fact — that is recorded in ADR-0007 and is not solved here.
+_APPLIES_TO_FORBIDDEN = re.compile(r"[<>{}`\x00-\x1f]")
 
 # En dash, used by the Federal Register in date ranges. Built with chr() so
 # no ambiguous-Unicode literal appears in this file.
@@ -361,10 +379,11 @@ def _normalize(raw: dict, source: str) -> dict:
             raise validate.ValidationError(
                 f"{field} is {len(text)} chars, over the {_APPLIES_TO_MAX} cap; "
                 "this field names CFR sections or party classes, not prose")
-        if not _APPLIES_TO_RE.match(text):
+        bad = _APPLIES_TO_FORBIDDEN.search(text)
+        if bad:
             raise validate.ValidationError(
-                f"{field} contains characters outside the citation charset: "
-                f"{text[:80]!r}")
+                f"{field} contains {bad.group()!r}, which could give this "
+                f"value structure in a downstream prompt: {text[:80]!r}")
         return text
 
     def dates(key):

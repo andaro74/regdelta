@@ -599,7 +599,7 @@ def test_grounding_rejects_a_bare_year_however_suggestive():
         assert not _date_is_grounded(iso, src), iso
 
 
-def test_applies_to_is_bounded_and_charset_restricted():
+def test_applies_to_is_bounded_and_structure_restricted():
     """The only unvalidated model string that reached the amendment graph.
 
     It touches no key — so this is not key injection. It is stored prompt
@@ -613,7 +613,7 @@ def test_applies_to_is_bounded_and_charset_restricted():
         metadata.extract(doc, invoke=lambda p: _model_output(
             supersedes=[{"target": "89 FR 106064", "scope": "dates_confirmed",
                          "applies_to": payload}]))
-    with pytest.raises(validate.ValidationError, match="citation charset"):
+    with pytest.raises(validate.ValidationError, match="structure"):
         metadata.extract(doc, invoke=lambda p: _model_output(
             supersedes=[{"target": "89 FR 106064", "scope": "dates_confirmed",
                          "applies_to": "21 CFR 101.65 <script>x</script>"}]))
