@@ -581,9 +581,29 @@ def ingest_fr_doc(msg: dict) -> str:
     # and become S3 Vectors filter values — SPEC/02 filters on pub/effective/
     # compliance ranges, and a malformed value there breaks range comparison
     # silently rather than erroring.
-    eff = meta["effective_dates"][0]["date"] if meta["effective_dates"] \
-        else validate.optional_iso_date(doc_meta.get("effective_on"),
-                                        field="response effective_on")
+    # ONE resolved list, used for both the chunk filter value and the META
+    # record. They used to diverge: ADR-0006 correctly made the model return
+    # `effective_dates: []` for a delay notice (the delayed date belongs to the
+    # rule being delayed), which activated this API fallback for the chunks
+    # while META still recorded the model's `[]`. Two of our own stores then
+    # disagreed about the same document — the "duplicated legal facts drift"
+    # hazard ADR-0006 warns about, realised internally.
+    #
+    # The fallback stays, and now feeds both. The asymmetry with compliance is
+    # deliberate and SME-ruled: the Federal Register's own structured metadata
+    # assigns `effective_on` to THIS document, so recording it is neither
+    # inventing precision nor borrowing another document's date. No equivalent
+    # exists for compliance — the notice states one nowhere, in text or
+    # metadata — so `compliance_dates` has no fallback and stays `[]`.
+    effective_dates = meta["effective_dates"]
+    if not effective_dates:
+        api_eff = validate.optional_iso_date(doc_meta.get("effective_on"),
+                                             field="response effective_on")
+        if api_eff:
+            effective_dates = [{"date": api_eff,
+                                "applies_to": "Federal Register effective_on "
+                                              "for this document"}]
+    eff = effective_dates[0]["date"] if effective_dates else None
     comp = meta["compliance_dates"][0]["date"] if meta["compliance_dates"] else None
     pub = validate.optional_iso_date(doc_meta.get("publication_date"),
                                      field="response publication_date")
@@ -661,7 +681,9 @@ def ingest_fr_doc(msg: dict) -> str:
         "title": doc_meta.get("title"),
         "doc_type": meta["doc_type"],
         "pub_date": pub,
-        "effective_dates": json.dumps(meta["effective_dates"]),
+        # The resolved list, not meta["effective_dates"] — see above. META and
+        # the chunks must never disagree about the same document.
+        "effective_dates": json.dumps(effective_dates),
         "compliance_dates": json.dumps(meta["compliance_dates"]),
         "affected_cfr": json.dumps(meta["affected_cfr"]),
         "amendatory_instructions": json.dumps(meta["amendatory_instructions"]),

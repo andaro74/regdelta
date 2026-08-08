@@ -52,6 +52,36 @@ contain that date's day-precision in a recognizable form, the message fails.
 Prompts are probabilistic and this field carries liability — a prompt-only fix
 leaves the failure mode reachable on any model swap.
 
+### Effective dates are NOT symmetric with compliance dates
+Added 2026-08-08 after live re-ingest, human SME sign-off.
+
+Applying decision 1 made the model return `effective_dates: []` for the delay
+notice — correctly, since the delayed date belongs to the rule being delayed.
+That activated a pre-existing FR-API fallback for the **chunk** filter value
+while **META** still stored the model's `[]`, so two of our own stores
+disagreed about the same document. That is the duplicated-facts drift this ADR
+warns about, realised internally rather than across documents.
+
+The ruling is that the delay notice **does** establish effective date
+2025-04-28, and both stores record it. The asymmetry with compliance is the
+point:
+
+| | effective | compliance |
+|---|---|---|
+| stated in the document text | no | no |
+| assigned by FR structured metadata | **yes** (`effective_on`) | no |
+| outcome | recorded, from the API | `[]` |
+
+Decision 2 forbids *inventing* precision; decision 1 forbids *borrowing*
+another document's date. Recording a date the **publisher** attaches to this
+document is neither — it is not our inference and not the model's. No
+equivalent exists for compliance: the notice states one nowhere, in text or in
+metadata, which is why a fabricated `2028-01-01` cannot re-enter through a
+fallback. `compliance_dates` deliberately has none.
+
+Both values are now derived from one resolved list in `ingest_fr_doc`, so META
+and the chunks cannot diverge again. Pinned by a test and mutation-checked.
+
 ### Consequence for SPEC/02's filter contract
 A `compliance_date` range filter answers *"which documents impose a conformance
 deadline in this window."* The delay notice imposes none. A range covering 2028

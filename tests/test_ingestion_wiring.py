@@ -490,6 +490,75 @@ def test_applies_to_still_blocks_structure_characters(payload):
             source="")
 
 
+def _ingest_capturing(monkeypatch, table, *, model_meta, doc_meta):
+    _stub_ingest(monkeypatch, table, doc_meta=doc_meta)
+    monkeypatch.setattr(metadata, "extract", lambda parsed: model_meta)
+    written_chunks = {}
+
+    def capture(doc, raw, parsed, chunks, part):
+        written_chunks["c"] = chunks
+        return "k.jsonl"
+
+    monkeypatch.setattr(processor, "_write_corpus", capture)
+    monkeypatch.setattr(processor, "_put_vectors", lambda chunks: None)
+    monkeypatch.setattr(processor, "_write_chunk_registry_items",
+                        lambda pk, chunks: None)
+    processor.ingest_fr_doc({"document_number": doc_meta["document_number"]})
+    meta_item = next(i for i in table.written if i["sk"] == "META")
+    return written_chunks["c"], meta_item
+
+
+DELAY_DOC_META = {
+    "document_number": "2025-03118", "citation": "90 FR 10592",
+    "full_text_xml_url":
+        "https://www.federalregister.gov/documents/full_text/xml/2025/02/25/2025-03118.xml",
+    "publication_date": "2025-02-25",
+    "effective_on": "2025-04-28",
+}
+
+
+def test_meta_and_chunks_never_disagree_on_effective_date(monkeypatch):
+    """Found by verifying the live re-ingest, not by a test.
+
+    ADR-0006 correctly makes the model return `effective_dates: []` for a delay
+    notice — the delayed date belongs to the rule being delayed. That activated
+    the FR-API fallback for the CHUNK filter value while META still stored the
+    model's `[]`, so two of our own stores disagreed about the same document:
+    exactly the duplicated-facts drift ADR-0006 warns about, realised
+    internally. Both now derive from one resolved list.
+    """
+    table = _FakeTable()
+    chunks, meta_item = _ingest_capturing(
+        monkeypatch, table, doc_meta=DELAY_DOC_META,
+        model_meta={"doc_type": "delay_notice", "effective_dates": [],
+                    "compliance_dates": [], "affected_cfr": [],
+                    "amendatory_instructions": [], "supersedes": [],
+                    "binding": True, "publication_date": "2025-02-25"})
+    chunk_eff = {c["effective_date"] for c in chunks}
+    meta_eff = [d["date"] for d in json.loads(meta_item["effective_dates"])]
+    assert chunk_eff == {"2025-04-28"}
+    assert meta_eff == ["2025-04-28"], "META must not disagree with the chunks"
+
+
+def test_compliance_has_no_api_fallback_so_it_stays_empty(monkeypatch):
+    """The asymmetry is deliberate and SME-ruled. FR's structured metadata
+    assigns `effective_on` to this document, so recording it is neither
+    inventing precision nor borrowing another document's date. No equivalent
+    exists for compliance — the notice states one nowhere — so a fabricated
+    2028-01-01 can never re-enter through a fallback."""
+    table = _FakeTable()
+    doc_meta = dict(DELAY_DOC_META)
+    doc_meta["compliance_on"] = "2028-01-01"      # even if the API offered one
+    chunks, meta_item = _ingest_capturing(
+        monkeypatch, table, doc_meta=doc_meta,
+        model_meta={"doc_type": "delay_notice", "effective_dates": [],
+                    "compliance_dates": [], "affected_cfr": [],
+                    "amendatory_instructions": [], "supersedes": [],
+                    "binding": True, "publication_date": "2025-02-25"})
+    assert {c["compliance_date"] for c in chunks} == {None}
+    assert json.loads(meta_item["compliance_dates"]) == []
+
+
 def test_normalize_emits_the_key_names_the_write_path_reads(monkeypatch):
     """Closes the coupling gap engineering review named.
 

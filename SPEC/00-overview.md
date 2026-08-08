@@ -14,9 +14,21 @@ Low-confidence verdicts pause for human review.
    ($10M threshold).
 2. **FD&C Red No. 3 revocation** — order published Jan 16 2025 (90 FR 4628);
    food use **effective** Jan 15 2027; ingested drugs **effective** Jan 18
-   2028 (two dates in one order). Cascades: TTB formula re-approval for the
-   cocktail mixer; existing-inventory nuance; HHS "phase out sooner" is a
-   request, not a rule.
+   2028 (two dates in one order). **Administratively stayed** under
+   21 U.S.C. 371(e)(2) from Feb 18 2025 by the filing of objections; stay
+   **lifted Aug 5 2026 with both dates confirmed, not moved** (91 FR 50475).
+   Cascades: TTB formula re-approval for the cocktail mixer;
+   existing-inventory nuance; HHS "phase out sooner" is a request, not a rule.
+
+   **The stay is the strongest artifact in the corpus and the poller found it
+   unattended.** Between Feb 2025 and Aug 2026 the honest answer to "when must
+   we comply?" was neither "January 15 2027" nor "the deadline moved" — it was
+   *"January 15 2027, but the provision is stayed and not currently
+   operative."* A system that answers a bare date is wrong in a way no
+   date-comparison test detects. There is also **no Federal Register document
+   for the stay itself** — it arose by operation of law and is knowable only
+   retrospectively from the document that lifts it, so between an objection
+   filing and the lift the corpus cannot know a stay is in force. See ADR-0007.
 
    **Effective, not compliance — and the distinction is the point.** Unlike
    scenario 1, this order states no compliance date at all; it repeals the
