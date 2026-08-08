@@ -33,6 +33,15 @@ jobs:
     needs: unit
     # Skip until the staging API exists (post-M04). Flip to enabled by
     # setting the repo variable EVAL_GATE_ENABLED=true.
+    #
+    # EVAL_GATE_ENABLED was set to 'true' on 2026-08-04, before either the
+    # staging API (SPEC/04) or the OIDC role existed, so this job failed at
+    # configure-aws-credentials. Nobody saw it: `needs: unit` skipped this
+    # job on every run, because the lint step below it had never passed. Set
+    # back to 'false' on 2026-08-08. DO NOT flip it to 'true' again until
+    # BOTH repo variables below are populated — AWS_EVAL_ROLE_ARN and
+    # STAGING_API_URL are read unguarded and an empty value fails the job
+    # rather than skipping it.
     if: vars.EVAL_GATE_ENABLED == 'true'
     steps:
       - uses: actions/checkout@v4
