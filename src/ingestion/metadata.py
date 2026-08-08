@@ -11,7 +11,7 @@ The Bedrock call is injectable (`invoke=`) so tests run without AWS.
 import json
 import re
 
-from shared import config
+from shared import config, validate
 
 _ACTIONS = {"add", "revise", "remove", "redesignate"}
 _SCOPES = {"effective_date", "compliance_date", "full"}
@@ -147,13 +147,28 @@ def _normalize(raw: dict) -> dict:
     if not raw.get("doc_type"):
         raise ValueError(f"model output missing doc_type: {json.dumps(raw)[:200]}")
 
+    # doc_type is a filter key in SPEC/02's retrieval contract. _PROMPT lists
+    # the enum but nothing enforced it, and the failure is silent in the worst
+    # direction: an out-of-enum value does not error at query time, it just
+    # matches no filter, so the document is missing from exactly the queries
+    # meant to surface it. Deferred as MEDIUM-1 at M01 close.
+    doc_type = validate.doc_type(raw["doc_type"], field="model doc_type")
+
     def dates(key):
         out = []
         for d in raw.get(key) or []:
             if isinstance(d, str):
                 d = {"date": d, "applies_to": ""}
             if d.get("date"):
-                out.append({"date": d["date"], "applies_to": d.get("applies_to", "")})
+                # Raises on a malformed date rather than dropping it. Dropping
+                # is the more dangerous option here: the document would ingest
+                # looking complete while missing a compliance deadline, and a
+                # confident cited answer built on that gap is precisely the
+                # failure this product exists to prevent. A DLQ entry is
+                # visible; an absent deadline is not.
+                out.append({"date": validate.iso_date(d["date"],
+                                                      field=f"model {key}[].date"),
+                            "applies_to": d.get("applies_to", "")})
         return out
 
     amendatory = []
@@ -172,8 +187,12 @@ def _normalize(raw: dict) -> dict:
             })
 
     return {
-        "doc_type": raw.get("doc_type") or "notice",
-        "publication_date": raw.get("publication_date"),
+        # Was `raw.get("doc_type") or "notice"` — dead code behind the guard
+        # above, and the fallback invented a doc_type on a path that could
+        # never reach it. Now the validated value, or no document at all.
+        "doc_type": doc_type,
+        "publication_date": validate.optional_iso_date(
+            raw.get("publication_date"), field="model publication_date"),
         "effective_dates": dates("effective_dates"),
         "compliance_dates": dates("compliance_dates"),
         "affected_cfr": [c for c in (raw.get("affected_cfr") or []) if isinstance(c, str)],

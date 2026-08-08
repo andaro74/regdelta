@@ -35,6 +35,48 @@ FR_AGENCY_SLUG = "food-and-drug-administration"
 FR_DOC_TYPES = ("RULE", "PRORULE", "NOTICE")
 POLL_LOOKBACK_DAYS = int(os.environ.get("POLL_LOOKBACK_DAYS", "7"))
 
+# ------------------------------------------------- ingestion input hardening
+# The four items deferred at M01 close (security review MEDIUM/LOW). Every
+# value below is a boundary on data this system does not author: FR/eCFR API
+# responses, and model output derived from them.
+
+# Fetch allowlist. Only these hosts, only https. Both the FR document JSON
+# and the eCFR XML arrive from responses that then name the NEXT url to fetch
+# (`next_page_url`, `full_text_xml_url`) — so the fetch target is attacker-
+# reachable if either API is spoofed or compromised, and redirects are
+# followed by default. Without a host check that is a straight SSRF into the
+# Lambda's network position, including the IMDS endpoint.
+ALLOWED_FETCH_HOSTS = frozenset({"www.federalregister.gov", "www.ecfr.gov"})
+ALLOWED_FETCH_SCHEMES = frozenset({"https"})
+
+# Response size cap. `r.read()` was unbounded, so one oversized (or hostile)
+# response could exhaust Lambda memory before anything validated it.
+MAX_FETCH_BYTES = int(os.environ.get("MAX_FETCH_BYTES", str(24 * 1024 * 1024)))
+
+# Chunk cap. embed() issues one Bedrock call per chunk, so chunk count is a
+# direct spend multiplier on a number derived from fetched document length.
+# The largest real demo doc is 389 chunks; 2000 is ~5x headroom and still
+# bounds the blast radius. Exceeding it fails the message rather than
+# truncating — a partial document in the index is a wrong answer with a
+# citation, which is worse than a DLQ entry.
+MAX_CHUNKS_PER_DOC = int(os.environ.get("MAX_CHUNKS_PER_DOC", "2000"))
+
+# doc_type is a filter key in the SPEC/02 retrieval contract. An out-of-enum
+# value does not error — it silently matches no filter, so the document
+# becomes invisible to exactly the queries that should find it. The prompt in
+# metadata.py lists these; nothing enforced them until now.
+DOC_TYPES = frozenset({
+    "final_rule", "delay_notice", "order", "proposed_rule", "notice",
+    "guidance", "cfr_section",
+})
+
+# Plausibility window for extracted dates. Not correctness — a date outside
+# this range is a parse or hallucination artifact, not a regulatory deadline.
+# Compliance dates run years out (Red No. 3 drugs: 2028), so the upper bound
+# is generous.
+MIN_DOC_YEAR = int(os.environ.get("MIN_DOC_YEAR", "1990"))
+MAX_DOC_YEAR = int(os.environ.get("MAX_DOC_YEAR", "2100"))
+
 # Demo corpus (SPEC/01): FR doc numbers verified against the live FR API.
 #   2024-29957  "healthy" final rule            (89 FR 106064, pub 2024-12-27)
 #   2025-03118  effective-date delay rule       (90 FR 10592,  pub 2025-02-25)

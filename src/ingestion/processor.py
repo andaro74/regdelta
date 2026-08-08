@@ -15,16 +15,14 @@ import json
 import re
 import urllib.error
 import urllib.parse
-import urllib.request
 import xml.etree.ElementTree as ET
 
 from ingestion import chunker, metadata
-from shared import config
+from shared import config, validate
+from shared.fetch import get_bytes
 from shared.util import retry
 
 _clients: dict = {}
-
-_DOC_NUMBER_RE = re.compile(r"^\d{2,4}-\d{3,6}$")  # e.g. 2024-29957
 
 
 def _client(name):
@@ -39,9 +37,13 @@ def _client(name):
 
 
 def _get(url: str) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "regdelta-ingest/0.1"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return r.read()
+    """Allowlisted, size-capped fetch. See shared/fetch.py for why both.
+
+    Every caller below passes a URL that came from a response body
+    (`full_text_xml_url`) or from message input, so this is the SSRF boundary
+    for the whole ingestion path.
+    """
+    return get_bytes(url)
 
 
 def _text(el) -> str:
@@ -142,10 +144,16 @@ def parse_fr_xml(xml_bytes: bytes, doc_meta: dict) -> dict:
                             "paragraphs": paragraphs,
                         })
 
+    # From the FR API response, and it becomes the chunk_id prefix (hence a
+    # vector key and a CHUNK# sort key) as well as the S3 object keys. The
+    # caller validated the id it *requested*; this is the id the response
+    # *returned*, which is a different value and a different trust boundary.
+    doc_id = validate.doc_number(doc_meta.get("document_number"),
+                                 field="response document_number")
     return {
-        "doc_id": doc_meta["document_number"],
+        "doc_id": doc_id,
         "source": "federal_register",
-        "fr_doc_number": doc_meta["document_number"],
+        "fr_doc_number": doc_id,
         "fr_citation": doc_meta.get("citation"),
         "title": _text(preamb.find("SUBJECT")) if preamb is not None else doc_meta.get("title"),
         "agency": _text(preamb.find("AGENCY")) if preamb is not None else None,
@@ -199,6 +207,28 @@ def parse_ecfr_xml(xml_bytes: bytes, title: str, section: str, version_date: str
             "paragraphs": paragraphs,
         }],
     }
+
+
+# ----------------------------------------------------------------- capacity
+def _capped(chunks: list[dict], doc_ref: str) -> list[dict]:
+    """Refuse a document that produces more chunks than the cap allows.
+
+    embed() issues one Bedrock call per chunk, so chunk count multiplies
+    directly into spend and runtime on a number derived from fetched document
+    length — an unbounded quantity before this check existed.
+
+    Fails rather than truncating. A truncated document is worse than a DLQ
+    entry: the missing chunks are invisible downstream, and the ones that made
+    it still answer queries with confident citations, so the corpus looks
+    healthy while the compliance-date paragraph is simply absent. SPEC/01's
+    count-equality invariant would still hold on the truncated set.
+    """
+    if len(chunks) > config.MAX_CHUNKS_PER_DOC:
+        raise ValueError(
+            f"{doc_ref} produced {len(chunks)} chunks, over the "
+            f"MAX_CHUNKS_PER_DOC cap of {config.MAX_CHUNKS_PER_DOC}; refusing "
+            "rather than truncating (a partial document answers with citations)")
+    return chunks
 
 
 # --------------------------------------------------------------- embeddings
@@ -267,7 +297,7 @@ def _resolve_fr_citation(target: str) -> str:
     (timeline answers key on document numbers), so an unresolvable target
     must fail the message — the SQS retry / DLQ path is the honest outcome,
     not a silently mis-keyed edge."""
-    if _DOC_NUMBER_RE.fullmatch(target):
+    if validate.is_doc_number(target):
         # Shape alone is NOT existence. This branch used to return the target
         # unchecked, so a model-emitted (or injected) "2024-99999" became an
         # edge key pointing at a document that need not exist — security
@@ -304,7 +334,12 @@ def _resolve_fr_citation(target: str) -> str:
 
 # ------------------------------------------------------------ ingest: FR doc
 def ingest_fr_doc(msg: dict) -> str:
-    doc_number = msg["document_number"]
+    # Validated before it is used in a key or a URL path. The message body is
+    # attacker-reachable in principle (anything that can write to the queue)
+    # and this value becomes `DOC#<id>` (DynamoDB pk), `raw/<id>.xml` and
+    # `chunks/<part>/<id>.jsonl` (S3 keys). `/` and `..` are legal in an S3
+    # key, so an unvalidated id writes to a different object than intended.
+    doc_number = validate.doc_number(msg.get("document_number"))
     table = _client("registry")
     if table.get_item(Key={"pk": f"DOC#{doc_number}", "sk": "META"}).get("Item"):
         return "skipped"
@@ -315,13 +350,22 @@ def ingest_fr_doc(msg: dict) -> str:
     parsed = parse_fr_xml(raw, doc_meta)
     meta = metadata.extract(parsed)
 
-    chunks = chunker.chunk(parsed)
+    chunks = _capped(chunker.chunk(parsed), doc_number)
+    # metadata.extract() already validated its own dates. `effective_on` and
+    # `publication_date` come straight off the FR API response and did not go
+    # through it, so they are validated here. All three land in chunk metadata
+    # and become S3 Vectors filter values — SPEC/02 filters on pub/effective/
+    # compliance ranges, and a malformed value there breaks range comparison
+    # silently rather than erroring.
     eff = meta["effective_dates"][0]["date"] if meta["effective_dates"] \
-        else doc_meta.get("effective_on")
+        else validate.optional_iso_date(doc_meta.get("effective_on"),
+                                        field="response effective_on")
     comp = meta["compliance_dates"][0]["date"] if meta["compliance_dates"] else None
+    pub = validate.optional_iso_date(doc_meta.get("publication_date"),
+                                     field="response publication_date")
     for c in chunks:
         c["doc_type"] = meta["doc_type"]
-        c["pub_date"] = doc_meta.get("publication_date")
+        c["pub_date"] = pub
         c["effective_date"] = eff
         c["compliance_date"] = comp
     # strict=: a short embed() return would otherwise truncate silently and
@@ -340,8 +384,14 @@ def ingest_fr_doc(msg: dict) -> str:
     chunks_key = _write_corpus(doc_number, raw, parsed, chunks, parsed.get("cfr_part"))
     _put_vectors(chunks)
 
+    # The citation becomes a partition key (FRCITE#<citation>), so an
+    # unvalidated value could carry `#` and forge the registry's composite-key
+    # structure — the same layout _resolve_fr_citation reads back when it
+    # resolves a supersedes target.
     if doc_meta.get("citation"):
-        table.put_item(Item={"pk": f"FRCITE#{doc_meta['citation']}", "sk": "DOC",
+        citation = validate.fr_citation(doc_meta["citation"],
+                                        field="response citation")
+        table.put_item(Item={"pk": f"FRCITE#{citation}", "sk": "DOC",
                              "doc_number": doc_number})
     for edge in edges:
         table.put_item(Item={
@@ -375,15 +425,25 @@ def ingest_fr_doc(msg: dict) -> str:
 def latest_version_date(title: str, section: str) -> str:
     data = json.loads(_get(
         f"{config.ECFR_API}/versions/title-{title}.json?section={section}"))
-    dates = [v["date"] for v in data.get("content_versions", [])]
+    # Validated before max(): these become a path segment in the eCFR URL, an
+    # S3 key component, and the VERSION# sort key. max() over raw strings is a
+    # lexicographic pick, so a single malformed entry can win and both mask
+    # the real latest version and propagate into all three.
+    dates = [validate.iso_date(v.get("date"), field="content_versions[].date")
+             for v in data.get("content_versions", [])]
     # Explicit UTC — this becomes a version_date in an S3 key and a registry
     # sort key, so a local-timezone shift would fork the snapshot. [DTZ011]
     return max(dates) if dates else dt.datetime.now(dt.UTC).date().isoformat()
 
 
 def ingest_cfr_section(msg: dict) -> str:
-    title, section = msg["title"], msg["section"]
-    date = msg.get("date", "current")
+    # All three reach storage keys: `CFR#<title>#<section>` (DynamoDB pk),
+    # `VERSION#<date>` (sk), `chunks/<part>/<doc_id>.jsonl` (S3), plus the
+    # eCFR URL path. "current" is a caller sentinel resolved below, before it
+    # can reach any of them.
+    title = validate.cfr_title(msg.get("title"))
+    section = validate.cfr_section(msg.get("section"))
+    date = validate.version_date(msg.get("date", "current"))
     if date == "current":
         date = latest_version_date(title, section)
     table = _client("registry")
@@ -397,7 +457,7 @@ def ingest_cfr_section(msg: dict) -> str:
     parsed = parse_ecfr_xml(raw, title, section, date)
     meta = metadata.extract(parsed)
 
-    chunks = chunker.chunk(parsed)
+    chunks = _capped(chunker.chunk(parsed), parsed["doc_id"])
     for c in chunks:
         c["doc_type"] = meta["doc_type"]
         c["pub_date"] = None
