@@ -4,7 +4,7 @@
 
 STACK_CORE   := regdelta-core
 STACK_SEARCH := regdelta-search
-REGION       ?= us-east-1
+REGION       ?= us-west-2
 SSM_ENDPOINT := /regdelta/search/endpoint
 CDK          := cd infra && npx cdk
 
@@ -48,14 +48,23 @@ smoke:
 evals:
 	python evals/run_evals.py
 
+# M00b control. Reproduces the permanent baseline scorecard: starts the
+# loopback shim, runs the full golden set against mode=naive, records it.
+baseline:
+	@python evals/serve_local.py --port 8000 & echo $$! > .baseline.pid; \
+	  sleep 2; \
+	  python evals/run_evals.py --mode naive --api-url http://127.0.0.1:8000 --record; \
+	  status=$$?; kill $$(cat .baseline.pid); rm -f .baseline.pid; exit $$status
+
 test:
 	pytest -q
 
 ingest-backfill:
-	aws lambda invoke --region $(REGION) --function-name \
+	aws lambda invoke --region $(REGION) --cli-binary-format raw-in-base64-out \
+	  --function-name \
 	  $$(aws cloudformation describe-stacks --stack-name $(STACK_CORE) --region $(REGION) \
 	     --query "Stacks[0].Outputs[?OutputKey=='PollerFnName'].OutputValue" --output text) \
-	  --payload '{"mode":"backfill"}' /dev/stdout
+	  --payload '{"mode":"backfill"}' backfill-out.json && cat backfill-out.json && rm -f backfill-out.json
 
 demo: up
 	@echo "Demo UI: $$(aws cloudformation describe-stacks --stack-name $(STACK_CORE) \

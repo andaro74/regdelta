@@ -11,7 +11,6 @@ search depends on core; core never references search, so
 import os
 
 import aws_cdk as cdk
-
 from core.core_stack import RegDeltaCoreStack
 from search.search_stack import RegDeltaSearchStack
 

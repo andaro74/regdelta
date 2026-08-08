@@ -1,0 +1,651 @@
+<?xml version='1.0' encoding='utf-8'?>
+<RULE>
+                <PREAMB>
+                    <PRTPAGE P="106064" />
+                    <AGENCY TYPE="S">DEPARTMENT OF HEALTH AND HUMAN SERVICES</AGENCY>
+                    <SUBAGY>Food and Drug Administration</SUBAGY>
+                    <CFR>21 CFR Part 101</CFR>
+                    <DEPDOC>[Docket No. FDA-2016-D-2335]</DEPDOC>
+                    <RIN>RIN 0910-AI13</RIN>
+                    <SUBJECT>Food Labeling: Nutrient Content Claims; Definition of Term “Healthy”</SUBJECT>
+                    <AGY>
+                        <HD SOURCE="HED">AGENCY:</HD>
+                        <P>Food and Drug Administration, HHS.</P>
+                    </AGY>
+                    <ACT>
+                        <HD SOURCE="HED">ACTION:</HD>
+                        <P>Final rule.</P>
+                    </ACT>
+                    <SUM>
+                        <HD SOURCE="HED">SUMMARY:</HD>
+                        <P>The Food and Drug Administration (FDA or we) is issuing this final rule updating the definition for the implied nutrient content claim “healthy” to be consistent with current nutrition science and Federal dietary guidance, especially the Dietary Guidelines for Americans (Dietary Guidelines), regarding how consumers can maintain healthy dietary practices. This final rule revises the requirements for when the term “healthy” can be used as an implied nutrient content claim in the labeling of human food products to help consumers identify foods that are particularly useful as the foundation of a nutritious diet that is consistent with dietary recommendations.</P>
+                    </SUM>
+                    <DATES>
+                        <HD SOURCE="HED">DATES:</HD>
+                        <P>This rule is effective February 25, 2025. The compliance date of this final rule is February 25, 2028.</P>
+                    </DATES>
+                    <ADD>
+                        <HD SOURCE="HED">ADDRESSES:</HD>
+                        <P>
+                            For access to the docket to read background documents or comments received, go to 
+                            <E T="03">https://www.regulations.gov</E>
+                             and insert the docket number found in brackets in the heading of this final rule into the “Search” box and follow the prompts, and/or go to the Dockets Management Staff, 5630 Fishers Lane, Rm. 1061, Rockville, MD 20852, 240-402-7500.
+                        </P>
+                    </ADD>
+                    <FURINF>
+                        <HD SOURCE="HED">FOR FURTHER INFORMATION CONTACT:</HD>
+                        <P>
+                            <E T="03">With regard to the final rule:</E>
+                             Vincent de Jesus, Office of Nutrition and Food Labeling (HFS-803), Human Foods Program, Food and Drug Administration, 5001 Campus Dr., College Park, MD, 20740, 240-402-1450; Denise See or Barbara Little, Office of Policy, Regulations, and Information (HFS-024), Human Foods Program, Food and Drug Administration, 5001 Campus Dr., College Park, MD 20740, 240-402-2378.
+                        </P>
+                        <P>
+                            <E T="03">With regard to the information collection:</E>
+                             Domini Bean, Office of Operations, Food and Drug Administration, Three White Flint North, 10A-12M, 11601 Landsdown St., North Bethesda, MD 20852, 301-796-5733, 
+                            <E T="03">PRAStaff@fda.hhs.gov.</E>
+                        </P>
+                    </FURINF>
+                </PREAMB>
+                <SUPLINF>
+                    <HD SOURCE="HED">SUPPLEMENTARY INFORMATION:</HD>
+                    <HD SOURCE="HD1">Table of Contents</HD>
+                    <HD SOURCE="HD1">I. Executive Summary</HD>
+                    <HD SOURCE="HD2">A. Purpose of the Final Rule</HD>
+                    <P>This final rule updates the requirements for when the term “healthy” can be used as an implied nutrient content claim in the labeling of human food products to help consumers identify foods that can serve as the foundation of a nutritious diet that is consistent with current dietary recommendations. Consumers rely on food labels when navigating the marketplace to make informed choices about the foods they purchase for themselves and their families. FDA plays an important role in ensuring that the labels or labeling of food for human consumption, including claims on labels or labeling that market a food, are accurate, truthful, and not misleading. One such claim that FDA has regulated is the term “healthy” on product labels. Since 1994, we have recognized that when a manufacturer uses labeling that describes a product as “healthy” in the nutritional context, it is making an implicit claim about the level of nutrients in the product. In particular, such a claim implies that the nutrient content of the food may help consumers maintain healthy dietary practices. Given that nutrition science has evolved since the 1990s, this final rule updates the definition of “healthy” to be consistent with current nutrition science and Federal dietary guidance to help ensure that consumers have access to more complete, accurate, and up-to-date information on food labels. This final rule is also consistent with the longstanding purpose of this implied nutrient content claim to indicate that the nutrient levels of a food may help consumers maintain healthy dietary practices and furthers FDA's goals in accordance with its statutory mandate to prevent misleading labeling and reduce consumer confusion that can result from the use of inconsistent definitions for nutrient content claims.</P>
+                    <P>
+                        In addition, updating the “healthy” nutrient content claim is one initiative action listed in the White House National Strategy on Hunger, Nutrition, and Health under the pillar of empowering all consumers to make and have access to healthy choices (Ref. 6). FDA, as part of this whole-of-government approach, broadly seeks to help reduce the burden of diet-related chronic diseases. Doing so will advance health equity, because diet-related chronic diseases are experienced disproportionately by certain racial and ethnic minority groups and those with lower socioeconomic status. For further discussion regarding the scope of the problem Americans face from diet-related chronic diseases, please see the proposed rule, 87 FR 59168 at 59170. We are committed to accomplishing these goals, in part, by prioritizing nutrition initiatives that can help improve dietary patterns in the United States. An important aspect of reducing the burden of diet-related chronic diseases, as well as advancing health equity, is helping consumers access nutrition information that allows them to identify healthier choices. As discussed further in section V. (“Comments on the Proposed Rule and FDA Response”), nutrient content claims, such as “healthy,” as well as other claims made on labels or in the labeling of foods act as quick signals on food packages. These statements may help consumers, particularly those with lower nutrition or health literacy, quickly and easily identify foods that can be the foundation of a healthy dietary pattern. Additionally, as discussed further in section V. (“Comments on the Proposed Rule and 
+                        <PRTPAGE P="106065" />
+                        FDA Response”), our review of the products available in the current marketplace demonstrates that the updated “healthy” criteria allow affordable, accessible, and culturally preferred 
+                        <SU>1</SU>
+                        <FTREF />
+                         nutrient-dense foods within different food groups and subgroups to bear the “healthy” claim, including frozen, canned, dried, and other shelf-stable products. This final rule is one part of FDA's broader commitment to help reduce diet-related chronic diseases and also to advance health equity by helping consumers to identify foods that can be the foundation of a healthy dietary pattern. While there has been consistency in many of the recommendations in Federal dietary guidelines and the underlying nutrition science on which they are based, we intend to remain aligned with the most current nutrition science reflected in Federal dietary guidelines and will continue to update our regulations and policies, as appropriate.
+                    </P>
+                    <LSTSUB>
+                        <HD SOURCE="HED">List of Subjects in 21 CFR Part 101</HD>
+                        <P>Food labeling, Nutrition, Reporting and record keeping requirements.</P>
+                    </LSTSUB>
+                    <REGTEXT TITLE="21" PART="101">
+                        <AMDPAR>1. The authority citation for part 101 continues to read as follows:</AMDPAR>
+                        <AUTH>
+                            <HD SOURCE="HED">Authority: </HD>
+                            <P> 15 U.S.C. 1453, 1454, 1455; 21 U.S.C. 321, 331, 342, 343, 348, 371; 42 U.S.C. 243, 264, 271.</P>
+                        </AUTH>
+                    </REGTEXT>
+                    <REGTEXT TITLE="21" PART="101">
+                        <AMDPAR>2. In § 101.13, revise paragraph (b)(2)(ii) to read as follows:</AMDPAR>
+                        <SECTION>
+                            <SECTNO>§ 101.13</SECTNO>
+                            <SUBJECT>Nutrient content claims—general principles.</SUBJECT>
+                            <STARS />
+                            <P>(b) * * *</P>
+                            <P>(2) * * *</P>
+                            <P>
+                                (ii) Suggests that a food, because of its nutrient content, may be useful in maintaining healthy dietary practices, where there is also implied or explicit information about the nutrition content of the food (
+                                <E T="03">e.g.,</E>
+                                 “healthy”).
+                            </P>
+                            <STARS />
+                        </SECTION>
+                    </REGTEXT>
+                    <REGTEXT TITLE="21" PART="101">
+                        <AMDPAR>3. In § 101.65, revise paragraphs (a)(2) and (d) to read as follows:</AMDPAR>
+                        <SECTION>
+                            <SECTNO>§ 101.65</SECTNO>
+                            <SUBJECT>Implied nutrient content claims and related label statements.</SUBJECT>
+                            <P>(a) * * *</P>
+                            <P>(2) The claim is made in accordance with the general requirements for nutrient content claims in § 101.13, with the exception of § 101.13(h) when the nutrient content claim is made in accordance with paragraph (d) of this section; and</P>
+                            <STARS />
+                            <P>
+                                (d) 
+                                <E T="03">General nutritional claims.</E>
+                                 (1) This paragraph covers labeling claims that are implied nutrient content claims because they suggest that a food may help consumers maintain healthy dietary practices due to its nutrient content, where there is also implied or explicit information about the nutrition content of the food.
+                            </P>
+                            <P>
+                                (2) For purposes of this section, a “food group equivalent” identifies qualifying amounts of foods from each food group based on nutritional content. A food group equivalent is equal to the following:
+                                <PRTPAGE P="106163" />
+                            </P>
+                            <GPOTABLE COLS="3" OPTS="L2,i1" CDEF="s75,r100,r100">
+                                <TTITLE>
+                                    Table 1 to Paragraph 
+                                    <E T="01">(d)(2)</E>
+                                </TTITLE>
+                                <BOXHD>
+                                    <CHED H="1">Food group</CHED>
+                                    <CHED H="1">Food group equivalent</CHED>
+                                    <CHED H="1">Examples</CHED>
+                                </BOXHD>
+                                <ROW>
+                                    <ENT I="01">(i) Vegetable</ENT>
+                                    <ENT>1/2 cup equivalent vegetable</ENT>
+                                    <ENT>1/2 cup cooked green beans; 1 cup raw spinach</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="01">(ii) Fruit</ENT>
+                                    <ENT>1/2 cup equivalent fruit</ENT>
+                                    <ENT>
+                                        1/2 cup strawberries; 
+                                        <FR>1/2</FR>
+                                         cup 100% orange juice; 
+                                        <FR>1/4</FR>
+                                         cup raisins
+                                    </ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="01">(iii) Grains</ENT>
+                                    <ENT>3/4 oz equivalent whole grain</ENT>
+                                    <ENT>
+                                        1 slice of bread; 
+                                        <FR>1/2</FR>
+                                         cup cooked brown rice
+                                    </ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="01">(iv) Dairy</ENT>
+                                    <ENT>2/3 cup equivalent dairy</ENT>
+                                    <ENT>2/3 cup fat free milk; 1 oz nonfat cheese</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="01">(v) Protein foods</ENT>
+                                    <ENT>
+                                        1 
+                                        <FR>1/2</FR>
+                                         oz equivalent game meat
+                                    </ENT>
+                                    <ENT>
+                                        1 
+                                        <FR>1/2</FR>
+                                         oz venison
+                                    </ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="22"> </ENT>
+                                    <ENT>1 oz equivalent seafood</ENT>
+                                    <ENT>1 oz tuna</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="22"> </ENT>
+                                    <ENT>1 oz equivalent egg</ENT>
+                                    <ENT>1 large egg</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="22"> </ENT>
+                                    <ENT>1 oz equivalent beans, peas, or lentils</ENT>
+                                    <ENT>1/4 cup black beans</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="22"> </ENT>
+                                    <ENT>1 oz equivalent nuts, seeds, or soy products</ENT>
+                                    <ENT>1/2 oz walnuts</ENT>
+                                </ROW>
+                            </GPOTABLE>
+                            <P>(3) You may use the term “healthy” or derivative terms “health,” “healthful,” “healthfully,” “healthfulness,” “healthier,” “healthiest,” “healthily,” and “healthiness” as an implied nutrient content claim on the label or in labeling of a food that is useful in creating a diet that is consistent with dietary recommendations if the food meets the criteria of one or more of the following paragraphs (d)(3)(i) through (vi) of this section as follows:</P>
+                            <P>(i) An individual food or mixed product that is comprised of one or more of the following foods that are the foundation of a healthy dietary pattern, with no other added ingredients except for water:</P>
+                            <P>(A) Vegetable;</P>
+                            <P>(B) Fruit;</P>
+                            <P>(C) Whole grains;</P>
+                            <P>(D) Fat-free or low-fat dairy;</P>
+                            <P>(E) Lean meat, seafood, eggs, beans, peas, lentils, nuts, or seeds.</P>
+                            <P>(ii) Individual foods.</P>
+                            <P>(A) An individual food that has a reference amount customarily consumed (RACC) greater than 50 g or greater than 3 tablespoons and meets the conditions per RACC in table 2 of this section; or</P>
+                            <GPOTABLE COLS="6" OPTS="L2,i1" CDEF="s50,r50,r50,r50,r50,r50">
+                                <TTITLE>
+                                    Table 2 to Paragraph 
+                                    <E T="01">(d)(3)(ii)(A)</E>
+                                </TTITLE>
+                                <BOXHD>
+                                    <CHED H="1">If the food is . . .</CHED>
+                                    <CHED H="2">Main category</CHED>
+                                    <CHED H="2">
+                                        Sub-category
+                                        <LI>(if applicable)</LI>
+                                    </CHED>
+                                    <CHED H="1">It must contain at least . . .</CHED>
+                                    <CHED H="1">The added sugars content must be no greater than . . .</CHED>
+                                    <CHED H="1">The sodium content must be no greater than . . .</CHED>
+                                    <CHED H="1">The saturated fat content must be no greater than . . .</CHED>
+                                </BOXHD>
+                                <ROW>
+                                    <ENT I="01">
+                                        (
+                                        <E T="03">1</E>
+                                        ) A vegetable product 
+                                    </ENT>
+                                    <ENT> </ENT>
+                                    <ENT>1/2 cup equivalent vegetable</ENT>
+                                    <ENT>2% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>5% DV.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="01">
+                                        (
+                                        <E T="03">2</E>
+                                        ) A fruit product
+                                    </ENT>
+                                    <ENT> </ENT>
+                                    <ENT>1/2 cup equivalent fruit</ENT>
+                                    <ENT>2% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>5% DV.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="01">
+                                        (
+                                        <E T="03">3</E>
+                                        ) A grain product
+                                    </ENT>
+                                    <ENT> </ENT>
+                                    <ENT>3/4 oz equivalent whole grain</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>5% DV.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="01">
+                                        (
+                                        <E T="03">4</E>
+                                        ) A dairy product
+                                    </ENT>
+                                    <ENT> </ENT>
+                                    <ENT>2/3 cup equivalent dairy</ENT>
+                                    <ENT>5% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>10% DV.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="01">
+                                        (
+                                        <E T="03">5</E>
+                                        ) Protein Foods
+                                    </ENT>
+                                    <ENT>
+                                        <E T="03">(i)</E>
+                                         Game meats
+                                    </ENT>
+                                    <ENT>
+                                        1 
+                                        <FR>1/2</FR>
+                                         oz equivalent
+                                    </ENT>
+                                    <ENT>2% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>10% DV.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="22"> </ENT>
+                                    <ENT>
+                                        <E T="03">(ii)</E>
+                                         Seafood
+                                    </ENT>
+                                    <ENT>1 oz equivalent</ENT>
+                                    <ENT>2% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>5% DV, excluding saturated fat inherent in seafood.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="22"> </ENT>
+                                    <ENT>
+                                        <E T="03">(iii)</E>
+                                         Egg
+                                    </ENT>
+                                    <ENT>1 oz equivalent</ENT>
+                                    <ENT>2% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>10% DV.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="22"> </ENT>
+                                    <ENT>
+                                        <E T="03">(iv)</E>
+                                         Beans, peas, and lentils
+                                    </ENT>
+                                    <ENT>1 oz equivalent</ENT>
+                                    <ENT>2% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>5% DV.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="22"> </ENT>
+                                    <ENT>
+                                        <E T="03">(v)</E>
+                                         Nuts, seeds, and soy products
+                                    </ENT>
+                                    <ENT>1 oz equivalent</ENT>
+                                    <ENT>2% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>5% DV, excluding saturated fat inherent in nuts, seeds, and soybeans.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="01">
+                                        (
+                                        <E T="03">6</E>
+                                        ) Oils
+                                    </ENT>
+                                    <ENT>
+                                        <E T="03">(i)</E>
+                                         100% Oil
+                                    </ENT>
+                                    <ENT> </ENT>
+                                    <ENT>0% DV</ENT>
+                                    <ENT>0% DV</ENT>
+                                    <ENT>20% of total fat.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="22"> </ENT>
+                                    <ENT>
+                                        <E T="03">(ii)</E>
+                                         Oil-based spreads whose fats come solely from oil
+                                    </ENT>
+                                    <ENT> </ENT>
+                                    <ENT>0% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>20% of total fat.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="22"> </ENT>
+                                    <ENT>
+                                        <E T="03">(iii)</E>
+                                         Oil-based dressing containing at least 30% oil and oils meet the requirements in paragraph (d)(3)(ii)(A) or (B)(6)(
+                                        <E T="03">i)</E>
+                                         of this section
+                                    </ENT>
+                                    <ENT> </ENT>
+                                    <ENT>2% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>20% of total fat.</ENT>
+                                </ROW>
+                            </GPOTABLE>
+                            <P>
+                                (B) An individual food that has a RACC of 50 g or less or 3 tablespoons or less and meets the conditions per 50 g of food in table 3 of this section:
+                                <PRTPAGE P="106164" />
+                            </P>
+                            <GPOTABLE COLS="6" OPTS="L2,i1" CDEF="s50,r50,r50,r50,r50,r50">
+                                <TTITLE>
+                                    Table 3 to Paragraph 
+                                    <E T="01">(d)(3)(ii)(B)</E>
+                                </TTITLE>
+                                <BOXHD>
+                                    <CHED H="1">If the food is . . . </CHED>
+                                    <CHED H="2">Main category</CHED>
+                                    <CHED H="2">
+                                        Sub-category
+                                        <LI>(if applicable)</LI>
+                                    </CHED>
+                                    <CHED H="1">It must contain at least . . .</CHED>
+                                    <CHED H="1">The added sugars content must be no greater than . . .</CHED>
+                                    <CHED H="1">The sodium content must be no greater than . . .</CHED>
+                                    <CHED H="1">The saturated fat content must be no greater than . . .</CHED>
+                                </BOXHD>
+                                <ROW>
+                                    <ENT I="01">
+                                        (
+                                        <E T="03">1</E>
+                                        ) A vegetable product
+                                    </ENT>
+                                    <ENT> </ENT>
+                                    <ENT>1/2 cup equivalent vegetable</ENT>
+                                    <ENT>2% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>5% DV.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="01">
+                                        (
+                                        <E T="03">2</E>
+                                        ) A fruit product
+                                    </ENT>
+                                    <ENT> </ENT>
+                                    <ENT>1/2 cup equivalent fruit</ENT>
+                                    <ENT>2% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>5% DV.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="01">
+                                        (
+                                        <E T="03">3</E>
+                                        ) A grain product
+                                    </ENT>
+                                    <ENT> </ENT>
+                                    <ENT>3/4 oz equivalent whole grain</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>5% DV.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="01">
+                                        (
+                                        <E T="03">4</E>
+                                        ) A dairy product
+                                    </ENT>
+                                    <ENT> </ENT>
+                                    <ENT>2/3 cup equivalent dairy</ENT>
+                                    <ENT>5% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>10% DV.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="01">
+                                        (
+                                        <E T="03">5</E>
+                                        ) Protein Foods
+                                    </ENT>
+                                    <ENT>
+                                        <E T="03">(i)</E>
+                                         Game meats
+                                    </ENT>
+                                    <ENT>
+                                        1 
+                                        <FR>1/2</FR>
+                                         oz equivalent
+                                    </ENT>
+                                    <ENT>2% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>10% DV.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="22"> </ENT>
+                                    <ENT>
+                                        <E T="03">(ii)</E>
+                                         Seafood
+                                    </ENT>
+                                    <ENT>1 oz equivalent</ENT>
+                                    <ENT>2% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>5% DV, excluding saturated fat inherent in seafood.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="22"> </ENT>
+                                    <ENT>
+                                        <E T="03">(iii)</E>
+                                         Egg
+                                    </ENT>
+                                    <ENT>1 oz equivalent</ENT>
+                                    <ENT>2% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>10% DV.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="22"> </ENT>
+                                    <ENT>
+                                        <E T="03">(iv)</E>
+                                         Beans, peas, and lentils
+                                    </ENT>
+                                    <ENT>1 oz equivalent</ENT>
+                                    <ENT>2% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>5% DV.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="22"> </ENT>
+                                    <ENT>
+                                        <E T="03">(v)</E>
+                                         Nuts, seeds, and soy products
+                                    </ENT>
+                                    <ENT>1 oz equivalent</ENT>
+                                    <ENT>2% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>5% DV, excluding saturated fat inherent in nuts, seeds, and soybeans.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="01">
+                                        (
+                                        <E T="03">6</E>
+                                        ) Oils
+                                    </ENT>
+                                    <ENT>
+                                        <E T="03">(i)</E>
+                                         100% Oil
+                                    </ENT>
+                                    <ENT> </ENT>
+                                    <ENT>0% DV</ENT>
+                                    <ENT>0% DV</ENT>
+                                    <ENT>20% of total fat.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="22"> </ENT>
+                                    <ENT>
+                                        <E T="03">(ii)</E>
+                                         Oil-based spreads whose fats come solely from oil
+                                    </ENT>
+                                    <ENT> </ENT>
+                                    <ENT>0% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>20% of total fat.</ENT>
+                                </ROW>
+                                <ROW>
+                                    <ENT I="22"> </ENT>
+                                    <ENT>
+                                        <E T="03">(iii)</E>
+                                         Oil-based dressing containing at least 30% oil and oils meet the requirements in paragraph (d)(3)(ii)(A) or (B)(6)(
+                                        <E T="03">i)</E>
+                                         of this section
+                                    </ENT>
+                                    <ENT> </ENT>
+                                    <ENT>2% DV</ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>20% of total fat.</ENT>
+                                </ROW>
+                            </GPOTABLE>
+                            <P>(iii) A mixed product that meets the following conditions per RACC:</P>
+                            <GPOTABLE COLS="4" OPTS="L2,i1" CDEF="s75,r30,r30,r60">
+                                <TTITLE>
+                                    Table 4 to Paragraphs 
+                                    <E T="01">(d)(3)(iii)</E>
+                                </TTITLE>
+                                <BOXHD>
+                                    <CHED H="1">If the mixed product contains at least . . .</CHED>
+                                    <CHED H="1">
+                                        The added sugars content must be
+                                        <LI>no greater than . . .</LI>
+                                    </CHED>
+                                    <CHED H="1">
+                                        The sodium content
+                                        <LI>must be no</LI>
+                                        <LI>greater than . . .</LI>
+                                    </CHED>
+                                    <CHED H="1">
+                                        Excluding saturated fat inherent in
+                                        <LI>seafood, nuts, seeds, and soybeans</LI>
+                                        <LI>in soy products (if applicable),</LI>
+                                        <LI>the saturated fat content must be</LI>
+                                        <LI>no greater than . . .</LI>
+                                    </CHED>
+                                </BOXHD>
+                                <ROW>
+                                    <ENT I="01">
+                                        One total food group equivalent with no less than 
+                                        <FR>1/4</FR>
+                                         food group equivalent from at least two food groups, as specified in paragraph (d)(2) of this section
+                                    </ENT>
+                                    <ENT>10% DV</ENT>
+                                    <ENT>15% DV</ENT>
+                                    <ENT>10% DV.</ENT>
+                                </ROW>
+                            </GPOTABLE>
+                            <P>(iv) A main dish product as defined in § 101.13(m) that meets the following conditions per labeled serving:</P>
+                            <GPOTABLE COLS="4" OPTS="L2,i1" CDEF="s75,r30,r30,r60">
+                                <TTITLE>
+                                    Table 5 to Paragraph 
+                                    <E T="01">(d)(3)(iv)</E>
+                                </TTITLE>
+                                <BOXHD>
+                                    <CHED H="1">If the main dish product contains at least . . .</CHED>
+                                    <CHED H="1">The added sugars content must be no greater than . . .</CHED>
+                                    <CHED H="1">
+                                        The sodium content
+                                        <LI>must be no</LI>
+                                        <LI>greater than . . .</LI>
+                                    </CHED>
+                                    <CHED H="1">
+                                        Excluding the saturated fat inherent in
+                                        <LI>seafood, nuts, seeds, and soybeans</LI>
+                                        <LI>in soy products (if applicable),</LI>
+                                        <LI>the saturated fat content must be</LI>
+                                        <LI>no greater than . . .</LI>
+                                    </CHED>
+                                </BOXHD>
+                                <ROW>
+                                    <ENT I="01">
+                                        Two total food group equivalents with no less than 
+                                        <FR>1/2</FR>
+                                         food group equivalent from at least two food groups, as specified in paragraph (d)(2) of this section
+                                    </ENT>
+                                    <ENT>15% DV</ENT>
+                                    <ENT>20% DV</ENT>
+                                    <ENT>15% DV.</ENT>
+                                </ROW>
+                            </GPOTABLE>
+                            <PRTPAGE P="106165" />
+                            <P>(v) A meal product as defined in § 101.13(l) that meets the following conditions per labeled serving:</P>
+                            <GPOTABLE COLS="4" OPTS="L2,i1" CDEF="s75,r30,r30,r60">
+                                <TTITLE>
+                                    Table 6 to Paragraph 
+                                    <E T="01">(d)(3)(v)</E>
+                                </TTITLE>
+                                <BOXHD>
+                                    <CHED H="1">If the meal product contains at least . . .</CHED>
+                                    <CHED H="1">
+                                        The added sugars content must be no
+                                        <LI>greater than . . .</LI>
+                                    </CHED>
+                                    <CHED H="1">
+                                        The sodium content
+                                        <LI>must be no</LI>
+                                        <LI>greater than . . .</LI>
+                                    </CHED>
+                                    <CHED H="1">
+                                        Excluding the saturated fat inherent in
+                                        <LI>seafood, nuts, seeds, and soybeans</LI>
+                                        <LI>in soy products (if applicable),</LI>
+                                        <LI>the saturated fat content must be</LI>
+                                        <LI>no greater than . . .</LI>
+                                    </CHED>
+                                </BOXHD>
+                                <ROW>
+                                    <ENT I="01">
+                                        Three total food group equivalents with no less than 
+                                        <FR>1/2</FR>
+                                         food group equivalent from at least three food groups, as specified in paragraph (d)(2) of this section
+                                    </ENT>
+                                    <ENT>20% DV</ENT>
+                                    <ENT>30% DV</ENT>
+                                    <ENT>20% DV.</ENT>
+                                </ROW>
+                            </GPOTABLE>
+                            <P>(vi) All water, tea, and coffee with less than 5 calories per RACC and per labeled serving.</P>
+                            <P>
+                                (4) Each manufacturer of a food (other than foods where the standard information required on the food label, such as the list of ingredients, provides sufficient information to verify that the food meets the food group equivalent requirements to bear the claim, and foods described in paragraphs (d)(3)(i) and (vi) of this section) that bears the implied nutrient content claim “healthy” must make and keep written records (
+                                <E T="03">e.g.,</E>
+                                 analyses of databases, recipes, formulations, information from recipes or formulations, or batch records) to verify that the food meets the food group equivalent requirements of paragraph (d)(2) of this section. These records must be kept for a period of at least 2 years after introduction or delivery for introduction of the food into interstate commerce. Such records must be provided to FDA upon request, during an inspection, for official review and photocopying or other means of reproduction. Records may be kept either as original records, true copies (such as photocopies, pictures, scanned copies, microfilm, microfiche, or other accurate reproductions of the original records), or electronic records that must be kept in accordance with part 11 of this chapter. These records must be accurate, indelible, and legible.
+                            </P>
+                        </SECTION>
+                    </REGTEXT>
+                    <SIG>
+                        <DATED>Dated: December 12, 2024.</DATED>
+                        <NAME>Robert M. Califf,</NAME>
+                        <TITLE>Commissioner of Food and Drugs.</TITLE>
+                    </SIG>
+                </SUPLINF>
+                <FRDOC>[FR Doc. 2024-29957 Filed 12-19-24; 11:15 am]</FRDOC>
+                <BILCOD>BILLING CODE 4164-01-P</BILCOD>
+            </RULE>

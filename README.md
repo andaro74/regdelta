@@ -8,16 +8,23 @@ question set, and journaled — the repo history IS the demo.
 
 | M | Milestone | Tag | Traps (q01-q04) | Overall | Status |
 |---|-----------|-----|-----------------|---------|--------|
-| 00b | Naive-RAG baseline (the control) | `m00b-baseline` | –/4 | –% | ⬜ |
-| 01 | Ingestion + amendment graph | `m01-ingestion` | – | – | ⬜ |
-| 02 | Two-tier retrieval (S3 Vectors / AOSS) | `m02-retrieval` | – | – | ⬜ |
-| 03 | Agent graph + HITL | `m03-agents` | –/4 | –% | ⬜ |
-| 04 | API + demo UI | `m04-demo` | – | – | ⬜ |
-| 05 | Deploy + lifecycle | `m05-deploy` | – | – | ⬜ |
-| 06 | Load + observability | `m06-scale` | – | – | ⬜ |
-| 07 | Governance layer (three doors) | `m07-governance` | – | – | ⬜ |
+| 00b | Naive-RAG baseline (the control) | `m00b` | 1/4 * | 30% | ✅ |
+| 01 | Ingestion + amendment graph | `m01` | n/a | n/a | ✅ |
+| 02 | Two-tier retrieval (S3 Vectors / AOSS) | `m02` | – | – | ⬜ |
+| 03 | Agent graph + HITL | `m03` | –/4 | –% | ⬜ |
+| 04 | API + demo UI | `m04` | – | – | ⬜ |
+| 05 | Deploy + lifecycle | `m05` | – | – | ⬜ |
+| 06 | Load + observability | `m06` | – | – | ⬜ |
+| 07 | Governance layer (three doors) | `m07` | – | – | ⬜ |
 
 Fill each row at milestone close (see .claude/skills/close-milestone).
+
+\* The baseline's single trap "pass" (q03) is **not earned** — the question
+leaks its own answer token and has no TTB source in the corpus to retrieve.
+Recorded as-run per SPEC/00b's "if the traps pass, the questions are too
+easy — record it" clause; a tightening is drafted and awaiting SME approval
+(milestones/M00b). M01 has no eval row because the golden set needs an
+answering endpoint, which is SPEC/04.
 The intended arc: baseline fails the trap questions → retrieval fixes
 recall → the agent graph fixes the traps → the rest makes it production-
 shaped. Evidence lives in milestones/M*/ and evals/history/.
@@ -33,7 +40,10 @@ demo script: docs/governance/demo-script.md · setup:
 docs/governance/branch-protection.md.
 
 ## Traceability rules
-- One milestone = one branch (`mNN-<slug>`) = one tag at close.
+- One milestone = one branch (`mNN-<slug>`) = one tag at close (`mNN`).
+  Branch and tag must NEVER share a name: git cannot disambiguate
+  `refs/heads/x` from `refs/tags/x`, so `git push -u origin x` fails with
+  "src refspec matches more than one" and `git checkout x` is ambiguous.
 - `python evals/run_evals.py --record` after every green run you care
   about — history is append-only JSON keyed by git SHA + tier.
 - Consequential choices get an ADR (docs/adr/). Superseded ADRs are

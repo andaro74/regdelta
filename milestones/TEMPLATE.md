@@ -1,6 +1,6 @@
 # MNN — <name>            (copy to milestones/MNN/README.md at close)
 
-- Git tag: `mNN-<slug>`        Commit: `<sha>`
+- Git tag: `mNN`               Commit: `<sha>`   Branch: `mNN-<slug>`
 - Spec: SPEC/NN-*.md           ADRs touched: ADR-XXXX
 - Sessions: N Claude Code sessions, ~X hrs wall clock
 
