@@ -97,68 +97,7 @@ def test_doc_of_splits_on_the_chunk_id_separator():
         "cfr-21-74.303@2025-01-01"
 
 
-# --------------------------------------------- structural expansion selector
-@pytest.mark.parametrize("citation_path,expected", [
-    # An FR document's structural chunks are filed under the BARE citation;
-    # its preamble chunks add a heading. Stripping the heading is what makes
-    # the GSI lookup select exactly DATES + summary + amdpar.
-    ("90 FR 4628", "90 FR 4628"),
-    ("90 FR 4628 (I. Executive Summary)", "90 FR 4628"),
-    # A CFR chunk names the paragraph it came from; the section is where the
-    # document's chunks are filed.
-    ("21 CFR 74.303", "21 CFR 74.303"),
-    ("21 CFR 74.303(a)", "21 CFR 74.303"),
-    ("21 CFR 101.65(d)(4)", "21 CFR 101.65"),
-])
-def test_document_citation_is_derived_from_a_chunks_citation_path(
-        citation_path, expected):
-    from retrieval import expansion
-    assert expansion.doc_citation(
-        mk("d#0000", citation_path=citation_path)) == expected
-
-
-def test_document_citation_is_none_when_there_is_nothing_to_key_on():
-    """No citation means no expansion for that document — not a lookup on a
-    junk key, which would scan the GSI for a partition that cannot exist."""
-    from retrieval import expansion
-    assert expansion.doc_citation(mk("d#0000", citation_path="")) is None
-    assert expansion.doc_citation(mk("d#0000", citation_path="Appendix B")) is None
-
-
-def test_expansion_only_reaches_documents_good_enough_for_the_page(monkeypatch):
-    """The gate that fixed the worst failure of the session.
-
-    Selecting "the top N distinct documents" from a 24-long candidate list can
-    reach rank 20, and expanding a barely-relevant document lifted the Red
-    No. 3 order's DATES paragraph to rank 4 of a question entirely about the
-    "healthy" rule — a confidently-cited answer about the wrong regulation.
-    The window is k//3, which is the page size by construction of the router.
-    """
-    from retrieval import expansion
-    looked_up: list[str] = []
-    monkeypatch.setattr(expansion, "lookup_citation",
-                        lambda cite, limit: looked_up.append(cite) or [])
-
-    lane = ([mk(f"onpage#{i:04d}", citation_path="90 FR 4628") for i in range(8)]
-            + [mk("offpage#0000", citation_path="89 FR 106064")])
-    expansion.select("plain english question", lane, k=24)
-    assert "90 FR 4628" in looked_up
-    assert "89 FR 106064" not in looked_up
-
-
-def test_a_citation_named_in_the_query_is_looked_up_regardless_of_the_lane(
-        monkeypatch):
-    """SPEC/02's original exact-citation assist. It must survive the gate: a
-    query naming a section is asking for that section, whatever the relevance
-    lane thought."""
-    from retrieval import expansion
-    looked_up: list[str] = []
-    monkeypatch.setattr(expansion, "lookup_citation",
-                        lambda cite, limit: looked_up.append(cite) or [])
-    expansion.select("what does 21 CFR 101.65(d) require?", [], k=24)
-    assert "21 CFR 101.65(d)" in looked_up
-
-
+# ------------------------------------------------------ structural lane
 def test_the_assist_lane_is_ordered_by_selection_not_by_hydration():
     """Neither hydration path promises input order, and RRF scores by rank —
     an unordered assist lane is noise, and the two tiers would disagree about
@@ -169,19 +108,68 @@ def test_the_assist_lane_is_ordered_by_selection_not_by_hydration():
     assert [c.chunk_id for c in expansion.restore_order(shuffled, wanted)] == wanted
 
 
-def test_both_tiers_select_the_same_assist_ids(monkeypatch):
-    """The selection is shared ON PURPOSE.
+def test_named_citations_lead_the_lane_and_duplicates_collapse():
+    """One lane, not two. Merging keeps the lane COUNT independent of whether
+    the query happened to contain a citation — otherwise every RRF score in
+    the run shifts depending on the query's phrasing."""
+    from retrieval import expansion
+    named = [mk("cited#0000")]
+    structural = [mk("cited#0000"), mk("dates#0000")]
+    merged = expansion.merge_lane(named, structural)
+    assert [c.chunk_id for c in merged] == ["cited#0000", "dates#0000"]
 
-    I first built this into Tier A only, assuming Tier B's BM25 lane would
-    find DATES paragraphs by term match. Measured on the live hot tier: Tier B
-    scored 3/9 and missed the same chunks. If the two tiers ever select
-    different ids, criterion 3's Jaccard reads it as retrieval drift.
-    """
+
+def test_a_citation_named_in_the_query_is_looked_up(monkeypatch):
+    """SPEC/02's exact-citation assist, and the one job left to the GSI:
+    `citation_path` is non-filterable in the S3 Vectors index, so an exact
+    lookup cannot be pushed into that engine at all."""
+    from retrieval import expansion
+    looked_up: list[str] = []
+    monkeypatch.setattr(expansion, "lookup_citation",
+                        lambda cite, limit: looked_up.append(cite) or [])
+    expansion.query_citation_ids("what does 21 CFR 101.65(d) require?", 8)
+    assert looked_up == ["21 CFR 101.65(d)"]
+    assert expansion.query_citation_ids("plain english question", 8) == []
+
+
+def test_both_tiers_restrict_the_structural_lane_to_the_same_kinds():
+    """The two tiers issue the lane natively — S3 Vectors as a $in metadata
+    filter, AOSS as a terms clause. If they ever restrict to different kinds
+    they rank different populations, and criterion 3's Jaccard reads that as
+    retrieval drift rather than as the configuration bug it is."""
     import inspect
 
     from retrieval import aoss_tier, s3vectors_tier
     for mod in (aoss_tier, s3vectors_tier):
-        assert "expansion.select" in inspect.getsource(mod), mod.__name__
+        assert "RETRIEVAL_STRUCTURAL_KINDS" in inspect.getsource(mod), mod.__name__
+
+
+def test_the_structural_kinds_are_the_operative_paragraphs():
+    """dates and amdpar carry the deadlines and the CFR edits. `summary` is
+    context, not an operative provision — including it triples the lane
+    without adding an answer."""
+    from shared import config, models
+    assert set(config.RETRIEVAL_STRUCTURAL_KINDS) == {"dates", "amdpar"}
+    assert set(config.RETRIEVAL_STRUCTURAL_KINDS) <= models.CHUNK_KINDS
+
+
+def test_the_structural_query_still_honours_the_callers_filters():
+    """The kind restriction is ANDed with the user's filters, not substituted
+    for them. A structural lane that ignored the caller's filters would return
+    chunks router._finish then discards — burning lane slots that decide RRF
+    rank."""
+    from retrieval.s3vectors_tier import _metadata_filter
+    from shared.models import Filters
+    got = _metadata_filter(Filters.from_dict({"doc_type": "order"}),
+                           {"kind": {"$in": ["dates", "amdpar"]}})
+    assert got == {"$and": [{"doc_type": {"$eq": "order"}},
+                            {"kind": {"$in": ["dates", "amdpar"]}}]}
+
+
+def test_the_structural_restriction_survives_with_no_caller_filters():
+    from retrieval.s3vectors_tier import _metadata_filter
+    from shared.models import Filters
+    assert _metadata_filter(Filters(), {"kind": {"$in": ["dates"]}}) ==         {"kind": {"$in": ["dates"]}}
 
 
 # ------------------------------------------------ S3 Vectors filter dialect

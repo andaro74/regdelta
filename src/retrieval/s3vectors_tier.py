@@ -12,7 +12,7 @@ ones written at ingest (architecture rule).
 import json
 
 from retrieval import expansion, fusion
-from shared import config
+from shared import config, models
 from shared.models import Chunk, Filters
 from shared.util import retry
 
@@ -46,21 +46,29 @@ def embed_query(query: str) -> list[float]:
     return json.loads(resp["body"].read())["embedding"]
 
 
-def _metadata_filter(filters: Filters) -> dict | None:
+def _metadata_filter(filters: Filters, extra: dict | None = None) -> dict | None:
     """Filters -> S3 Vectors metadata filter expression.
 
     Pushdown is an optimisation, not the contract: router._finish re-checks
     every result with Filters.matches(). See the note below for why only the
     existence half of a date filter is pushed down.
+
+    `extra` is ANDed in — the structural lane's `kind` restriction, which is
+    not part of the caller's Filters. It goes through this function rather
+    than being composed at the call site so the user's filters cannot be
+    accidentally dropped from the structural query, which would let that lane
+    return chunks the page then discards.
     """
     clauses: list[dict] = []
-    for key in ("cfr_title", "cfr_part", "doc_type", "fr_doc_number"):
+    for key in models.KEYWORD_FIELDS:
         if (want := getattr(filters, key)) is not None:
             clauses.append({key: {"$eq": want}})
-    for key in ("pub_date", "effective_date", "compliance_date", "version_date"):
+    for key in models.DATE_FIELDS:
         if getattr(filters, key) is not None:
             # $exists, NOT $gte/$lte — see the note below.
             clauses.append({key: {"$exists": True}})
+    if extra:
+        clauses.append(extra)
     if not clauses:
         return None
     return clauses[0] if len(clauses) == 1 else {"$and": clauses}
@@ -118,44 +126,51 @@ def _hydrate(chunk_ids: list[str]) -> list[Chunk]:
     return expansion.restore_order(out, chunk_ids)
 
 
+def _query(query_vector, filters: Filters, k: int,
+           extra: dict | None = None) -> list[Chunk]:
+    """One QueryVectors call -> Chunks. Used by both lanes."""
+    sv = _client("s3vectors")
+    kwargs = {"vectorBucketName": config.VECTOR_BUCKET,
+              "indexName": config.VECTOR_INDEX,
+              "topK": k,
+              "queryVector": {"float32": query_vector},
+              "returnMetadata": True,
+              "returnDistance": True}
+    if (mf := _metadata_filter(filters, extra)) is not None:
+        kwargs["filter"] = mf
+    resp = retry(lambda: sv.query_vectors(**kwargs))
+    return [Chunk.from_metadata(v["key"], v.get("metadata") or {})
+            for v in resp.get("vectors", [])]
+
+
 def retrieve_s3v(query: str, filters: Filters, k: int) -> list[Chunk]:
     """`k` is the candidate width, not the page size.
 
     router.retrieve_traced passes k*3 and cuts to k after re-applying filters,
     so `topK` here is SPEC/02's "topK=k*3" measured from the caller's k.
     """
-    sv = _client("s3vectors")
-    kwargs = {"vectorBucketName": config.VECTOR_BUCKET,
-              "indexName": config.VECTOR_INDEX,
-              "topK": k,
-              "queryVector": {"float32": embed_query(query)},
-              "returnMetadata": True,
-              "returnDistance": True}
-    if (mf := _metadata_filter(filters)) is not None:
-        kwargs["filter"] = mf
-    resp = retry(lambda: sv.query_vectors(**kwargs))
-    # NOT diversified here. Per-document capping is a property of the PAGE, so
-    # it lives in router._finish where both tiers get the identical rule. Doing
-    # it inside the lane also corrupted the expansion below: capping pulled
-    # low-relevance documents into the top-3 and expanded those instead of the
-    # ones the query was actually about.
-    vector_lane = [Chunk.from_metadata(v["key"], v.get("metadata") or {})
-                   for v in resp.get("vectors", [])]
+    query_vector = embed_query(query)
 
-    lanes = [vector_lane]
-    weights = [1.0]
-    # The assist runs unconditionally, not only for citation-shaped queries:
-    # its second source is the structural expansion, which keys off the
-    # documents the vector lane found rather than off anything in the query
-    # text. looks_like_citation_query() gated the old single-source version
-    # and would now suppress the expansion for every plain-English question —
-    # which is all of them.
-    #
-    # An empty assist lane is dropped rather than appended: RRF scores by rank
-    # within a lane, so an empty lane changes no ordering, but appending one
-    # would make the recorded scores depend on whether the assist found
-    # anything. Same top-k either way, different numbers in the scorecard.
-    if assist := _hydrate(expansion.select(query, vector_lane, k)):
+    # Relevance lane. NOT diversified here: per-document capping shapes the
+    # PAGE, so it lives in router._finish where both tiers get the same rule.
+    relevance = _query(query_vector, filters, k)
+
+    # Structural lane — the same embedding signal over only the paragraphs
+    # that state what a document does. `page` rather than `k` because this
+    # lane is meant to put a handful of candidates in contention, not to
+    # supply a second full result set. k//3 is the page size by construction
+    # of the router, so it is derived rather than tuned.
+    page = max(1, k // 3)
+    structural: list[Chunk] = []
+    if docs := expansion.documents_in_play(relevance, page):
+        structural = _query(query_vector, filters, page, {"$and": [
+            {"kind": {"$in": list(config.RETRIEVAL_STRUCTURAL_KINDS)}},
+            {"fr_doc_number": {"$in": docs}}]})
+    assist = expansion.merge_lane(
+        _hydrate(expansion.query_citation_ids(query, page)), structural)
+
+    lanes, weights = [relevance], [1.0]
+    if assist:
         lanes.append(assist)
         weights.append(config.RETRIEVAL_ASSIST_WEIGHT)
     return fusion.rrf(lanes, k=k, weights=weights)

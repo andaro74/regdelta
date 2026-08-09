@@ -28,43 +28,33 @@ SSM_SEARCH_ENDPOINT = "/regdelta/search/endpoint"
 # before every other candidate has been considered. Deferred candidates
 # back-fill, so this changes the ORDER of a full page, never its length.
 #
-# It is deliberately EQUAL TO RETRIEVAL_STRUCTURAL_PER_DOC, and that equality
-# is the reason for the value rather than the measurement being the reason.
-# The expansion lane pulls up to 3 structural chunks per document (DATES,
-# summary, amendatory instructions). If the page cap were lower, a document's
-# own expanded set could not fit; if it were higher, the extra slots go to
-# whatever ranked next within that document — ordinary preamble prose — and
-# displace a structural chunk of the NEXT document. Keeping the two equal
-# means the cap admits exactly what the expansion produced.
+# Measured, and worth recording in full because it is NOT monotonic:
+# cap 3 -> 9/9 probes, 4 -> 8/9, 5 -> 9/9, 6 -> 7/9, 8 -> 7/9. A value that
+# fails between two passing values means nine probes cannot robustly determine
+# this constant. The MECHANISM (one document may not crowd the page) is
+# load-bearing and demonstrable — removing it entirely drops two probes — but
+# the exact bound is a design judgement the probe set cannot settle. It is the
+# softest number in M02 and the first thing to re-examine if a probe regresses.
 #
-# The measurement agrees and is worth recording in full, because it is not
-# monotonic: cap 3 -> 9/9 probes, 4 -> 8/9, 5 -> 9/9, 6 -> 7/9, 8 -> 7/9.
-# A value that fails between two passing values means nine probes cannot
-# robustly determine this constant. It is the softest number in M02: the
-# MECHANISM (one document may not crowd the page) is load-bearing and
-# demonstrable — removing it entirely drops two probes — but the exact bound
-# is a design judgement the probe set cannot settle. First thing to
-# re-examine if a probe regresses.
+# RETRIEVAL_ASSIST_WEIGHT — the structural lane's weight in RRF, relative to
+# the relevance lane's 1.0. Kept at parity after measurement: down-weighting
+# it is the intuitive move and measured strictly worse (1.0 -> 8/9 probes,
+# 0.8 -> 7/9, 0.5 -> 5/9), because discounting the lane only re-buries the
+# DATES paragraphs it exists to surface. The knob stays because the mechanism
+# is real and M03 may want it; the default records what the measurement said.
 #
-# RETRIEVAL_EXPAND_DOCS / RETRIEVAL_STRUCTURAL_PER_DOC — how far the
-# structural-expansion lane reaches. See s3vectors_tier._citation_assist for
-# what it is and the measurement that motivated it.
-#
-# RETRIEVAL_ASSIST_WEIGHT — the lexical/structural lane's weight in RRF,
-# relative to the vector lane's 1.0. Kept at parity after measurement.
-# Down-weighting that lane is the intuitive move (it selects chunks by which
-# DOCUMENT they belong to, not by how well they answer the question) and it
-# measured strictly worse: 1.0 -> 8/9 probes, 0.8 -> 7/9, 0.5 -> 5/9. Once the
-# expansion is gated to documents that are already page-worthy, its entries
-# have earned parity, and discounting them only re-buries the DATES paragraphs
-# the lane exists to surface. The knob stays because the mechanism is real and
-# M03 may want it; the default records what the measurement said.
-RETRIEVAL_STRUCTURAL_PER_DOC = int(
-    os.environ.get("RETRIEVAL_STRUCTURAL_PER_DOC", "3"))
-RETRIEVAL_PER_DOC_CAP = int(os.environ.get("RETRIEVAL_PER_DOC_CAP",
-                                           str(RETRIEVAL_STRUCTURAL_PER_DOC)))
+# RETRIEVAL_STRUCTURAL_KINDS — the chunk kinds the structural lane searches.
+# These are the paragraphs that state what a document DOES: its DATES block
+# and its amendatory instructions. They carry the deadlines and the CFR edits,
+# they are short, and every relevance signal under-ranks them for a verbose
+# question — which is the entire reason the lane exists. `summary` is
+# deliberately out: it is context, not an operative provision, and including
+# it triples the lane without adding an answer.
+RETRIEVAL_STRUCTURAL_KINDS = tuple(
+    k for k in os.environ.get("RETRIEVAL_STRUCTURAL_KINDS",
+                              "dates,amdpar").split(",") if k)
+RETRIEVAL_PER_DOC_CAP = int(os.environ.get("RETRIEVAL_PER_DOC_CAP", "3"))
 RETRIEVAL_ASSIST_WEIGHT = float(os.environ.get("RETRIEVAL_ASSIST_WEIGHT", "1.0"))
-RETRIEVAL_EXPAND_DOCS = int(os.environ.get("RETRIEVAL_EXPAND_DOCS", "3"))
 CORPUS_BUCKET = os.environ.get("CORPUS_BUCKET", "")
 REGISTRY_TABLE = os.environ.get("REGISTRY_TABLE", "")
 STATE_TABLE = os.environ.get("STATE_TABLE", "")
