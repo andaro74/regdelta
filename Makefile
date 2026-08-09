@@ -56,7 +56,7 @@ status:
 	@aws opensearchserverless list-collections --region $(REGION) \
 	  --query "collectionSummaries[?name=='regdelta'].{name:name,status:status}" \
 	  --output table 2>/dev/null || true
-	@aws ssm get-parameter --name $(SSM_ENDPOINT) --region $(REGION) \
+	@MSYS_NO_PATHCONV=1 aws ssm get-parameter --name $(SSM_ENDPOINT) --region $(REGION) \
 	  --query "Parameter.{endpoint:Value,since:LastModifiedDate}" --output table \
 	  2>/dev/null || echo "Hot tier: DOWN → retrieval on S3 Vectors"
 
@@ -74,9 +74,21 @@ evals:
 # the harness exits non-zero if the router resolved something else. That is
 # criterion 2. Passing the tier by hand would let a down hot tier record two
 # S3 Vectors runs as "both tiers pass".
+# MSYS_NO_PATHCONV=1 is load-bearing, not defensive. Git Bash rewrites any
+# argument that looks like a POSIX path, so `--name /regdelta/search/endpoint`
+# reaches the CLI as `C:/Program Files/Git/regdelta/...` and returns
+# ParameterNotFound. This silently reported "s3vectors" while the hot tier was
+# up and running, and the harness then measured AOSS under the S3 Vectors
+# label — overwriting a valid scorecard with the other tier's results.
+#
+# An unexpected error FAILS rather than defaulting. Defaulting to s3vectors on
+# any failure is what made the mangled path invisible.
 retrieval-evals:
-	@tier=$$(aws ssm get-parameter --name $(SSM_ENDPOINT) --region $(REGION) \
-	   >/dev/null 2>&1 && echo aoss || echo s3vectors); \
+	@out=$$(MSYS_NO_PATHCONV=1 aws ssm get-parameter --name $(SSM_ENDPOINT) \
+	    --region $(REGION) --query Parameter.Value --output text 2>&1); \
+	  if echo "$$out" | grep -q '^https://'; then tier=aoss; \
+	  elif echo "$$out" | grep -q 'ParameterNotFound'; then tier=s3vectors; \
+	  else echo "cannot determine the search tier: $$out" >&2; exit 1; fi; \
 	  echo "→ hot tier $$tier"; \
 	  python evals/run_retrieval.py --tier $$tier --record
 

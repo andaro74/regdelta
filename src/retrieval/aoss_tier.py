@@ -12,8 +12,9 @@ search pipeline) actually requires. Noted rather than silently resolved.
 """
 import json
 
-from retrieval import aoss_client
+from retrieval import aoss_client, expansion
 from retrieval.fusion import rrf
+from shared import config
 from shared.models import Chunk, Filters
 
 
@@ -85,6 +86,24 @@ def _hits(response: dict) -> list[Chunk]:
     return out
 
 
+def _hydrate(endpoint: str, chunk_ids: list[str]) -> list[Chunk]:
+    """chunk ids -> Chunks, from this tier's own index.
+
+    Deliberately NOT via S3 Vectors, even though the always-on tier could
+    answer it: the hot tier must be self-contained, and hydrating one tier's
+    assist lane out of the other's store would make a stale or partial hot
+    index invisible — the assist would keep returning correct text for chunks
+    that are not in the index being measured.
+    """
+    if not chunk_ids:
+        return []
+    body = {"size": len(chunk_ids), "_source": _SOURCE_FIELDS,
+            "query": {"terms": {"chunk_id": chunk_ids}}}
+    resp = aoss_client.request(
+        endpoint, "POST", f"{aoss_client.INDEX_NAME}/_search", body)
+    return expansion.restore_order(_hits(resp), chunk_ids)
+
+
 def retrieve_aoss(endpoint: str, query: str, filters: Filters, k: int) -> list[Chunk]:
     """`k` is the candidate width, not the page size — see retrieve_s3v."""
     from retrieval.s3vectors_tier import embed_query
@@ -104,4 +123,27 @@ def retrieve_aoss(endpoint: str, query: str, filters: Filters, k: int) -> list[C
     if len(responses) != 2:
         raise aoss_client.AossError(
             f"_msearch returned {len(responses)} responses, expected 2")
-    return rrf([_hits(r) for r in responses], k=k)
+
+    # BM25 and kNN fuse into ONE relevance lane, so this tier presents the same
+    # two-lane shape as Tier A: [relevance, assist].
+    #
+    # Three flat lanes was tried and measured strictly worse — 6/9 -> 4/9. The
+    # argument for flattening was that pre-fusing halves each relevance signal
+    # while leaving the recall lane whole, so the assist outweighs BM25 two to
+    # one; that is true and it is not a defect. The assist has to compete with
+    # the relevance signal AS A WHOLE, because it is answering a different
+    # question ("which paragraphs state what this document does") rather than
+    # contributing a third opinion on the same one. Flattening buried the DATES
+    # paragraphs again, which is the failure the lane exists to fix.
+    relevance = rrf([_hits(r) for r in responses], k=size)
+
+    # The structural-expansion lane is NOT a Tier A workaround for weak vector
+    # search. Measured on the live hot tier before this was added: Tier B
+    # scored 3/9 and missed the same DATES and amendatory-instruction chunks,
+    # because BM25 does not favour a short DATES paragraph for a plain-English
+    # question either. See retrieval/expansion.py.
+    lanes, weights = [relevance], [1.0]
+    if assist := _hydrate(endpoint, expansion.select(query, relevance, k)):
+        lanes.append(assist)
+        weights.append(config.RETRIEVAL_ASSIST_WEIGHT)
+    return rrf(lanes, k=k, weights=weights)

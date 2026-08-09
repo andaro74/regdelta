@@ -112,16 +112,17 @@ def test_doc_of_splits_on_the_chunk_id_separator():
 ])
 def test_document_citation_is_derived_from_a_chunks_citation_path(
         citation_path, expected):
-    from retrieval.s3vectors_tier import _doc_citation
-    assert _doc_citation(mk("d#0000", citation_path=citation_path)) == expected
+    from retrieval import expansion
+    assert expansion.doc_citation(
+        mk("d#0000", citation_path=citation_path)) == expected
 
 
 def test_document_citation_is_none_when_there_is_nothing_to_key_on():
     """No citation means no expansion for that document — not a lookup on a
     junk key, which would scan the GSI for a partition that cannot exist."""
-    from retrieval.s3vectors_tier import _doc_citation
-    assert _doc_citation(mk("d#0000", citation_path="")) is None
-    assert _doc_citation(mk("d#0000", citation_path="Appendix B")) is None
+    from retrieval import expansion
+    assert expansion.doc_citation(mk("d#0000", citation_path="")) is None
+    assert expansion.doc_citation(mk("d#0000", citation_path="Appendix B")) is None
 
 
 def test_expansion_only_reaches_documents_good_enough_for_the_page(monkeypatch):
@@ -133,15 +134,14 @@ def test_expansion_only_reaches_documents_good_enough_for_the_page(monkeypatch):
     "healthy" rule — a confidently-cited answer about the wrong regulation.
     The window is k//3, which is the page size by construction of the router.
     """
-    from retrieval import s3vectors_tier as tier
+    from retrieval import expansion
     looked_up: list[str] = []
-    monkeypatch.setattr(tier, "_lookup_citation",
+    monkeypatch.setattr(expansion, "lookup_citation",
                         lambda cite, limit: looked_up.append(cite) or [])
-    monkeypatch.setattr(tier, "_hydrate", lambda ids: [])
 
     lane = ([mk(f"onpage#{i:04d}", citation_path="90 FR 4628") for i in range(8)]
             + [mk("offpage#0000", citation_path="89 FR 106064")])
-    tier._citation_assist("plain english question", lane, k=24)
+    expansion.select("plain english question", lane, k=24)
     assert "90 FR 4628" in looked_up
     assert "89 FR 106064" not in looked_up
 
@@ -149,15 +149,39 @@ def test_expansion_only_reaches_documents_good_enough_for_the_page(monkeypatch):
 def test_a_citation_named_in_the_query_is_looked_up_regardless_of_the_lane(
         monkeypatch):
     """SPEC/02's original exact-citation assist. It must survive the gate: a
-    query naming a section is asking for that section, whatever the vector
+    query naming a section is asking for that section, whatever the relevance
     lane thought."""
-    from retrieval import s3vectors_tier as tier
+    from retrieval import expansion
     looked_up: list[str] = []
-    monkeypatch.setattr(tier, "_lookup_citation",
+    monkeypatch.setattr(expansion, "lookup_citation",
                         lambda cite, limit: looked_up.append(cite) or [])
-    monkeypatch.setattr(tier, "_hydrate", lambda ids: [])
-    tier._citation_assist("what does 21 CFR 101.65(d) require?", [], k=24)
+    expansion.select("what does 21 CFR 101.65(d) require?", [], k=24)
     assert "21 CFR 101.65(d)" in looked_up
+
+
+def test_the_assist_lane_is_ordered_by_selection_not_by_hydration():
+    """Neither hydration path promises input order, and RRF scores by rank —
+    an unordered assist lane is noise, and the two tiers would disagree about
+    identical chunks."""
+    from retrieval import expansion
+    wanted = ["d#0000", "d#0001", "d#0002"]
+    shuffled = [mk("d#0002"), mk("d#0000"), mk("d#0001")]
+    assert [c.chunk_id for c in expansion.restore_order(shuffled, wanted)] == wanted
+
+
+def test_both_tiers_select_the_same_assist_ids(monkeypatch):
+    """The selection is shared ON PURPOSE.
+
+    I first built this into Tier A only, assuming Tier B's BM25 lane would
+    find DATES paragraphs by term match. Measured on the live hot tier: Tier B
+    scored 3/9 and missed the same chunks. If the two tiers ever select
+    different ids, criterion 3's Jaccard reads it as retrieval drift.
+    """
+    import inspect
+
+    from retrieval import aoss_tier, s3vectors_tier
+    for mod in (aoss_tier, s3vectors_tier):
+        assert "expansion.select" in inspect.getsource(mod), mod.__name__
 
 
 # ------------------------------------------------ S3 Vectors filter dialect

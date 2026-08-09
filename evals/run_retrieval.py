@@ -325,7 +325,17 @@ def run(tier_requested: str, record: bool, allow_dirty: bool = False) -> int:
         for f in fallbacks:
             print(f"     fallback: {f}")
 
-    if record:
+    if record and not tier_ok:
+        # The scorecard is NAMED for the requested tier, so recording a
+        # mismatched run files one tier's results under the other tier's name
+        # and silently overwrites a valid card. That happened: a Makefile bug
+        # reported the hot tier as down, and an AOSS run replaced a passing
+        # S3 Vectors scorecard. Same failure class as the dirty-sha guard —
+        # evidence labelled with something it is not.
+        print("NOT recording: the router resolved a different tier than "
+              "requested, so this run is not evidence about "
+              f"{tier_requested!r}.")
+    elif record:
         HISTORY.mkdir(exist_ok=True)
         sha = git_sha()
         out = HISTORY / f"{sha}-retrieval-{tier_requested}.json"
