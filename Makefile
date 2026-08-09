@@ -35,8 +35,16 @@ core:
 # Done-when unrunnable: bringing the hot tier up required an answering
 # endpoint that does not exist until M04. The smoke run moved to `demo`,
 # which is where a human wants it. `up` is now a deploy, and nothing else.
+#
+# devPrincipalArn: AOSS data access is granted ONLY by the collection's data
+# access policy, so the operator's own IAM principal needs naming there or
+# `retrieval-evals` gets 403 on the AOSS tier. The harness runs in-process by
+# design (SPEC/02), which means it runs as whoever invoked it. Resolved from
+# STS at deploy time rather than hardcoded, and empty in CI — where nothing
+# calls AOSS from a laptop.
 up:
-	$(CDK) deploy $(STACK_SEARCH) --require-approval never
+	$(CDK) deploy $(STACK_SEARCH) --require-approval never \
+	  -c devPrincipalArn=$$(aws sts get-caller-identity --query Arn --output text)
 	@echo "✅ Hot tier up ($(SSM_ENDPOINT))"
 	@echo "   next: make retrieval-evals   (records the aoss scorecard)"
 

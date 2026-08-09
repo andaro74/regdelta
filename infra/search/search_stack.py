@@ -11,6 +11,8 @@ changed after index creation — fine, the stack is disposable. Production =
 ENABLED + VPC network policy + never destroyed.
 """
 import json
+import os
+from pathlib import Path
 
 import aws_cdk as cdk
 from aws_cdk import (
@@ -26,6 +28,13 @@ from constructs import Construct
 
 COLLECTION_NAME = "regdelta"
 SSM_ENDPOINT_PARAM = "/regdelta/search/endpoint"
+
+# Resolved from this file, not from the process CWD. `Code.from_asset("../src")`
+# only works when cdk is invoked from infra/, which is what the Makefile does
+# and what nothing else does — `cdk synth` from the repo root, and any test
+# that synthesises this stack, both look for ../src one level too high. jsii
+# runs Node in its own process, so a chdir on the Python side does not move it.
+SRC = str(Path(__file__).resolve().parents[2] / "src")
 
 
 class RegDeltaSearchStack(cdk.Stack):
@@ -76,7 +85,7 @@ class RegDeltaSearchStack(cdk.Stack):
             self, "ReindexFn",
             runtime=_lambda.Runtime.PYTHON_3_14,
             handler="retrieval.reindex.handler",
-            code=_lambda.Code.from_asset("../src"),
+            code=_lambda.Code.from_asset(SRC),
             timeout=Duration.minutes(15), memory_size=1024,
             environment={
                 "CORPUS_BUCKET": corpus_bucket.bucket_name,
@@ -85,6 +94,29 @@ class RegDeltaSearchStack(cdk.Stack):
         corpus_bucket.grant_read(reindex)
         reindex.add_to_role_policy(iam.PolicyStatement(
             actions=["aoss:APIAccessAll"], resources=[collection.attr_arn]))
+
+        # AOSS data access is governed ONLY by this policy — an IAM principal
+        # with aoss:APIAccessAll still gets 403 unless it is named here.
+        #
+        # The two Lambda roles are not sufficient, and this is a gap in
+        # SPEC/02's Done-when rather than a convenience: `run_retrieval.py`
+        # calls router.retrieve() IN-PROCESS, deliberately, so that a failure
+        # means "the chunk never came back" and not "the model fumbled it".
+        # In-process means it runs as the operator's own principal. Without an
+        # opt-in for that principal, the AOSS half of criterion 1 cannot be
+        # executed by the person the spec asks to execute it.
+        #
+        # Opt-in and empty by default, so a deploy that does not ask for it
+        # grants nothing: `cdk deploy -c devPrincipalArn=arn:...:user/you`, or
+        # REGDELTA_DEV_PRINCIPAL_ARN in the environment. `make up` passes the
+        # caller's own STS identity. Read/write is still aoss:* pending the
+        # SPEC/05 split below; narrow this to read-only when that happens,
+        # since the eval harness only ever queries.
+        principals = [reindex.role.role_arn, query_lambda_role_arn]
+        dev_principal = (self.node.try_get_context("devPrincipalArn")
+                         or os.environ.get("REGDELTA_DEV_PRINCIPAL_ARN"))
+        if dev_principal:
+            principals.append(dev_principal)
 
         access = aoss.CfnAccessPolicy(
             self, "DataAccessPolicy",
@@ -98,7 +130,7 @@ class RegDeltaSearchStack(cdk.Stack):
                      "Resource": [f"index/{COLLECTION_NAME}/*"],
                      "Permission": ["aoss:*"]},  # TODO SPEC/05: split write/read
                 ],
-                "Principal": [reindex.role.role_arn, query_lambda_role_arn],
+                "Principal": principals,
             }]))
         access.add_dependency(collection)
 
