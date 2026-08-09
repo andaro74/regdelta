@@ -65,9 +65,15 @@ scope=effective_date. `make test` green.
 
 **Added by ADR-0006 / ADR-0007 (M01c).** The above closed at M01 but did not
 cover what the corpus ASSERTS, only that it exists. Also required:
-- `2025-03118`'s `compliance_dates` is `[]` in `corpus/parsed/`, in
-  `corpus/chunks/`, and in its DynamoDB `META` — and META does not disagree
-  with the chunks on any date field.
+- `2025-03118`'s compliance date is empty in **all three stores that hold
+  it**: `compliance_dates == []` in its DynamoDB `META`, `compliance_date`
+  absent or null on every line of `corpus/chunks/101/2025-03118.jsonl`, and
+  absent from its S3 Vectors metadata. META must not disagree with the chunks
+  on any date field.
+  > Not `corpus/parsed/`. An earlier draft of this clause named it, but the
+  > parsed object holds the structure extracted from the XML — `doc_id`,
+  > `preamble`, `regtext_sections` — and has never carried `compliance_dates`
+  > at all. The criterion checked a field in a store that does not hold it.
 - No stored date has day precision absent from its source document.
 - `2026-15920` records `LIFTS_STAY` and `CONFIRMS` edges against `2025-00830`
   and **no** `SUPERSEDES` edge, plus exactly one `STAY_PERIOD` interval on

@@ -116,17 +116,21 @@ non-zero on 2 and 3. **All three steps must run for (A) to be satisfied.**
    against. It is not a criterion and may never be cited as one.
 5. **Date attribution (gating, preflight).** Before any probe runs, the
    harness asserts that document `2025-03118`'s compliance dates are
-   **empty** — `[]` in `corpus/parsed/2025-03118.json`, `compliance_date`
-   absent or null on every line of `corpus/chunks/101/2025-03118.jsonl`, and
-   `compliance_dates` equal to `[]` in its DynamoDB `META` item. Any of the
-   three non-empty → exit non-zero with `date_attribution_failed`, before
-   recall is computed. Runs on both tiers. A corpus that fails this fails M02
-   regardless of recall. Ruling and rationale: ADR-0006.
+   **empty** in all three stores that hold it: `compliance_dates == []` in
+   its DynamoDB `META`, `compliance_date` absent or null on every line of
+   `corpus/chunks/101/2025-03118.jsonl`, and absent from its S3 Vectors
+   metadata. Any of the three non-empty → exit non-zero with
+   `date_attribution_failed`, before recall is computed. Runs on both tiers.
+   A corpus that fails this fails M02 regardless of recall. The harness
+   additionally asserts META and the chunks agree on `effective_date`, since
+   those two diverged once already. Ruling and rationale: ADR-0006.
 
-   > Says **empty**, not "non-null". An earlier draft said a non-null value
-   > fails — but ADR-0006 prescribes `[]`, which *is* non-null, so the exact
-   > value the SME approved would have failed this criterion. It also now
-   > names the three stores; "stored" alone was ambiguous across four.
+   > Two corrections are baked into that wording. It says **empty**, not
+   > "non-null" — ADR-0006 prescribes `[]`, which *is* non-null, so an earlier
+   > draft would have failed on the exact value the SME approved. And the third
+   > store is **S3 Vectors**, not `corpus/parsed/`: the parsed object holds the
+   > structure extracted from the XML and has never carried `compliance_dates`,
+   > so the criterion was checking a field in a store that does not hold it.
 
 **(B) Hydration count-parity — AOSS only, separate from (A).** Hydration
 exists on one tier and is a deploy-time property, so it is not part of the
