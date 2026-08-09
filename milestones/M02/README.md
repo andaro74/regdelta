@@ -13,7 +13,7 @@
 |-----------|--------|
 | 5. Date attribution, all 3 stores (gating preflight) | ✅ green against the live corpus |
 | 1. Recall@8 = 1.0, **S3 Vectors** | ✅ **9/9 probes, recall 1.0** (`ebf8a7e-retrieval-s3vectors.json`) |
-| 1. Recall@8 = 1.0, **AOSS** | ⏳ needs `make up` |
+| 1. Recall@8 = 1.0, **AOSS** | ❌ **6/9, recall 0.722** (`e89d5b5-retrieval-aoss.json`). See "Tier B does not meet criterion 1". |
 | 2. Resolved-tier assertion | ✅ implemented + unit-tested; the cross-run half needs both scorecards |
 | 3. Cross-tier Jaccard ≥ 0.60 (per-probe minimum) | ⏳ needs both scorecards |
 | 4. MRR reported, not gating | ✅ 0.462 on Tier A, recorded with `mrr_is_gating: false` |
@@ -60,6 +60,73 @@ is a mechanism rather than a threshold:
 3. **Per-document page cap**, so one rule cannot take six of eight slots.
 4. **Deterministic tie-breaking**, so cross-tier Jaccard measures retrieval
    and not dict iteration order.
+
+## Tier B does not meet criterion 1, and M02 is therefore not done
+
+**Tier A: 9/9, recall 1.0. Tier B: 6/9, recall 0.722.** SPEC/02 requires 1.0
+on both. It is not met and this milestone does not close.
+
+Tier B's first live measurement was **3/9** — and it missed the same DATES and
+amendatory-instruction chunks Tier A had. That falsified the assumption behind
+the original design: I had built the structural-expansion lane into Tier A
+only, on the theory that Tier B's BM25 would find those paragraphs by term
+match. It does not. A plain-English question's terms ("compliance", "date",
+"effective", "rule") appear throughout a 389-chunk preamble, so a short DATES
+paragraph does not win on BM25 either. Sharing the lane took Tier B to 6/9.
+
+The remaining three are all ranking, not retrieval: every missing chunk IS
+selected by the expansion lane and IS in the fused candidate list, at ranks
+9–13 of 24. They lose the 8-slot page to chunks that scored slightly higher.
+
+### Why I stopped instead of closing the gap
+
+Three further changes were tried. Each is defensible on its own terms and each
+was measured:
+
+| change | rationale | result |
+|---|---|---|
+| Three flat lanes instead of `[pre-fused relevance, assist]` | pre-fusing halves each relevance signal while the recall lane stays whole | **6/9 → 4/9**, reverted |
+| Interleave the assist lane by chunk position | a DATES paragraph outranks another document's summary — the domain says so | **Tier A 9/9 → 8/9**, reverted; on both tiers it merely swapped r05 for r09 |
+| BM25 `minimum_should_match: 70%` | BM25 over a verbose question in regulatory prose is noise; require most terms | Tier B **6/9 → 8/9**, *not adopted* |
+
+The third is the interesting one, because it scores best and I rejected it. At
+70%, BM25 stops matching **short** chunks — r09's amendatory-instructions
+paragraph contains neither "Red", "No. 3", nor "sections", so it drops out of
+the BM25 lane entirely. The setting improves the aggregate by suppressing
+preamble noise while penalising exactly the short structural chunks this whole
+mechanism exists to surface. Adopting a configuration whose mechanism runs
+backwards to its purpose, because the number is higher, is fitting. So: not
+adopted, and recorded here with its score so the choice is auditable rather
+than invisible.
+
+Two of the three changes traded one probe for another. That is the signal that
+nine probes cannot distinguish these ranking policies, and continuing to change
+policy until the number is green would produce a 1.0 that certifies nothing.
+SPEC/02 anticipated this exact hazard for a probe set engineering authored,
+chose `k` for, and needs 100% on.
+
+### What I believe the real fix is
+
+**Index the chunk `kind`.** The chunker already emits `kind` ∈ {dates, summary,
+amdpar, preamble, regtext} and it is already in every line of
+`corpus/chunks/**/*.jsonl` — `reindex._document()` simply does not copy it into
+the AOSS document, and `processor._put_vectors` does not copy it into S3
+Vectors metadata. With it indexed, "the paragraph stating what this document
+does" becomes a first-class filter/boost instead of something reconstructed
+through a DynamoDB citations GSI and then fought for through fusion weights.
+The whole `expansion.py` mechanism is a workaround for a field that exists in
+the source and is dropped at index time.
+
+Cost: one line in `reindex._document()` plus a mapping field (AOSS rebuilds
+from the corpus bucket on every deploy, so no re-ingestion). Tier A needs the
+same field in S3 Vectors metadata, which needs a small "rebuild S3 Vectors from
+the corpus bucket" utility — reusing the stored embeddings, no Bedrock calls,
+no chunk-id changes. That utility is arguably owed anyway: the architecture
+rule says search indexes are pure functions of the corpus bucket, and today
+only AOSS has a rebuild path.
+
+That is a design change, not a tuning pass, so it is the user's call rather
+than something to slip in at the end of a long session.
 
 ## The number this milestone is least sure of
 
