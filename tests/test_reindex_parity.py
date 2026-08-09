@@ -245,6 +245,61 @@ def test_index_creation_tolerates_a_missing_index_but_not_other_errors(reindex,
         reindex._create_index("https://abc123.us-west-2.aoss.amazonaws.com")
 
 
+# ------------------------------------------------------------- SigV4 (aoss)
+def test_every_request_carries_the_payload_hash_header():
+    """aoss REQUIRES x-amz-content-sha256 and reports its absence as a bare
+    `403 Forbidden` with an OpenSearch-shaped body — indistinguishable from a
+    data-access-policy denial. Two deploys were spent on that ambiguity.
+
+    botocore's generic SigV4Auth folds the payload hash into the canonical
+    request but never emits it as a header; only S3SigV4Auth does. So a signer
+    that looks correct, and whose signature IS correct, is rejected.
+    """
+    import hashlib
+
+    from retrieval import aoss_client
+
+    sent = {}
+
+    class FakeResponse:
+        def read(self):
+            return b"{}"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=None):
+        sent["headers"] = {k.lower(): v for k, v in req.headers.items()}
+        sent["body"] = req.data
+        return FakeResponse()
+
+    import botocore.credentials
+    creds = botocore.credentials.Credentials("AKIA_TEST", "secret")
+    import botocore.session
+    session = botocore.session.get_session()
+    orig_get, orig_open = session.get_credentials, aoss_client.urllib.request.urlopen
+    try:
+        botocore.session.get_session = lambda: type(
+            "S", (), {"get_credentials": staticmethod(lambda: creds)})()
+        aoss_client.urllib.request.urlopen = fake_urlopen
+        aoss_client.request("https://abc123.us-west-2.aoss.amazonaws.com",
+                            "PUT", "chunks", {"mappings": {}})
+    finally:
+        botocore.session.get_session = lambda: session
+        session.get_credentials = orig_get
+        aoss_client.urllib.request.urlopen = orig_open
+
+    expected = hashlib.sha256(sent["body"]).hexdigest()
+    assert sent["headers"]["x-amz-content-sha256"] == expected
+    # Signed, not merely present: it must appear in SignedHeaders, or a future
+    # reader may "tidy" it to a post-signing addition and change what is
+    # covered by the signature.
+    assert "x-amz-content-sha256" in sent["headers"]["authorization"]
+
+
 # ------------------------------------- data-access-policy propagation (403)
 def test_index_creation_waits_out_a_403_from_a_policy_still_propagating(
         reindex, monkeypatch):

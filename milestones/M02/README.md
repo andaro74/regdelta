@@ -93,8 +93,54 @@ thought to check, pass", not as a retrieval quality claim.
 | **The first scorecard was filed under the previous commit's sha** | `git_sha()` reports HEAD whether or not the tree matches it. Evidence labelled with a commit that cannot reproduce it is worse than no evidence — it survives into `milestones/` and reads as verified. `--record` now refuses a dirty tree. |
 | **The AOSS data-access policy locked out the operator** | Access is granted *only* by that policy; `aoss:APIAccessAll` alone still 403s. It named the two Lambda roles, and the harness runs **in-process** by design — as the operator's principal. The AOSS half of criterion 1 was not executable by the person the spec asks to execute it. Now an opt-in `devPrincipalArn`, empty by default, pinned by 4 tests. |
 | **The harness crashed while printing a PASSING result** | Windows console is cp1252 and cannot encode ✅. A green run exiting non-zero from the reporting layer. |
-| **`make up` failed: `PUT chunks -> 403`** | AOSS data access policies are eventually consistent on the data plane, and the CDK Trigger fires the instant CloudFormation reports the policy created. The policy existed and was correct. Diagnosed from the sequence: `DELETE` returned 404 (evaluated before the policy mattered) and only the `PUT` was denied — the code re-raises a 403 on DELETE, so it could not have been a blanket denial. Now a bounded 403-retry on index creation ONLY, which fails the deploy if it outlives the window and names the caller ARN so a real principal mismatch reads as one. |
-| **The Trigger's invoke timeout is 2 minutes, not the function's 15** | Found while sizing that retry. `Timeout: "120000"` on the custom resource, separate from the Lambda's own 900s. Hydration legitimately needs longer — AOSS exposes no refresh API, so count-parity polls up to 5 minutes. A healthy deploy would have failed on the invoker's clock and reported it as a hydration failure. This was latent before M02's changes and would have fired on the first full hydration. |
+| **`make up` failed: `PUT chunks -> 403`** | **aoss requires an `x-amz-content-sha256` header, and botocore's generic `SigV4Auth` never emits it** — only `S3SigV4Auth` does. So the signature was correct and the request was rejected anyway. See below: I got the diagnosis wrong first. |
+| **The Trigger's invoke timeout is 2 minutes, not the function's 15** | Found while sizing the retry for that 403. `Timeout: "120000"` on the custom resource, separate from the Lambda's own 900s. Hydration legitimately needs longer — AOSS exposes no refresh API, so count-parity polls up to 5 minutes. A healthy deploy would have failed on the invoker's clock and reported it as a hydration failure. Latent before M02; it would have fired on the first full hydration regardless. |
+
+### The 403, and the wrong diagnosis I shipped first
+
+Worth writing down in full, because the mistake is the same shape as the one
+ADR-0005 already records: a plausible mechanism, asserted before anything had
+been run that could distinguish it from the alternatives.
+
+`make up` failed with `PUT chunks -> 403` and an OpenSearch-shaped body. I
+reasoned that the `DELETE` had returned 404 while only the `PUT` was denied,
+concluded that a blanket authorization failure was therefore ruled out, and
+shipped a **bounded retry for data-access-policy propagation**. The reasoning
+was sound and the conclusion was wrong: DELETE on a nonexistent index is
+answered before the body-bearing path that actually needs the header.
+
+The second deploy failed identically — but the retry's diagnostic made it
+decisive in one read instead of another guess:
+
+```
+attempts=37   (183 seconds)
+caller=arn:aws:sts::…:assumed-role/regdelta-search-ReindexFnServiceRole…/…
+```
+
+37 attempts over three minutes is not eventual consistency. CloudTrail's
+`CreateAccessPolicy` event then showed the policy submitted 55 seconds before
+the Lambda started, naming that exact role, with `aoss:*` on
+`index/regdelta/*`. Policy right, principal right, timing right.
+
+That left the signer. **aoss requires `x-amz-content-sha256`, and botocore's
+generic `SigV4Auth` folds the payload hash into the canonical request but
+never emits it as a header** — only `S3SigV4Auth` does. It is precisely what
+`opensearch-py`'s `AWSV4SignerAuth` special-cases for the `aoss` service, and
+the cost of not using that library (see "no new dependencies" below). aoss
+reports the omission as a bare `403 Forbidden`, identical to an authorization
+denial.
+
+Three things kept from this:
+
+- The header is now set **before** signing, so it is covered by
+  `SignedHeaders`, and a test mutation-checks it — removing the header fails
+  the test.
+- The failure message no longer asserts a cause. It lists all three (missing
+  header / principal absent / propagation), says which the retry has already
+  ruled out, and points at the CloudTrail event that settles the second.
+- **The retry stays**, even though propagation was not the cause here. It is
+  bounded, it cannot mask a permissions bug, and its attempt counter is what
+  converted the second failure from a guess into a measurement.
 
 `run_evals.py` has the same latent cp1252 and dirty-sha issues. Not fixed
 here — it is the golden-set instrument and out of M02's scope — but recorded

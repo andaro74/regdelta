@@ -12,6 +12,7 @@ must agree on the index name, the mapping and the document shape; the last
 time this repo kept two copies of a mapping in sync by hand (_EDGE_PREDICATE,
 M01c) they drifted and the failure surfaced after the writes had landed.
 """
+import hashlib
 import json
 import re
 import urllib.error
@@ -90,12 +91,23 @@ def request(endpoint: str, method: str, path: str, body=None,
         data = json.dumps(body).encode()
 
     url = f"{endpoint}/{path.lstrip('/')}"
-    headers = {"Content-Type": content_type}
+    # x-amz-content-sha256 is REQUIRED by aoss, and its absence is reported as
+    # a plain `403 Forbidden` with an OpenSearch-shaped body — indistinguishable
+    # from a data-access-policy denial, which is what cost two deploys here.
+    # botocore's generic SigV4Auth folds the payload hash into the canonical
+    # request but never emits it as a header (only S3SigV4Auth does), so a
+    # hand-rolled signer looks correct and is rejected. This is exactly what
+    # opensearch-py's AWSV4SignerAuth special-cases for the 'aoss' service.
+    #
+    # Set BEFORE signing so it is covered by SignedHeaders. botocore hashes the
+    # same bytes for the canonical request, so the two always agree.
+    headers = {"Content-Type": content_type,
+               "X-Amz-Content-Sha256": hashlib.sha256(data or b"").hexdigest()}
     aws = AWSRequest(method=method, url=url, data=data, headers=headers)
     creds = botocore.session.get_session().get_credentials()
     if creds is None:
         raise AossError("no AWS credentials available for SigV4")
-    # AOSS requires the real payload hash — it rejects UNSIGNED-PAYLOAD.
+    # AOSS rejects UNSIGNED-PAYLOAD, so the body must be signed for real.
     SigV4Auth(creds.get_frozen_credentials(), "aoss", config.REGION).add_auth(aws)
 
     req = urllib.request.Request(url, data=data, method=method,
