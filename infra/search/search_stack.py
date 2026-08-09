@@ -138,7 +138,16 @@ class RegDeltaSearchStack(cdk.Stack):
             self, "HydrateOnDeploy",
             handler=reindex,
             execute_after=[access],
-            execute_on_handler_change=True)
+            execute_on_handler_change=True,
+            # The Trigger's INVOCATION timeout, which defaults to 2 minutes and
+            # is separate from the function's own 15. Hydration can legitimately
+            # need longer than two minutes: AOSS exposes no refresh API, so the
+            # count-parity assertion polls for up to 5 minutes, and the first
+            # write after deploy waits out data-access-policy propagation. At
+            # the default, a healthy deploy fails on the invoker's clock and
+            # reports it as a hydration failure. Kept under the provider
+            # handler's own 900s.
+            timeout=Duration.minutes(14))
 
         ssm.StringParameter(
             self, "EndpointParam",

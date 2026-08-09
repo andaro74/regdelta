@@ -29,6 +29,8 @@ def reindex(monkeypatch):
     # for a count that is never going to arrive.
     monkeypatch.setattr(mod, "COUNT_DEADLINE_S", 0.0)
     monkeypatch.setattr(mod, "COUNT_POLL_S", 0.0)
+    monkeypatch.setattr(mod, "AUTHZ_PROPAGATION_S", 0.0)
+    monkeypatch.setattr(mod, "AUTHZ_POLL_S", 0.0)
     yield mod
     sys.modules.pop("retrieval.reindex", None)
 
@@ -239,6 +241,89 @@ def test_index_creation_tolerates_a_missing_index_but_not_other_errors(reindex,
         raise aoss_client.AossError("DELETE chunks -> 403: AccessDenied")
 
     monkeypatch.setattr(reindex.aoss_client, "request", fake_403)
+    with pytest.raises(aoss_client.AossError, match="403"):
+        reindex._create_index("https://abc123.us-west-2.aoss.amazonaws.com")
+
+
+# ------------------------------------- data-access-policy propagation (403)
+def test_index_creation_waits_out_a_403_from_a_policy_still_propagating(
+        reindex, monkeypatch):
+    """The failure that killed the first `make up`.
+
+    AOSS data access policies are eventually consistent on the data plane, and
+    the CDK Trigger fires the moment CloudFormation reports the policy created.
+    The DELETE returned 404 (no index yet) and the PUT came back 403 from a
+    policy that already existed and was already correct.
+    """
+    from retrieval import aoss_client
+    monkeypatch.setattr(reindex, "AUTHZ_PROPAGATION_S", 60.0)
+    attempts = []
+
+    def fake(endpoint, method, path, body=None, **kw):
+        attempts.append(method)
+        if method == "DELETE":
+            raise aoss_client.AossError("DELETE chunks -> 404: index_not_found")
+        if attempts.count("PUT") < 3:
+            raise aoss_client.AossError(
+                'PUT chunks -> 403: {"status":403,"error":'
+                '{"reason":"403 Forbidden","type":"Forbidden"}}')
+        return {}
+
+    monkeypatch.setattr(reindex.aoss_client, "request", fake)
+    reindex._create_index("https://abc123.us-west-2.aoss.amazonaws.com")
+    assert attempts.count("PUT") == 3
+
+
+def test_a_403_that_outlives_the_window_still_fails_the_deploy(reindex,
+                                                               monkeypatch):
+    """Retrying 403 forever would turn a permissions bug into a timeout — the
+    same bug wearing a disguise. The error must also name the caller, because
+    the entire ambiguity of an AOSS 403 is whether the signing principal is the
+    one the data access policy lists."""
+    from retrieval import aoss_client
+    monkeypatch.setattr(reindex, "_caller_arn",
+                        lambda: "arn:aws:sts::1:assumed-role/ReindexFn/x")
+
+    def fake(endpoint, method, path, body=None, **kw):
+        if method == "DELETE":
+            raise aoss_client.AossError("DELETE chunks -> 404: index_not_found")
+        raise aoss_client.AossError("PUT chunks -> 403: Forbidden")
+
+    monkeypatch.setattr(reindex.aoss_client, "request", fake)
+    with pytest.raises(aoss_client.AossError) as exc:
+        reindex._create_index("https://abc123.us-west-2.aoss.amazonaws.com")
+    assert "DATA ACCESS POLICY" in str(exc.value)
+    assert "assumed-role/ReindexFn" in str(exc.value)
+
+
+def test_only_403_is_retried(reindex, monkeypatch):
+    """A 400 on the mapping is a bug in the mapping. Waiting three minutes to
+    re-report it would hide a fast, deterministic failure behind a slow one."""
+    from retrieval import aoss_client
+    monkeypatch.setattr(reindex, "AUTHZ_PROPAGATION_S", 600.0)
+    calls = []
+
+    def fake(endpoint, method, path, body=None, **kw):
+        calls.append(method)
+        if method == "DELETE":
+            raise aoss_client.AossError("DELETE chunks -> 404: index_not_found")
+        raise aoss_client.AossError(
+            "PUT chunks -> 400: mapper_parsing_exception")
+
+    monkeypatch.setattr(reindex.aoss_client, "request", fake)
+    with pytest.raises(aoss_client.AossError, match="mapper_parsing"):
+        reindex._create_index("https://abc123.us-west-2.aoss.amazonaws.com")
+    assert calls.count("PUT") == 1
+
+
+def test_a_403_on_delete_is_never_retried_or_swallowed(reindex, monkeypatch):
+    """DELETE tolerates only 'index not found'. A 403 there is the same
+    authorization problem, but retrying it belongs to the create path — and
+    swallowing it would create the index over stale settings."""
+    from retrieval import aoss_client
+    monkeypatch.setattr(reindex.aoss_client, "request",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            aoss_client.AossError("DELETE chunks -> 403: Forbidden")))
     with pytest.raises(aoss_client.AossError, match="403"):
         reindex._create_index("https://abc123.us-west-2.aoss.amazonaws.com")
 

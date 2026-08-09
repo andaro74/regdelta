@@ -94,10 +94,33 @@ def _create_index(endpoint: str) -> None:
     try:
         aoss_client.request(endpoint, "DELETE", aoss_client.INDEX_NAME)
     except aoss_client.AossError as e:
-        if "index_not_found" not in str(e) and "404" not in str(e):
+        if "index_not_found" not in str(e) and "-> 404" not in str(e):
             raise
-    aoss_client.request(endpoint, "PUT", aoss_client.INDEX_NAME,
-                        aoss_client.INDEX_MAPPING)
+
+    deadline = time.monotonic() + AUTHZ_PROPAGATION_S
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            aoss_client.request(endpoint, "PUT", aoss_client.INDEX_NAME,
+                                aoss_client.INDEX_MAPPING)
+            if attempt > 1:
+                print(json.dumps({"index_created_after_403_retries": attempt}))
+            return
+        except aoss_client.AossError as e:
+            if "-> 403" not in str(e) or time.monotonic() >= deadline:
+                raise aoss_client.AossError(
+                    f"{e}\n"
+                    f"caller={_caller_arn()} endpoint={endpoint} "
+                    f"attempts={attempt}\n"
+                    "A 403 with an OpenSearch-shaped body means SigV4 "
+                    "authenticated and the collection's DATA ACCESS POLICY "
+                    "denied the call — an IAM policy granting "
+                    "aoss:APIAccessAll is not sufficient on its own. Check "
+                    "that the caller above appears in the policy's Principal "
+                    "list (infra/search/search_stack.py)."
+                ) from e
+            time.sleep(AUTHZ_POLL_S)
 
 
 def _bulk(endpoint: str, docs: list[dict]) -> None:
@@ -123,6 +146,37 @@ def _count(endpoint: str) -> int:
 
 COUNT_DEADLINE_S = 300.0
 COUNT_POLL_S = 5.0
+
+# How long to keep retrying a 403 on the FIRST write after deploy.
+#
+# AOSS data access policies are eventually consistent on the data plane.
+# CloudFormation reports the policy CREATE_COMPLETE as soon as the control
+# plane accepts it, and the CDK Trigger fires immediately after — so the very
+# first index creation can be denied by a policy that already exists and is
+# already correct. That is what killed the first `make up`: DELETE returned
+# 404 (no index yet, evaluated before the policy) and the PUT came back
+# `403 Forbidden`.
+#
+# Scoped deliberately. This retries ONLY 403, ONLY on index creation, and only
+# inside this window; a 403 that outlives it still fails the deploy, carrying
+# the caller ARN so a genuine principal mismatch reads as one instead of
+# looking like slow propagation. Retrying 403 anywhere else would turn a
+# permissions bug into a timeout, which is the same bug wearing a disguise.
+AUTHZ_PROPAGATION_S = float(os.environ.get("AUTHZ_PROPAGATION_S", "180"))
+AUTHZ_POLL_S = 5.0
+
+
+def _caller_arn() -> str:
+    """The identity this Lambda actually signs with. Needs no IAM permission.
+
+    In the error path only: the whole ambiguity of an AOSS 403 is whether the
+    calling principal is the one the data access policy names, and every
+    minute spent guessing is a redeploy.
+    """
+    try:
+        return boto3.client("sts").get_caller_identity()["Arn"]
+    except Exception as e:  # noqa: BLE001 — diagnostics must never mask the 403
+        return f"<sts failed: {e}>"
 
 
 def _await_count(endpoint: str, expected: int,
