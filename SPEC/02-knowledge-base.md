@@ -36,11 +36,29 @@ precondition is Done-when criterion 5.
   then merge with vector results via RRF (src/retrieval/fusion.py).
 
 ## Tier B — AOSS (ephemeral hot tier)
-- Index `chunks` (mapping lives in infra/lambdas/reindex/handler.py):
-  single hybrid query — BM25 on chunk_text + citation_path, kNN on
-  embedding, filters as bool/filter clauses; client-side RRF.
+- Index `chunks` (mapping lives in src/retrieval/aoss_client.py): BM25 on
+  chunk_text + citation_path, kNN on embedding, filters as bool/filter
+  clauses; client-side RRF. Sent as one `_msearch` — see the amendment note.
 - Hydration: reindex Lambda streams corpus/chunks/*.jsonl, bulk 500/batch;
   asserts index count == source count (raise → deploy fails).
+
+> **Amended during implementation (M02), two deviations, both recorded here
+> rather than left as a spec that does not describe the code:**
+>
+> 1. **The reindex handler moved** from `infra/lambdas/reindex/handler.py` to
+>    `src/retrieval/reindex.py`, and the index mapping with it. The Lambda now
+>    ships `../src` like every core function. Keeping it in its own asset
+>    directory meant a second copy of the mapping and of the SigV4 client, with
+>    the query tier holding the first — and the two must agree on field names
+>    or criterion 3's Jaccard measures the disagreement instead of retrieval
+>    drift. This repo has already had that exact bug: `_EDGE_PREDICATE` was two
+>    hand-synced copies in M01c and they drifted.
+> 2. **"Single hybrid query ... client-side RRF" is served by one `_msearch`.**
+>    The two halves of that sentence pull against each other — one query yields
+>    one ranked list, and RRF needs two. One `_msearch` is a single round trip
+>    carrying both, which honours the intent (no extra latency, fusion here
+>    rather than in a search pipeline). Written down because "single query" is
+>    the kind of phrase a later reader would take literally.
 
 ## Optional
 Claude rerank of top-20 → top-k behind flag RERANK=1. If implemented,
@@ -50,11 +68,16 @@ Unmeasured, it stays off and out of scope.
 
 ## Files
 src/retrieval/{router.py, s3vectors_tier.py, aoss_tier.py, fusion.py}
-infra/lambdas/reindex/handler.py (implement its TODO)
+src/retrieval/aoss_client.py (new — SigV4 + the index mapping, one copy
+  shared by the query tier and hydration)
+src/retrieval/reindex.py (new — the hydration Lambda; see the amendment
+  note under Tier B for why it is not under infra/lambdas/)
 tests/test_reindex_parity.py (new — the partial-index failure test)
 evals/retrieval_truth.json (new — see Done when)
 evals/run_retrieval.py (new — harness, calls router.retrieve() in-process;
   also hosts the criterion-5 date-attribution preflight)
+evals/run_parity.py (new — the cross-run gate for criteria 2 and 3, which
+  neither tier run can evaluate from inside itself)
 Makefile (new targets `retrieval-evals` and `retrieval-parity`; `up`
   decoupled from the golden set)
 

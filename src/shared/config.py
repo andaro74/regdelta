@@ -19,6 +19,52 @@ EMBED_DIM = 1024
 CONFIDENCE_HITL_THRESHOLD = float(os.environ.get("HITL_THRESHOLD", "0.7"))
 
 SSM_SEARCH_ENDPOINT = "/regdelta/search/endpoint"
+
+# ----------------------------------------------------------- retrieval (02)
+# Ranking knobs, here rather than inline so both tiers read the same numbers
+# (CLAUDE.md: thresholds are values, never literals in node code).
+#
+# RETRIEVAL_PER_DOC_CAP — how many of the 8 page slots one document may take
+# before every other candidate has been considered. Deferred candidates
+# back-fill, so this changes the ORDER of a full page, never its length.
+#
+# It is deliberately EQUAL TO RETRIEVAL_STRUCTURAL_PER_DOC, and that equality
+# is the reason for the value rather than the measurement being the reason.
+# The expansion lane pulls up to 3 structural chunks per document (DATES,
+# summary, amendatory instructions). If the page cap were lower, a document's
+# own expanded set could not fit; if it were higher, the extra slots go to
+# whatever ranked next within that document — ordinary preamble prose — and
+# displace a structural chunk of the NEXT document. Keeping the two equal
+# means the cap admits exactly what the expansion produced.
+#
+# The measurement agrees and is worth recording in full, because it is not
+# monotonic: cap 3 -> 9/9 probes, 4 -> 8/9, 5 -> 9/9, 6 -> 7/9, 8 -> 7/9.
+# A value that fails between two passing values means nine probes cannot
+# robustly determine this constant. It is the softest number in M02: the
+# MECHANISM (one document may not crowd the page) is load-bearing and
+# demonstrable — removing it entirely drops two probes — but the exact bound
+# is a design judgement the probe set cannot settle. First thing to
+# re-examine if a probe regresses.
+#
+# RETRIEVAL_EXPAND_DOCS / RETRIEVAL_STRUCTURAL_PER_DOC — how far the
+# structural-expansion lane reaches. See s3vectors_tier._citation_assist for
+# what it is and the measurement that motivated it.
+#
+# RETRIEVAL_ASSIST_WEIGHT — the lexical/structural lane's weight in RRF,
+# relative to the vector lane's 1.0. Kept at parity after measurement.
+# Down-weighting that lane is the intuitive move (it selects chunks by which
+# DOCUMENT they belong to, not by how well they answer the question) and it
+# measured strictly worse: 1.0 -> 8/9 probes, 0.8 -> 7/9, 0.5 -> 5/9. Once the
+# expansion is gated to documents that are already page-worthy, its entries
+# have earned parity, and discounting them only re-buries the DATES paragraphs
+# the lane exists to surface. The knob stays because the mechanism is real and
+# M03 may want it; the default records what the measurement said.
+RETRIEVAL_STRUCTURAL_PER_DOC = int(
+    os.environ.get("RETRIEVAL_STRUCTURAL_PER_DOC", "3"))
+RETRIEVAL_PER_DOC_CAP = int(os.environ.get("RETRIEVAL_PER_DOC_CAP",
+                                           str(RETRIEVAL_STRUCTURAL_PER_DOC)))
+RETRIEVAL_ASSIST_WEIGHT = float(os.environ.get("RETRIEVAL_ASSIST_WEIGHT", "1.0"))
+RETRIEVAL_EXPAND_DOCS = int(os.environ.get("RETRIEVAL_EXPAND_DOCS", "3"))
 CORPUS_BUCKET = os.environ.get("CORPUS_BUCKET", "")
 REGISTRY_TABLE = os.environ.get("REGISTRY_TABLE", "")
 STATE_TABLE = os.environ.get("STATE_TABLE", "")

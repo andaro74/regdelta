@@ -65,16 +65,22 @@ class RegDeltaSearchStack(cdk.Stack):
         collection.add_dependency(enc)
         collection.add_dependency(net)
 
+        # Ships ../src, like every core Lambda. It used to ship its own
+        # lambdas/reindex/ directory holding a second copy of the index
+        # mapping — the same shape as the _EDGE_PREDICATE duplication that
+        # drifted in M01c. The mapping and the query tier must agree on field
+        # names or cross-tier Jaccard measures the disagreement instead of the
+        # retrieval; one importable module makes that unrepresentable.
+        # SPEC/02's Files list is amended in the same PR.
         reindex = _lambda.Function(
             self, "ReindexFn",
             runtime=_lambda.Runtime.PYTHON_3_14,
-            handler="handler.handler",
-            code=_lambda.Code.from_asset("lambdas/reindex"),
+            handler="retrieval.reindex.handler",
+            code=_lambda.Code.from_asset("../src"),
             timeout=Duration.minutes(15), memory_size=1024,
             environment={
                 "CORPUS_BUCKET": corpus_bucket.bucket_name,
                 "COLLECTION_ENDPOINT": collection.attr_collection_endpoint,
-                "INDEX_NAME": "chunks",
             })
         corpus_bucket.grant_read(reindex)
         reindex.add_to_role_policy(iam.PolicyStatement(

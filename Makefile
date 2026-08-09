@@ -8,13 +8,17 @@ REGION       ?= us-west-2
 SSM_ENDPOINT := /regdelta/search/endpoint
 CDK          := cd infra && npx cdk
 
-.PHONY: help bootstrap core up down status smoke evals lint test demo ingest-backfill synth diff
+.PHONY: help bootstrap core up down status smoke evals lint test demo ingest-backfill synth diff \
+        retrieval-evals retrieval-parity preflight
 
 help:
 	@echo "make core            - deploy/update persistent stack"
 	@echo "make up / make down  - create/destroy AOSS hot tier"
 	@echo "make status          - tier state"
 	@echo "make smoke / evals   - golden-set checks (definition of done)"
+	@echo "make retrieval-evals - probe set vs the CURRENT tier (SPEC/02 A)"
+	@echo "make retrieval-parity- cross-tier gate; needs both runs recorded"
+	@echo "make preflight       - date-attribution check alone (cheap)"
 	@echo "make lint            - ruff (same scope as the eval gate)"
 	@echo "make test            - pytest"
 	@echo "make ingest-backfill - one-shot backfill of the demo corpus"
@@ -26,10 +30,15 @@ bootstrap:
 core:
 	$(CDK) deploy $(STACK_CORE) --require-approval never
 
+# Deploys and prints the endpoint. It used to run `smoke` — i.e. the golden
+# set through the SPEC/04 API — which made the AOSS half of SPEC/02's
+# Done-when unrunnable: bringing the hot tier up required an answering
+# endpoint that does not exist until M04. The smoke run moved to `demo`,
+# which is where a human wants it. `up` is now a deploy, and nothing else.
 up:
 	$(CDK) deploy $(STACK_SEARCH) --require-approval never
-	@$(MAKE) --no-print-directory smoke
 	@echo "✅ Hot tier up ($(SSM_ENDPOINT))"
+	@echo "   next: make retrieval-evals   (records the aoss scorecard)"
 
 down:
 	$(CDK) destroy $(STACK_SEARCH) --force
@@ -48,6 +57,29 @@ smoke:
 
 evals:
 	python evals/run_evals.py
+
+# SPEC/02 Done-when (A). Measured at the retrieval contract, in-process —
+# not through an answering endpoint, which is M04's.
+#
+# The tier is DERIVED from the live SSM parameter and then asserted, rather
+# than chosen by the caller: `--tier` says what this run must resolve to, and
+# the harness exits non-zero if the router resolved something else. That is
+# criterion 2. Passing the tier by hand would let a down hot tier record two
+# S3 Vectors runs as "both tiers pass".
+retrieval-evals:
+	@tier=$$(aws ssm get-parameter --name $(SSM_ENDPOINT) --region $(REGION) \
+	   >/dev/null 2>&1 && echo aoss || echo s3vectors); \
+	  echo "→ hot tier $$tier"; \
+	  python evals/run_retrieval.py --tier $$tier --record
+
+# Criteria 2 and 3 are cross-run: neither invocation above can see the
+# other's output. Run retrieval-evals once with the hot tier DOWN and once
+# with it UP, on the same commit, then this.
+retrieval-parity:
+	python evals/run_parity.py
+
+preflight:
+	python evals/run_retrieval.py --tier s3vectors --preflight-only
 
 # M00b control. Reproduces the permanent baseline scorecard: starts the
 # loopback shim, runs the full golden set against mode=naive, records it.
@@ -72,7 +104,10 @@ ingest-backfill:
 	     --query "Stacks[0].Outputs[?OutputKey=='PollerFnName'].OutputValue" --output text) \
 	  --payload '{"mode":"backfill"}' backfill-out.json && cat backfill-out.json && rm -f backfill-out.json
 
+# `up` no longer runs the golden set (see its comment). The smoke run lands
+# here instead, so the coverage moved rather than disappearing.
 demo: up
+	@$(MAKE) --no-print-directory smoke
 	@echo "Demo UI: $$(aws cloudformation describe-stacks --stack-name $(STACK_CORE) \
 	  --region $(REGION) \
 	  --query \"Stacks[0].Outputs[?OutputKey=='DemoUrl'].OutputValue\" --output text)"
