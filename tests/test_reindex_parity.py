@@ -51,6 +51,7 @@ def wire(monkeypatch, mod, source: list[dict], indexed_count):
     monkeypatch.setattr(mod, "_bulk", lambda ep, docs: sent.extend(docs))
     monkeypatch.setattr(mod, "_count", lambda ep: (
         indexed_count(sent) if callable(indexed_count) else indexed_count))
+    monkeypatch.setattr(mod, "_assert_knn_mapping", lambda ep: None)
     return sent
 
 
@@ -69,6 +70,7 @@ def test_bulk_batches_at_500(reindex, monkeypatch):
     monkeypatch.setattr(reindex, "_create_index", lambda ep: None)
     monkeypatch.setattr(reindex, "_bulk", lambda ep, docs: sizes.append(len(docs)))
     monkeypatch.setattr(reindex, "_count", lambda ep: 1200)
+    monkeypatch.setattr(reindex, "_assert_knn_mapping", lambda ep: None)
     reindex.handler({}, None)
     assert sizes == [500, 500, 200]
 
@@ -134,6 +136,85 @@ def test_await_count_gives_up_at_the_deadline(reindex, monkeypatch):
     handler is what decides that a short count fails."""
     monkeypatch.setattr(reindex, "_count", lambda ep: 3)
     assert reindex._await_count("https://x", 10, deadline_s=-1) == 3
+
+
+# ------------------------------------------- index-visibility propagation (404)
+def test_count_reports_an_invisible_index_as_none_not_zero(reindex, monkeypatch):
+    """The failure that killed the third `make up`.
+
+    AOSS decouples ingest compute from search compute, and index metadata
+    reaches them separately. On a fresh collection the PUT succeeded, a
+    500-document `_bulk` was ACCEPTED against `chunks`, and `chunks/_count`
+    then answered 404 index_not_found — 11 seconds in. That is not an empty
+    index, and 0 would be the wrong answer to give the caller.
+    """
+    from retrieval import aoss_client
+    monkeypatch.setattr(reindex.aoss_client, "request",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            aoss_client.AossError(
+                                'POST chunks/_count -> 404: {"error":'
+                                '{"type":"index_not_found_exception"}}')))
+    assert reindex._count("https://x") is None
+
+
+def test_count_does_not_swallow_other_errors(reindex, monkeypatch):
+    """Only index_not_found is a propagation story. A 403 here is the data
+    access policy and must not be reported as 'not visible yet' — that would
+    spend the whole deadline before failing with the wrong explanation."""
+    from retrieval import aoss_client
+    monkeypatch.setattr(reindex.aoss_client, "request",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            aoss_client.AossError("POST chunks/_count -> 403")))
+    with pytest.raises(aoss_client.AossError, match="403"):
+        reindex._count("https://x")
+
+
+def test_await_count_waits_out_an_invisible_index(reindex, monkeypatch):
+    """Same shape as waiting out a low count, one step earlier."""
+    seq = iter([None, None, 0, 10])
+    monkeypatch.setattr(reindex, "_count", lambda ep: next(seq))
+    assert reindex._await_count("https://x", 10, deadline_s=99) == 10
+
+
+def test_an_index_that_never_appears_fails_the_deploy(reindex, monkeypatch):
+    """Waiting out the 404 may only DELAY a failure, never convert one into a
+    success — the same property that makes the 403 retry safe. If the index is
+    still missing at the deadline the deploy fails, and says so distinctly:
+    'ingest accepted writes search cannot resolve' is a different bug from
+    'some documents are missing'."""
+    wire(monkeypatch, reindex, records(10), None)
+    with pytest.raises(RuntimeError, match="never visible to the search path"):
+        reindex.handler({}, None)
+
+
+def test_a_dynamically_mapped_index_fails_the_deploy(reindex, monkeypatch):
+    """Closes the hole tolerating index_not_found opens.
+
+    If a create ever silently no-ops, `_bulk` auto-creates `chunks` with a
+    dynamic mapping: every document lands, the count assertion passes, and
+    `embedding` is a float array. That deploy reports success and every kNN
+    query fails afterwards.
+    """
+    monkeypatch.setattr(reindex.aoss_client, "request", lambda *a, **k: {
+        "chunks": {"mappings": {"properties": {"embedding": {"type": "float"}}}}})
+    with pytest.raises(RuntimeError, match="not 'knn_vector'"):
+        reindex._assert_knn_mapping("https://x")
+
+    monkeypatch.setattr(reindex.aoss_client, "request", lambda *a, **k: {
+        "chunks": {"mappings": {"properties": {
+            "embedding": {"type": "knn_vector", "dimension": 1024}}}}})
+    reindex._assert_knn_mapping("https://x")
+
+
+def test_an_unrecognised_mapping_body_does_not_fail_the_deploy(reindex,
+                                                                monkeypatch):
+    """This guard runs after a full hydration has passed the count assertion,
+    and the AOSS response shape it reads is not verified anywhere in CI. A
+    wrong guess about that shape must not fail an otherwise-healthy deploy —
+    it degrades to a log line instead."""
+    monkeypatch.setattr(reindex.aoss_client, "request",
+                        lambda *a, **k: {"unexpected": {}})
+    reindex._assert_knn_mapping("https://x")
 
 
 # --------------------------------------------------------- document shape

@@ -137,9 +137,59 @@ def _bulk(endpoint: str, docs: list[dict]) -> None:
         raise aoss_client.AossError(f"bulk index reported errors: {first}")
 
 
-def _count(endpoint: str) -> int:
-    return aoss_client.request(endpoint, "POST",
-                               f"{aoss_client.INDEX_NAME}/_count")["count"]
+def _count(endpoint: str) -> int | None:
+    """Documents in the index — or None if the search path cannot see it yet.
+
+    AOSS decouples ingest compute from search compute, and index metadata
+    reaches them separately. So there is a window in which `_bulk` is accepted
+    against `chunks` and `chunks/_count` answers 404 index_not_found: not "the
+    index is empty" but "this path has not heard of it". Observed on a fresh
+    collection — PUT, then a 500-document bulk, then 404 — 11s after the
+    Lambda started.
+
+    None rather than 0 because the two mean different things to the caller and
+    only one of them is worth waiting out.
+    """
+    try:
+        return aoss_client.request(
+            endpoint, "POST", f"{aoss_client.INDEX_NAME}/_count")["count"]
+    except aoss_client.AossError as e:
+        if "index_not_found" in str(e):
+            return None
+        raise
+
+
+def _assert_knn_mapping(endpoint: str) -> None:
+    """The index we counted is the index we created.
+
+    Guards the hole that tolerating index_not_found above would otherwise
+    open. If a create ever silently no-ops, `_bulk` auto-creates `chunks` with
+    a DYNAMIC mapping — the documents land, the count assertion passes, and
+    `embedding` is a plain float array instead of a knn_vector. That deploy
+    reports success and every kNN query fails afterwards, which is the same
+    looks-healthy failure mode the count parity check exists for.
+
+    Fails only on a POSITIVE observation. A dynamic mapping does carry
+    `embedding`, typed from the data, so the hazard is still caught — but if
+    AOSS ever returns a body this does not recognise, it says so in the log
+    and lets the deploy stand. This runs after a full hydration has already
+    passed the count assertion, and failing that on an unverified guess about
+    a response shape would cost more than the guard is worth.
+    """
+    body = aoss_client.request(endpoint, "GET", aoss_client.INDEX_NAME)
+    props = (body.get(aoss_client.INDEX_NAME, {})
+             .get("mappings", {}).get("properties", {}))
+    got = props.get("embedding", {}).get("type") if props else None
+    if got is None:
+        print(json.dumps({"knn_mapping_unverified": list(body)[:8]}))
+        return
+    if got != "knn_vector":
+        raise RuntimeError(
+            f"index {aoss_client.INDEX_NAME!r} maps `embedding` as {got!r}, "
+            "not 'knn_vector' — it was created dynamically by _bulk rather "
+            "than from INDEX_MAPPING. Failing the deploy: the documents are "
+            "all there, so nothing else would notice until the first kNN "
+            "query.")
 
 
 COUNT_DEADLINE_S = 300.0
@@ -178,8 +228,8 @@ def _caller_arn() -> str:
 
 
 def _await_count(endpoint: str, expected: int,
-                 deadline_s: float | None = None) -> int:
-    """Poll until the index count settles.
+                 deadline_s: float | None = None) -> int | None:
+    """Poll until the index count settles. None = it never became visible.
 
     AOSS refreshes on its own schedule and does not expose the refresh API, so
     a count read immediately after bulk is meaningless — it is low because the
@@ -187,11 +237,23 @@ def _await_count(endpoint: str, expected: int,
     deadline is what makes the assertion a real one; reading once and raising
     would fail every healthy deploy, and reading once and warning would fail
     none.
+
+    Waiting out a 404 from `_count` is the same argument one step earlier (see
+    `_count`), and it is safe for the same reason the 403 retry in
+    `_create_index` is: it can only DELAY a failure, never convert one into a
+    success. If the index is still missing at the deadline this returns None
+    and the handler raises.
     """
-    end = time.monotonic() + (COUNT_DEADLINE_S if deadline_s is None else deadline_s)
+    start = time.monotonic()
+    end = start + (COUNT_DEADLINE_S if deadline_s is None else deadline_s)
+    visible = False
     while True:
         seen = _count(endpoint)
-        if seen >= expected or time.monotonic() >= end:
+        if seen is not None and not visible:
+            visible = True
+            print(json.dumps({"index_visible_after_s":
+                              round(time.monotonic() - start, 1)}))
+        if (seen is not None and seen >= expected) or time.monotonic() >= end:
             return seen
         time.sleep(COUNT_POLL_S)
 
@@ -227,13 +289,23 @@ def handler(event, context):
             "query with nothing and looks like a retrieval bug, not a deploy "
             "bug)")
 
+    print(json.dumps({"bulk_complete": sent, "awaiting_count": source}))
     indexed = _await_count(endpoint, source)
     result = {"source": source, "sent": sent, "indexed": indexed,
               "dropped": dropped, "index": aoss_client.INDEX_NAME}
+    if indexed is None:
+        raise RuntimeError(
+            f"index {aoss_client.INDEX_NAME!r} was never visible to the search "
+            f"path: {sent} documents were accepted by _bulk, then "
+            f"{COUNT_DEADLINE_S:.0f}s of _count polling returned 404 "
+            f"index_not_found ({json.dumps(result)}). Ingest accepted writes "
+            "for an index search cannot resolve, which is longer than "
+            "propagation should ever take — suspect the create.")
     if indexed != source:
         raise RuntimeError(
             f"hydration count mismatch: {indexed} indexed vs {source} in the "
             f"corpus ({json.dumps(result)}). Failing the deploy — a partial "
             "index answers with citations and looks healthy.")
+    _assert_knn_mapping(endpoint)
     print(json.dumps(result))
     return result
