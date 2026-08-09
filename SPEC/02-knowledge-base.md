@@ -151,10 +151,18 @@ that `.github/CODEOWNERS` is itself gated to `@regdelta-lead
 
 ### Probe set floor
 ≥ 8 probes covering both demo rules, including **≥ 2 `must_not_return`
-distractor probes** — e.g. the drugs-only Red No. 3 compliance chunk
-(2028-01-18) must NOT appear in top-8 for a food-scoped query. Without
-distractors a precision collapse is invisible, and a 3-probe set that
-engineering authored, selected k for, and needs 100% on is self-certifying.
+distractor probes** — e.g. the drugs-only § 74.1303 regtext chunks must NOT
+appear in top-8 for a food-scoped query. Without distractors a precision
+collapse is invisible, and a 3-probe set that engineering authored, selected
+k for, and needs 100% on is self-certifying.
+
+> The earlier wording here named "the drugs-only Red No. 3 **compliance**
+> chunk (2028-01-18)". No such chunk exists, on two counts. Both dates live in
+> ONE chunk (`2025-00830#0000`, the DATES paragraph), so retrieval cannot
+> separate them — disambiguation is the answer layer's job at M04. And per the
+> SME ruling recorded in SPEC/00, they are **effective** dates; that order sets
+> no compliance date. The genuinely drugs-only chunks are `#0027`/`#0028`.
+> Corrected after reading the live corpus.
 
 **The date-attribution probe PAIR (both count toward the ≥8 floor).** One
 probe would pin only half of it:

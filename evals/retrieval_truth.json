@@ -1,0 +1,87 @@
+{
+  "corpus_snapshot": "2026-08-08, post-M01c re-ingest (tag m01c). Authored against the live us-west-2 corpus after 2025-03118 and 2026-15920 were re-ingested; chunk ids verified by reading the chunk. SPEC/02 requires corpus_snapshot to be at or after the ADR-0006/ADR-0007 re-ingestion — it is.",
+  "probes": [
+    {
+      "probe_id": "r01",
+      "question_id": "q01",
+      "query": "The effective date of the new 'healthy' claim rule was delayed. Did the compliance deadline change?",
+      "filters": null,
+      "expected_chunk_ids": ["2024-29957#0000", "2025-03118#0003"],
+      "must_not_return": [],
+      "note": "SME SIGN-OFF REQUIRED (SPEC/02 carve-out 1) — this encodes the effective-vs-compliance ruling, not a corpus fact. Two chunks because the answer needs both halves: 2024-29957#0000 carries the deadline itself ('The compliance date of this final rule is February 25, 2028'), and 2025-03118#0003 carries the notice's own statement that it did not move ('the compliance date remains unchanged at this time'). Returning only the delay notice IS the trap. Verified both strings by reading the chunks."
+    },
+    {
+      "probe_id": "r02",
+      "question_id": null,
+      "query": "What compliance deadlines fall in 2028?",
+      "filters": {"compliance_date": {"gte": "2028-01-01", "lte": "2028-12-31"}},
+      "expected_chunk_ids": ["2024-29957#0000"],
+      "must_not_return": ["2025-03118#0000", "2025-03118#0001", "2025-03118#0002",
+                          "2025-03118#0003", "2025-03118#0004", "2025-03118#0005"],
+      "note": "Date-attribution pair, NEGATIVE half (SPEC/02 Probe set floor). Counts toward the >=2 distractor floor. The delay notice sets no compliance date, so a 2028 range must not return it — returning it would assert that the DELAY makes 2028 operative, the conflation q01 exists to trap. Distinction settled by ADR-0006 (human SME sign-off), inherited by citation per SPEC/02 'Ground truth ownership'. This probe also fails if the corpus regresses to the fabricated 2028-01-01."
+    },
+    {
+      "probe_id": "r03",
+      "question_id": null,
+      "query": "Did the healthy rule's compliance date change when the effective date was delayed?",
+      "filters": null,
+      "expected_chunk_ids": ["2025-03118#0003"],
+      "must_not_return": [],
+      "note": "Date-attribution pair, POSITIVE half. Pins SPEC/02's claim that excluding the notice from the compliance-date filter 'is not a recall loss' — the 'remains unchanged' prose must still be reachable unfiltered. ADR-0006 states this is how q01 assembles its answer, so this is q01's retrieval precondition at M04. Without it, retrieval could deprioritise the notice, M02 goes green, and q01 fails at M04."
+    },
+    {
+      "probe_id": "r04",
+      "question_id": "q02",
+      "query": "We make a strawberry frosting containing FD&C Red No. 3. When must we stop using it?",
+      "filters": null,
+      "expected_chunk_ids": ["2025-00830#0000"],
+      "must_not_return": ["2025-00830#0027", "2025-00830#0028"],
+      "note": "SME SIGN-OFF REQUIRED (SPEC/02 carve-out 2) — the food/drug split is a regulatory scope ruling. #0027 and #0028 are the 21 CFR 74.1303 regtext (ingested drugs) and are the only genuinely drugs-only chunks in the order; they must not surface for a food query. Counts toward the >=2 distractor floor. NOTE FOR M04: the expected chunk #0000 contains BOTH dates in one DATES paragraph ('effective January 15, 2027, except for amendatory instruction 4, which is effective January 18, 2028'), so retrieval cannot separate them — disambiguation is the answer layer's job, and q02's must_not_contain guards it there."
+    },
+    {
+      "probe_id": "r05",
+      "question_id": null,
+      "query": "Was the Red No. 3 revocation ever stayed, and is it in force now?",
+      "filters": null,
+      "expected_chunk_ids": ["2026-15920#0000"],
+      "must_not_return": [],
+      "note": "The stay/lift event the daily poller ingested unattended (91 FR 50475). Its DATES chunk carries the whole chain: stayed 2025-02-18 under 21 U.S.C. 371(e)(2), lifted 2026-08-05, dates confirmed. Retrieval-only here — the point-in-time reasoning ('what was the deadline on 2025-06-01') is M03's, from the STAY_PERIOD interval, and is explicitly not asserted by this probe."
+    },
+    {
+      "probe_id": "r06",
+      "question_id": null,
+      "query": "What is the new effective date for the healthy nutrient content claim final rule?",
+      "filters": null,
+      "expected_chunk_ids": ["2025-03118#0000"],
+      "must_not_return": [],
+      "note": "Corpus fact. The delay notice's DATES chunk: 'the effective date for the final rule published December 27, 2024 (89 FR 106064), is delayed until April 28, 2025.' Pairs with r01 — the effective date DID move, which is what makes the compliance date not moving the trap."
+    },
+    {
+      "probe_id": "r07",
+      "question_id": "q05",
+      "query": "What are the current requirements in 21 CFR 101.65(d) for a healthy claim?",
+      "filters": {"cfr_title": "21", "cfr_part": "101"},
+      "expected_chunk_ids": ["cfr-21-101.65@2025-04-28#0003"],
+      "must_not_return": [],
+      "note": "Corpus fact, verified by citation_path. NOTE: the chunker emits citation_path '21 CFR 101.65(d)' and '21 CFR 101.65(d)(4)' for this section — there is no '(d)(2)' chunk, so any probe or golden question expecting that exact citation would fail on a chunk that does not exist. Flagged rather than worked around."
+    },
+    {
+      "probe_id": "r08",
+      "question_id": null,
+      "query": "What does 21 CFR 74.303 currently say about FD&C Red No. 3 in food?",
+      "filters": {"cfr_title": "21", "cfr_part": "74"},
+      "expected_chunk_ids": ["cfr-21-74.303@2025-01-01#0000"],
+      "must_not_return": [],
+      "note": "Corpus fact. The pre-repeal snapshot of the food listing, which is still the operative text until 2027-01-15. Exercises the cfr_part filter against a different part than r07, so a filter that silently matches everything fails one of the two."
+    },
+    {
+      "probe_id": "r09",
+      "question_id": null,
+      "query": "Which CFR sections does the Red No. 3 order amend, and how?",
+      "filters": {"doc_type": "order"},
+      "expected_chunk_ids": ["2025-00830#0002"],
+      "must_not_return": [],
+      "note": "Corpus fact — the amdpar chunk carrying 'Remove 74.303' and 'Effective January 18, 2028 remove 74.1303'. Exercises the doc_type filter, which is the field whose out-of-enum failure mode (matching nothing, silently) motivated MEDIUM-1 in M01c. If doc_type filtering regresses, this probe returns empty rather than wrong."
+    }
+  ]
+}
