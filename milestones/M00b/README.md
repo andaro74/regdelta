@@ -86,7 +86,8 @@ Compounding it, effective and compliance coincide for food, so asking for
 three distinct dates is ambiguous. Both the flapping and the direction of
 error point at the question, not the model. SME-owned; drafted, not applied.
 
-> **RESOLVED 2026-08-08 — human SME sign-off.** q08 corrected: the accepted
+> **RESOLVED 2026-08-08 — SME-seat ruling (ADR-0005), verified against the
+> live FR API.** q08 corrected: the accepted
 > publication date is now `January 16, 2025`, and `January 15, 2025` is
 > explicitly forbidden. Confirmed against the live FR API, and the string
 > `January 15, 2025` appears **nowhere** in 2025-00830 — so the old assertion

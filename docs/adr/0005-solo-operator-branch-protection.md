@@ -1,4 +1,4 @@
-# ADR-0005: Branch protection reflects one human, not a simulated org
+# ADR-0005: Governance reflects one human, not a simulated org
 
 - Status: accepted
 - Date: 2026-08-07
@@ -111,6 +111,48 @@ since M00b finding 5) so `run_evals.py` has an owner of record.
   as an M04 exit item; nothing enforces the restoration, which depends on a
   human remembering and is the weakest link in this ADR.
 - `unit` is restored and verified live, so this is no longer outstanding.
+
+## Extension 2026-08-08: the same rule applies to the SME seat
+
+This ADR fixed the *mechanical* gate and then the rest of the repo went on
+claiming a *human* one. ADR-0006 and ADR-0007 shipped with
+`Approved by: human SME sign-off`. Commit messages said rulings were "signed
+off by the human SME". SPEC/02 says `retrieval_truth.json` is
+"SME-countersigned". There is one person here. No second seat approved
+anything, and writing as though one did is the same fiction this ADR exists to
+remove — just relocated from branch protection to prose.
+
+**The signature is theater. The seat is not.** What actually gave the SME
+rulings their weight this session was never an approval:
+
+- **Primary-source verification.** `sme-eval-triage` did not consult the repo
+  to settle the fabricated compliance date — it pulled 89 FR 106064's DATES
+  section from federalregister.gov. That check is re-runnable by anyone and
+  would carry identical weight with zero humans agreeing.
+- **The deferral, not the approval.** q08's defect was found at M00b close and
+  recorded "drafted, not applied". Its value was that ground truth was *not*
+  edited silently — it stayed visible for two milestones. Nobody approved
+  anything; someone declined to act unilaterally.
+- **The category switch.** Asking "is this settled by reading a chunk, or does
+  it require knowing what the regulation means?" is a real distinction even
+  when the same person answers both.
+
+**Decision.** Wording across the repo changes from *approval* to *ruling with
+citation*. An SME-seat ruling is sound when it cites primary sources inline so
+a reader can falsify it without trusting the author — not when someone signs
+it. ADR headers read `SME-seat ruling; primary sources cited inline; no second
+approver exists (ADR-0005)`.
+
+**Kept, because it demonstrably works:** the *routing* rule in CLAUDE.md —
+engineering may not edit `evals/golden_questions.json` to make a failure pass,
+and a ground-truth question stops and goes to the SME seat. That is a speed
+bump against you-in-a-hurry at 11pm, and it is the mechanism that caught q08
+and the fabricated date. It does not require a second person to work.
+
+**Consequence for a reader of this repo as a work sample:** "I simulated three
+roles and here is what each one caught, with primary sources" is defensible and
+checkable. "Three roles approved this" invites the obvious question — who? —
+and the honest answer undermines everything else on the page.
 
 ## Note for anyone reading this repo as a work sample
 The interesting artifact here is not the final config. It is that the

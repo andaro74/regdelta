@@ -41,9 +41,14 @@ Python 3.14 · LangGraph · Bedrock (Claude + Titan v2 embeddings, 1024-dim)
 - Ask before adding dependencies.
 - Role gates (docs/governance/ROLES.md): never edit
   evals/golden_questions.json to make a failure pass — run the
-  sme-eval-triage agent and stop for human SME approval. Run
+  sme-eval-triage agent and STOP for a human decision from the SME seat. Run
   security-reviewer on any infra/IAM/workflow diff and eng-code-reviewer
   before opening a PR. Spec changes go through pm-spec-reviewer.
+  There is one human here, so no gate is mechanically enforced (ADR-0005).
+  What makes an SME-seat ruling sound is a primary-source citation a reader
+  can falsify — never a signature. Say "ruling, with sources", not "approved".
+  The routing rule is kept because it works: stopping is what caught q08 and
+  the fabricated compliance date.
 - Regulatory-domain details (date semantics, amendatory instructions,
   thresholds) live in .claude/skills/regulatory-domain — consult when
   working on ingestion parsing or graph nodes.

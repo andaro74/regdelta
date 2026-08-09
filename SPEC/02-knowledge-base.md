@@ -218,8 +218,10 @@ criterion had exercised filters before criterion 5, which made the
 date-attribution probe unauthorable against the stated shape. Two engineers
 would have produced two defensible probe sets.
 
-The file is **engineering-authored and SME-countersigned** via the `/evals/`
-rule in (C). Authoring norm: which chunk carries a string is a corpus fact,
+The file is **engineering-authored, with SME-seat entries ruled on and
+cited** — see ADR-0005 on why this is a routing rule, not a second
+signature. The `/evals/` rule in (C) marks which entries need that
+treatment; it cannot enforce it, because there is one human. Authoring norm: which chunk carries a string is a corpus fact,
 verifiable by reading the chunk, so those entries should pass review on
 inspection. The carve-outs below name where SME judgment is load-bearing
 rather than confirmatory.
@@ -233,8 +235,8 @@ subset) and is `null` otherwise — the ≥8 floor means most probes have no
 golden counterpart, so traceability is partial by construction.
 
 Two carve-outs where the SME's signature is the substance, not a formality:
-- **q01's `expected_chunk_ids` requires explicit SME sign-off before M02
-  closes.** It encodes the effective-vs-compliance distinction (SPEC/01:
+- **q01's `expected_chunk_ids` is an SME-seat ruling and must be settled
+  as one before M02 closes, with its basis recorded.** It encodes the effective-vs-compliance distinction (SPEC/01:
   SUPERSEDES scoped to `effective_date` only), not a corpus fact. Returning
   only the delay notice IS the trap the product exists to defeat, so
   choosing that expected set is a regulatory ruling.
@@ -247,9 +249,10 @@ Two carve-outs where the SME's signature is the substance, not a formality:
   is *authoritative*.
 
 A probe whose distinction is **already settled by an accepted ADR** cites
-that ADR in `note` and inherits its sign-off; the carve-out is satisfied by
-the citation, not by a second signature. The date-attribution pair is such a
-case — ADR-0006 carries human SME approval. Without this rule the SME is
+that ADR in `note` and inherits its ruling; the carve-out is satisfied by
+the citation, which is the only thing that ever carried weight. The date-attribution pair is such a
+case — ADR-0006 records the ruling and its sources. Without this rule the
+SME seat is
 either asked to re-approve a ruling they just signed, or engineering
 self-approves on the theory that the ADR covers it.
 
