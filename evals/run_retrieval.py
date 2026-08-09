@@ -92,11 +92,19 @@ def git_dirty() -> bool:
     survives into milestones/ and reads as a verified claim. Caught while
     recording the first Tier A run, which was labelled with the previous
     commit's sha.
+
+    `evals/history/` is excluded. Scorecards are OUTPUTS: the two tier runs
+    have to happen at the same commit (run_parity pairs them by sha), the
+    second run cannot happen until the hot tier is deployed, and committing
+    the first run's card in between would move HEAD and guarantee the pair
+    never matches. A scorecard sitting in the tree changes nothing about what
+    the code under measurement does.
     """
     import subprocess
     try:
         return bool(subprocess.check_output(
-            ["git", "status", "--porcelain"], text=True).strip())
+            ["git", "status", "--porcelain", "--",
+             ".", ":(exclude)evals/history"], text=True).strip())
     except Exception:  # noqa: BLE001 — no git means no claim either way
         return False
 
