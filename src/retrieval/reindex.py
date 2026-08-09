@@ -16,6 +16,7 @@ import time
 import boto3
 
 from retrieval import aoss_client
+from shared import models
 
 CORPUS_PREFIX = "chunks/"
 BULK_BATCH = 500
@@ -58,27 +59,16 @@ def _iter_chunk_records(bucket: str):
 def _document(record: dict) -> dict:
     """Chunk JSONL record -> AOSS document.
 
-    Key names match S3 Vectors metadata (processor._put_vectors) so
-    Chunk.from_metadata reads both tiers. `text` is renamed to `chunk_text`
-    for the same reason — the JSONL calls it `text`, S3 Vectors calls it
-    `chunk_text`, and the tiers must not each learn both names.
-
-    Null dates are omitted rather than sent as null: the mapping types them as
-    `date`, and an explicit null would be accepted but a missing field is what
-    makes a range query exclude the document. ADR-0006's rule (a document is
-    selected only by a date it establishes) then falls out of the mapping.
+    The metadata comes from models.to_index_metadata, the same function
+    processor._put_vectors and rebuild_s3v use, so the two indexes cannot
+    disagree about which keys a chunk carries. Only the id and the vector are
+    added here, because only this index stores them that way.
     """
-    doc = {
+    return {
         "chunk_id": record["chunk_id"],
-        "chunk_text": record.get("text") or "",
-        "citation_path": record.get("citation_path") or "",
         "embedding": record["embedding"],
+        **models.to_index_metadata(record),
     }
-    for key in ("doc_type", "cfr_title", "cfr_part", "fr_doc_number",
-                "pub_date", "effective_date", "compliance_date", "version_date"):
-        if record.get(key):
-            doc[key] = record[key]
-    return doc
 
 
 def _create_index(endpoint: str) -> None:

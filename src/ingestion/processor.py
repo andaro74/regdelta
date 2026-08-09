@@ -20,7 +20,7 @@ import xml.etree.ElementTree as ET
 from boto3.dynamodb.conditions import Key
 
 from ingestion import chunker, metadata
-from shared import config, validate
+from shared import config, models, validate
 from shared.fetch import get_bytes
 from shared.util import retry
 
@@ -269,14 +269,14 @@ def _put_vectors(chunks: list[dict]):
     sv = _client("s3vectors")
     vectors = []
     for c in chunks:
-        md = {"chunk_text": c["text"], "citation_path": c["citation_path"]}
-        for k in ("doc_type", "cfr_title", "cfr_part", "fr_doc_number",
-                  "pub_date", "effective_date", "compliance_date", "version_date"):
-            if c.get(k):
-                md[k] = c[k]
+        # models.to_index_metadata, not a key list maintained here. This used
+        # to be a hand-written list and it silently dropped `kind` — the field
+        # naming a chunk as the DATES or amendatory-instructions paragraph,
+        # which retrieval then had to reconstruct through a DynamoDB GSI
+        # because it was not in the index. Three writers, one definition.
         vectors.append({"key": c["chunk_id"],
                         "data": {"float32": c["embedding"]},
-                        "metadata": md})
+                        "metadata": models.to_index_metadata(c)})
     for i in range(0, len(vectors), 100):
         sv.put_vectors(vectorBucketName=config.VECTOR_BUCKET,
                        indexName=config.VECTOR_INDEX,

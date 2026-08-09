@@ -7,7 +7,8 @@ and re-verified end-to-end through the API at M04 (SPEC/04).
 
 ## Contract (src/retrieval/router.py)
 retrieve(query: str, filters: Filters, k: int) -> list[Chunk]
-- Filters: cfr_title/part, date ranges (pub/effective/compliance), doc_type.
+- Filters: cfr_title/part, date ranges (pub/effective/compliance/version),
+  doc_type, fr_doc_number, **kind**.
 - Router: SSM /regdelta/search/endpoint present+reachable → AOSS tier;
   else → S3 Vectors tier. Cache SSM lookup across warm invocations (60s TTL).
 
@@ -59,6 +60,22 @@ precondition is Done-when criterion 5.
 >    carrying both, which honours the intent (no extra latency, fusion here
 >    rather than in a search pipeline). Written down because "single query" is
 >    the kind of phrase a later reader would take literally.
+> 3. **`kind` joins the Filters contract, and both indexes now store it.** The
+>    chunker has labelled every chunk `dates | summary | amdpar | preamble |
+>    regtext` since M01 and it has been in `corpus/chunks/**/*.jsonl` all
+>    along; neither index writer copied it. "Which paragraph states what this
+>    document does" — the single most load-bearing distinction in this corpus,
+>    since those paragraphs carry the deadlines and the CFR edits — was
+>    therefore reconstructed at query time out of the DynamoDB citations GSI.
+>    Indexing the field it already had is the fix; `src/retrieval/expansion.py`
+>    is the workaround it replaces.
+> 4. **Tier A gains a rebuild path** (`src/retrieval/rebuild_s3v.py`). The
+>    architecture rule says search indexes are pure functions of the corpus
+>    bucket, but only AOSS had a rebuild — Tier A's index was written solely as
+>    a side effect of ingestion, so changing its metadata meant re-running the
+>    extraction model over unchanged documents. The rebuild reuses the
+>    embeddings stored at ingest, never calls Bedrock, and never changes a
+>    chunk id, which is what makes it safe against a live index.
 
 ## Optional
 Claude rerank of top-20 → top-k behind flag RERANK=1. If implemented,
@@ -70,8 +87,11 @@ Unmeasured, it stays off and out of scope.
 src/retrieval/{router.py, s3vectors_tier.py, aoss_tier.py, fusion.py}
 src/retrieval/aoss_client.py (new — SigV4 + the index mapping, one copy
   shared by the query tier and hydration)
-src/retrieval/reindex.py (new — the hydration Lambda; see the amendment
-  note under Tier B for why it is not under infra/lambdas/)
+src/retrieval/reindex.py (new — the AOSS hydration Lambda; see the
+  amendment note under Tier B for why it is not under infra/lambdas/)
+src/retrieval/rebuild_s3v.py (new — Tier A's counterpart: rebuild the
+  vector index from the corpus bucket, reusing the stored embeddings)
+src/retrieval/expansion.py (new — the shared structural/lexical lane)
 tests/test_reindex_parity.py (new — the partial-index failure test)
 evals/retrieval_truth.json (new — see Done when)
 evals/run_retrieval.py (new — harness, calls router.retrieve() in-process;

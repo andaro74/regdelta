@@ -8,8 +8,48 @@ from shared import validate
 # fail loudly: an unknown key that is silently ignored turns a filtered probe
 # into an unfiltered one, which still scores green. Same failure class as the
 # out-of-enum `doc_type` that motivated MEDIUM-1 in M01c.
-KEYWORD_FIELDS = ("cfr_title", "cfr_part", "doc_type", "fr_doc_number")
+KEYWORD_FIELDS = ("cfr_title", "cfr_part", "doc_type", "fr_doc_number", "kind")
 DATE_FIELDS = ("pub_date", "effective_date", "compliance_date", "version_date")
+
+# What the chunker labels each chunk. `dates` and `amdpar` are the two the
+# product cares about disproportionately: they carry the deadlines and the CFR
+# edits, and they are short, so every relevance signal under-ranks them.
+CHUNK_KINDS = frozenset({"dates", "summary", "amdpar", "preamble", "regtext"})
+
+# ---------------------------------------------------------- the index shape
+# ONE definition of what an indexed chunk carries, for the three writers
+# (processor._put_vectors, retrieval.reindex, retrieval.rebuild_s3v) and the
+# one reader (Chunk.from_metadata). Three writers hand-maintaining the same
+# key list is the _EDGE_PREDICATE drift of M01c waiting to happen, and a key
+# that one writer emits and another drops is invisible until a filter that
+# should match returns nothing.
+#
+# `chunk_text` and `citation_path` are NON-filterable in S3 Vectors (set at
+# index creation, immutable). The remaining nine are filterable — S3 Vectors
+# allows ten, so there is room for one more before that becomes a decision.
+INDEX_METADATA_KEYS = ("chunk_text", "citation_path", "kind", "doc_type",
+                       "cfr_title", "cfr_part", "fr_doc_number", "pub_date",
+                       "effective_date", "compliance_date", "version_date")
+
+
+def to_index_metadata(record: dict) -> dict:
+    """Chunk JSONL record -> the metadata every index stores.
+
+    Empty values are OMITTED, not stored as null. On the AOSS side the date
+    fields are mapped as `date` and a range query must exclude documents that
+    do not carry the field — which is ADR-0006's rule (a document is selected
+    only by a date it ESTABLISHES) falling out of the mapping rather than
+    being re-implemented on top of it.
+
+    `text` becomes `chunk_text`: the JSONL calls it one thing and both indexes
+    call it another, and this is the single place that renames it.
+    """
+    md = {}
+    for key in INDEX_METADATA_KEYS:
+        value = record.get("text") if key == "chunk_text" else record.get(key)
+        if value:
+            md[key] = value
+    return md
 
 
 @dataclass
@@ -25,6 +65,7 @@ class Chunk:
     effective_date: str | None
     compliance_date: str | None
     version_date: str | None = None
+    kind: str | None = None     # dates | summary | amdpar | preamble | regtext
     embedding: list[float] | None = None
     score: float = 0.0
 
@@ -50,6 +91,7 @@ class Chunk:
             effective_date=md.get("effective_date"),
             compliance_date=md.get("compliance_date"),
             version_date=md.get("version_date"),
+            kind=md.get("kind"),
             score=score,
         )
 
@@ -87,6 +129,7 @@ class Filters:
     cfr_part: str | None = None
     doc_type: str | None = None
     fr_doc_number: str | None = None
+    kind: str | None = None
     pub_date: DateRange | None = None
     effective_date: DateRange | None = None
     compliance_date: DateRange | None = None
@@ -149,6 +192,13 @@ def _keyword(key: str, value) -> str:
         return validate.cfr_part(value, field=f"filter {key}")
     if key == "doc_type":
         return validate.doc_type(value, field=f"filter {key}")
+    if key == "kind" and value not in CHUNK_KINDS:
+        # Same reason doc_type is enum-checked: an out-of-enum keyword filter
+        # does not error, it silently matches nothing, so the probe that
+        # should have found the DATES paragraph returns empty and looks like
+        # a retrieval failure rather than a typo.
+        raise validate.ValidationError(
+            f"filter kind={value!r} is not one of {sorted(CHUNK_KINDS)}")
     return value
 
 

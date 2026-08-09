@@ -14,7 +14,7 @@ import json
 
 from retrieval import aoss_client, expansion
 from retrieval.fusion import rrf
-from shared import config
+from shared import config, models
 from shared.models import Chunk, Filters
 
 
@@ -42,9 +42,11 @@ def _filter_clauses(filters: Filters) -> list[dict]:
     return clauses
 
 
-_SOURCE_FIELDS = ["chunk_id", "chunk_text", "citation_path", "doc_type",
-                  "cfr_title", "cfr_part", "fr_doc_number", "pub_date",
-                  "effective_date", "compliance_date", "version_date"]
+# Derived, not hand-listed: a _source list that drifts from what the writer
+# stores returns chunks with silently empty fields, and a filter re-check in
+# router._finish would then drop them for "not matching" a value that was
+# simply never fetched.
+_SOURCE_FIELDS = ["chunk_id", *models.INDEX_METADATA_KEYS]
 
 
 def _bm25_body(query: str, clauses: list[dict], size: int) -> dict:

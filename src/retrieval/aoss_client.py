@@ -38,6 +38,11 @@ INDEX_MAPPING = {
         "embedding":       {"type": "knn_vector", "dimension": config.EMBED_DIM,
                             "method": {"name": "hnsw", "engine": "faiss",
                                        "space_type": "cosinesimil"}},
+        # What the chunker labelled this chunk: dates | summary | amdpar |
+        # preamble | regtext. It was in the corpus JSONL from M01 and neither
+        # index writer copied it, so retrieval had to rebuild "which paragraph
+        # states what this document does" out of a DynamoDB citations GSI.
+        "kind":            {"type": "keyword"},
         "doc_type":        {"type": "keyword"},
         "cfr_title":       {"type": "keyword"},
         "cfr_part":        {"type": "keyword"},

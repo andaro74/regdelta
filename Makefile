@@ -9,7 +9,7 @@ SSM_ENDPOINT := /regdelta/search/endpoint
 CDK          := cd infra && npx cdk
 
 .PHONY: help bootstrap core up down status smoke evals lint test demo ingest-backfill synth diff \
-        retrieval-evals retrieval-parity preflight
+        retrieval-evals retrieval-parity preflight rebuild-vectors
 
 help:
 	@echo "make core            - deploy/update persistent stack"
@@ -19,6 +19,7 @@ help:
 	@echo "make retrieval-evals - probe set vs the CURRENT tier (SPEC/02 A)"
 	@echo "make retrieval-parity- cross-tier gate; needs both runs recorded"
 	@echo "make preflight       - date-attribution check alone (cheap)"
+	@echo "make rebuild-vectors - rebuild S3 Vectors from the corpus (no re-embed)"
 	@echo "make lint            - ruff (same scope as the eval gate)"
 	@echo "make test            - pytest"
 	@echo "make ingest-backfill - one-shot backfill of the demo corpus"
@@ -100,6 +101,15 @@ retrieval-parity:
 
 preflight:
 	python evals/run_retrieval.py --tier s3vectors --preflight-only
+
+# Tier A's counterpart to the AOSS reindex Lambda: rebuild the S3 Vectors
+# index from the corpus bucket, reusing the embeddings computed at ingest.
+# Never embeds, never calls Bedrock, never changes a chunk id. Run this after
+# changing what metadata an indexed chunk carries — the alternative is
+# re-ingesting, which re-runs the extraction model over documents that have
+# not changed.
+rebuild-vectors:
+	cd src && python -m retrieval.rebuild_s3v $(ARGS)
 
 # M00b control. Reproduces the permanent baseline scorecard: starts the
 # loopback shim, runs the full golden set against mode=naive, records it.
