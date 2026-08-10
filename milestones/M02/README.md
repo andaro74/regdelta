@@ -20,7 +20,7 @@
 | 1. Recall@8 = 1.0, **S3 Vectors** | ✅ **9/9 probes, recall 1.0** (`e596166-retrieval-s3vectors.json`) |
 | 1. Recall@8 = 1.0, **AOSS** | ❌ **7/9, recall 0.833** (`e596166-retrieval-aoss.json`). Both misses are one chunk. See "Tier B does not meet criterion 1". |
 | 2. Resolved-tier assertion | ✅ **both halves met.** Two cards at `e596166`, resolved tiers distinct (`s3vectors` / `aoss`), assertion held on both runs |
-| 3. Cross-tier Jaccard ≥ 0.60 (per-probe minimum) | ❌ **minimum 0.33**, four probes under floor. See "Criterion 3 fails, and the carve-out protected the wrong probes". |
+| 3. Cross-tier Jaccard ≥ 0.60 (per-probe minimum) | ❌ **minimum 0.33**, four probes under floor (r01, r03, r04, r05 — *not* r06, which passed at 0.60). Floor replaced by ADR-0009 Ruling 2. See "Criterion 3 fails, and the carve-out is a tautology". |
 | 4. MRR reported, not gating | ✅ 0.796 Tier A / 0.648 Tier B, recorded with `mrr_is_gating: false` |
 | B. Hydration count-parity fails the deploy | ⏳ code + 16 unit tests; the required evidence is a REAL failed deploy |
 | C. `/evals/` in CODEOWNERS | ✅ landed with ADR-0005 |
@@ -211,7 +211,7 @@ reusing the stored embeddings, no Bedrock calls, no chunk-id changes. That was
 owed anyway: the architecture rule says search indexes are pure functions of
 the corpus bucket, and before this only AOSS had a rebuild path.
 
-## Criterion 3 fails, and the carve-out protected the wrong probes
+## Criterion 3 fails, and the carve-out is a tautology rather than a mistake
 
 With both cards recorded at `e596166`, `make retrieval-parity` ran — the
 cross-run gate that neither tier invocation can evaluate from inside itself.
@@ -232,13 +232,30 @@ cross-run gate that neither tier invocation can evaluate from inside itself.
 Minimum 0.33 against a floor of 0.60. Two observations, both of which are
 findings about the criterion rather than about the tiers:
 
-**The carve-out aimed at the wrong probes.** SPEC/02 computes Jaccard over the
-in-filter result set only, and says why: "a filtered probe returns few in-filter
-hits and a long arbitrary tail … so one filter probe could drag the per-probe
-minimum under 0.60 and fail M02 for a reason unrelated to correctness." That was
-settled before first measurement, correctly, on the reasoning available then.
-Measured, every filtered probe scores **1.00** and all four failures are
-*unfiltered*. The instinct was right and the target was wrong.
+**The carve-out's premise was confirmed; its implementation measures nothing.**
+SPEC/02 computes Jaccard over the in-filter result set only, and says why: "a
+filtered probe returns few in-filter hits and a long arbitrary tail … so one
+filter probe could drag the per-probe minimum under 0.60 and fail M02 for a
+reason unrelated to correctness."
+
+> **Correction.** This section originally read those four 1.00s as evidence the
+> carve-out "aimed at the wrong probes" — right instinct, wrong target. That was
+> wrong on both halves, and `pm-spec-reviewer` caught it while reviewing
+> ADR-0009. `evals/run_parity.py:117` approximates the in-filter set as
+> `expected ∪ must_not_return`; r07, r08 and r09 each carry one expected chunk and
+> no forbidden ones, so the scope is a **single chunk id** and Jaccard is 1/1 *by
+> construction*. The 1.00s are the carve-out's own output, not a measurement of
+> tail agreement.
+>
+> Computing full top-8 on the same two cards inverts the reading: r02 0.78,
+> **r07 0.23**, r08 0.78, r09 0.60. r07 would be the new gating minimum, *below*
+> r01's 0.33, while both tiers return its one expected chunk — precisely the
+> scenario SPEC/02 wrote the carve-out to prevent. So the carve-out is vindicated
+> and stays; what is defective is the approximation standing in for it, which
+> exempts a filtered probe from measurement whenever `must_not_return` is empty.
+> ADR-0009 Ruling 2(ii) requires SPEC/02 to define the in-filter set from the
+> filter predicate instead. Recorded as a correction rather than edited away,
+> because the original claim was asserted twice on evidence that refuted it.
 
 **The floor permits two slots of divergence, not "a tail".** For two 8-element
 sets, Jaccard = `c / (16 - c)`, so 0.60 requires `c = 6` — agreement on six of
@@ -256,10 +273,21 @@ defect.
 edit requiring PM approval." I have now observed it, which is the condition that
 disqualifies engineering from arguing the number. Recorded as measured.
 
-What this does change is the *shape* of the open decision below: criterion 1's
-"identically on both tiers" and criterion 3's 0.60 floor are two instances of
-one question — how far may a hybrid tier diverge from a vector tier before the
-divergence stops being legitimate? They want one ruling, not two.
+> **Where this went.** ADR-0009 carries the rulings. Criterion 1 **stands
+> unamended** — it never required the tiers to agree, only each tier
+> independently to reach recall 1.0, so Tier B's miss is a retrieval deficiency
+> and not a criterion defect. Criterion 3's 0.60 similarity floor is **replaced**
+> by an anti-collapse floor, after an aggregation sweep showed which probes fail
+> changes almost completely with the window (r03 scores 1.00 at top-3 and 0.45 at
+> top-8; r06 passes at top-8 and fails at top-4). The non-hybrid question is
+> **deferred** pending the `RERANK` measurement SPEC/02 pre-registered.
+>
+> Two claims in this section did not survive that ruling. "Criterion 1's
+> 'identically on both tiers'" misreads the criterion — see ADR-0009 Ruling 1.
+> And the gate did **not** fire on r06: it scored 0.60 and passed at the floor
+> with zero slack. Of the four probes that did fire, two (r01, r03) tracked the
+> genuine `2025-03118#0003` miss, so the gate ran at roughly 50% precision —
+> weak, not empty.
 
 ## The number this milestone is least sure of
 

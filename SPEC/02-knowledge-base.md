@@ -83,6 +83,35 @@ measure the delta in **recall@8 and MRR on the probe set** (not the golden
 set — that is M04's instrument) and record both RERANK=0 and RERANK=1 runs.
 Unmeasured, it stays off and out of scope.
 
+### The RERANK adoption bar
+Added by **ADR-0009 Ruling 3**, which defers the non-hybrid-Tier-B question
+pending this measurement. The clause above fixed the instrument and the
+default; it never defined what "earns the measured clause" means, so that is
+fixed here — **before the measurement runs**, because a bar written after the
+numbers arrive is fitted to them.
+
+Reranking is adopted only if **all** of the following hold:
+
+1. **Recall@8 = 1.0 on BOTH tiers at RERANK=1**, satisfying criterion 1 as
+   written. A partial improvement does not qualify: "one probe flipped" is the
+   pattern this milestone already rejected twice (the `minimum_should_match`
+   sweep, and two ranking changes that traded one probe for another), and a bar
+   looser than the one used to reject those would be incoherent.
+2. **No probe regresses on either tier** — no `expected_chunk_ids` member
+   present at RERANK=0 and absent at RERANK=1, and no new `must_not_return`
+   violation.
+3. **The anti-collapse floor of criterion 3(a) still holds** on both tiers.
+4. **Both runs are recorded per tier** — four scorecards, `RERANK=0` and
+   `RERANK=1` × two tiers, at one sha — and the reranker is on the fused
+   candidate set *before* per-document diversification. Placed after it, the
+   cap has already evicted the chunk reranking exists to recover, so a null
+   result there measures the ordering rather than the reranker.
+
+Commands: `make retrieval-evals` per tier per flag value, then
+`make retrieval-parity`. **If any condition fails, reranking stays off**,
+SPEC/02 is unchanged, and ADR-0009 Ruling 3 returns live as a choice between
+dropping BM25 and not closing M02.
+
 ## Files
 src/retrieval/{router.py, s3vectors_tier.py, aoss_tier.py, fusion.py}
 src/retrieval/aoss_client.py (new — SigV4 + the index mapping, one copy
@@ -104,8 +133,8 @@ Makefile (new targets `retrieval-evals` and `retrieval-parity`; `up`
 ## Out of scope
 Answer synthesis and every prose assertion (M04) · trap scoring of any
 kind (see "No trap score" below) · agent graph, HITL, and timeline /
-amendment-graph reasoning (M03) · reranking unless it earns the measured
-clause under "Optional" above · index tuning beyond what the probe set
+amendment-graph reasoning (M03) · reranking unless it clears **the RERANK
+adoption bar** under "Optional" above · index tuning beyond what the probe set
 requires · **the extractor fix and re-ingestion that ADR-0006 requires** —
 M02 *gates on* the corpus being correct (criterion 5) but does not produce
 the correction; the producer is SPEC/01's · **the amendment-graph traversal
@@ -137,24 +166,53 @@ non-zero on 2 and 3. **All three steps must run for (A) to be satisfied.**
    recorded runs must show distinct resolved tiers. Without this, an
    unreachable AOSS silently falls back (see Router, above) and two
    S3-Vectors runs would score green as "both tiers".
-3. **Cross-tier drift (gating, with a floor fixed now).** Report Jaccard
-   of the full top-8 chunk_id sets across the two tiers, **computed per
-   probe; the gate is the minimum across probes**, so one collapsed probe
-   cannot hide behind seven healthy ones. **Below 0.60 fails.** The floor
-   and the aggregation are written here, before first measurement, and may
-   not be changed to match whatever is observed — changing either is a spec
-   edit requiring PM approval. Full-set identity is *not* required: BM25
-   hybrid and vector+GSI fusion legitimately differ in the tail. Criterion
-   1 is what must hold identically.
+3. **Cross-tier drift — anti-collapse floor (gating) plus reported
+   similarity.** Amended by **ADR-0009 Ruling 2** after first measurement;
+   the original 0.60 similarity floor and the reasoning that replaced it are
+   both recorded there. Two parts:
+
+   **(a) Gating: the anti-collapse floor.** Per probe, the two tiers must
+   share **every chunk criterion 1 requires, plus at least one further
+   slot** of the top-8. Aggregation is the minimum across probes, unchanged
+   and for the original reason — one collapsed probe cannot hide behind
+   seven healthy ones. This is not a similarity threshold and is not derived
+   from any observed value; it asserts only that the tiers have not become
+   effectively disjoint. It is deliberately weak, and **the honest reading is
+   that cross-tier protection is weaker than the original criterion
+   promised**: it catches collapse, not drift. Restoring real similarity
+   gating needs a probe set large enough to calibrate a threshold, which is
+   not this milestone's.
+
+   **(b) Reported, not gating: per-probe Jaccard of the full top-8**
+   chunk_id sets across the two tiers, printed by `make retrieval-parity`
+   and recorded in every scorecard. It may **never** be cited as a
+   criterion, the same bar criterion 4 sets for MRR.
+
+   > **Why the 0.60 floor went.** It required agreement on six of eight
+   > slots — `Jaccard = c/(16−c)`, so 0.60 ⇒ `c = 6` — while this same
+   > criterion concedes that "BM25 hybrid and vector+GSI fusion legitimately
+   > differ in the tail". A criterion cannot both license tail divergence and
+   > permit two slots of it, and that is derivable here without measuring
+   > anything. Measurement then showed the verdict is a window artifact: at a
+   > 0.60 floor the failing set changes almost completely between full top-8,
+   > top-3, top-4 and top-5 (r03 scores 1.00 at top-3 and 0.45 at top-8; r06
+   > passes at top-8 and fails at top-4). Full-set identity is still *not*
+   > required, and **criterion 1 remains the thing that must hold on both
+   > tiers** — per tier and independently, which is what that has always
+   > meant.
 
    **Filtered probes: Jaccard is computed over the in-filter result set
-   only.** A filtered probe returns few in-filter hits and a long arbitrary
-   tail, and the two tiers' tails legitimately differ (see above) — so one
-   filter probe could drag the per-probe minimum under 0.60 and fail M02 for
-   a reason unrelated to correctness. Settled here, **before first
-   measurement**, precisely because the floor may not be renegotiated
-   afterwards. Pure-negative probes (empty `expected_chunk_ids`) contribute
-   no Jaccard term, mirroring their carve-out in criterion 1.
+   only** — and **the in-filter set is defined by the filter predicate**,
+   i.e. the returned chunks satisfying `Filters.matches`. It may **not** be
+   approximated by the probe's own `expected_chunk_ids ∪ must_not_return`:
+   that degenerates to a single chunk id whenever `must_not_return` is empty,
+   making Jaccard 1.0 by construction and exempting the probe instead of
+   measuring it. The carve-out itself is sound and is **kept** — measured at
+   `e596166`, r07's full top-8 Jaccard is 0.23 while both tiers return its
+   one expected chunk, which is exactly the "fail M02 for a reason unrelated
+   to correctness" this paragraph was written to prevent. Pure-negative
+   probes (empty `expected_chunk_ids`) contribute no Jaccard term and are
+   exempt from (a), mirroring their carve-out in criterion 1.
 4. **MRR: reported, not gating.** Instrumentation for M03 to compare
    against. It is not a criterion and may never be cited as one.
 5. **Date attribution (gating, preflight).** Before any probe runs, the

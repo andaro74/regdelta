@@ -1,4 +1,4 @@
-# ADR-0009: Criterion 1 stands, criterion 3 does not gate, and the hybrid question is deferred
+# ADR-0009: Criterion 1 stands, criterion 3's similarity floor does not, and the hybrid question is deferred
 
 - Status: accepted — Rulings 1 and 2 settled; **Ruling 3 deferred pending the
   `RERANK` measurement** (bounded experiment, see that section)
@@ -8,6 +8,14 @@
   text, both in git; no second approver exists (ADR-0005)
 - Relates to: SPEC/02 "Done when" criteria 1 and 3; ADR-0001 (two-tier
   retrieval); ADR-0008 (the SME-seat precedent for ruling shape)
+- Revised after `pm-spec-reviewer` returned REQUEST CHANGES on the first version;
+  the corrections it forced are marked inline as "an earlier draft" rather than
+  edited away, in fact 4, Ruling 2, the anti-fitting test, and Ruling 3 ground 1.
+- Venue note: this record sits in `docs/adr/**`, which ROLES.md assigns to
+  `@regdelta-lead`, while its rulings are PM-seat and its drafting was
+  engineering's. An ADR was chosen because the decision spans SPEC/02, ADR-0001
+  and ADR-0008 and no single owned artifact contains it; the SPEC/02 amendment it
+  licenses is the PM-owned half and lands separately.
 
 ## Context
 
@@ -65,10 +73,23 @@ numerically identical to Tier A, because the lexical lane has stopped affecting
 the outcome. The only weight that satisfies criterion 1 is the one at which
 Tier B is no longer hybrid.
 
-**2. No other lever reaches 9/9.** The per-document cap is non-monotonic on
-both tiers and the tiers disagree about which values pass (Tier B: cap 3 → 7/9,
-4 → 8/9, 5 → 7/9; Tier A: 9/9, 8/9, 9/9). A value that fails between two
-passing values means nine probes cannot determine the constant. Separately,
+**2. No other lever reaches 9/9.** The per-document cap is non-monotonic on the
+live Tier B measurement: cap 3 → 7/9, 4 → 8/9, 5 → 7/9. A value that fails
+between two passing values means nine probes cannot determine the constant.
+
+> **The Tier A cap row is stale and is not relied on here.**
+> `milestones/M02/README.md` records it: "The Tier A row was measured before
+> `7d65a07` and has not been re-swept." `7d65a07` deleted the
+> top-N-distinct-documents heuristic, its window bound, its per-document chunk
+> cap and the grouped-vs-interleaved ordering question — so that row describes a
+> retrieval path that no longer exists. An earlier draft of this ADR quoted both
+> rows uncaveated and claimed "the tiers disagree about which values pass";
+> that comparison is not currently established, and the sweep recorded at
+> `src/shared/config.py:27` carries the same stale row. The argument above needs
+> only Tier B's live row and is restated on it alone. Re-sweeping Tier A costs
+> nothing and would settle it.
+
+Separately,
 BM25 `minimum_should_match: 70%` took Tier B from 6/9 to 8/9 and was **not
 adopted**: at 70% BM25 stops matching *short* chunks — r09's amendatory-
 instructions paragraph contains neither "Red", "No. 3", nor "sections" — so the
@@ -85,14 +106,46 @@ all three pass criterion 1 on both. The gate is failing on precisely the
 difference the criterion calls legitimate. On r01 and r03 the differing member
 includes `2025-03118#0003`, which is fact 1's miss, not a separate defect.
 
-**4. The in-filter carve-out protected the wrong probes.** SPEC/02 computes
-Jaccard over the in-filter result set only, reasoning that "a filtered probe
-returns few in-filter hits and a long arbitrary tail … so one filter probe could
-drag the per-probe minimum under 0.60 and fail M02 for a reason unrelated to
-correctness." That was settled before first measurement, correctly, on the
-reasoning then available. Measured: every filtered probe scores **1.00**, and
-all four failures are **unfiltered**. The instinct was right; the target was
-wrong.
+**4. The in-filter carve-out's premise was CONFIRMED, and its implementation is
+a tautology.** SPEC/02 computes Jaccard over the in-filter result set only,
+reasoning that "a filtered probe returns few in-filter hits and a long arbitrary
+tail … so one filter probe could drag the per-probe minimum under 0.60 and fail
+M02 for a reason unrelated to correctness." Every filtered probe scores 1.00 and
+all four failures are unfiltered — which looks like the carve-out guarding
+against something that does not happen, and an earlier draft of this ADR read it
+that way. **That reading was wrong on both halves.**
+
+`evals/run_parity.py:117` approximates the in-filter set as
+`expected_chunk_ids ∪ must_not_return` — "the only ids whose membership the probe
+actually asserts", in its own comment. r07, r08 and r09 each carry one expected
+chunk and an empty `must_not_return`, so the scope is a **single chunk id**, both
+tiers return it (criterion 1 passed), and Jaccard is 1/1 *by construction*. Those
+three 1.00s carry no information about tail agreement at all. r02's scope is one
+expected plus six forbidden, and its 1.00 restates criterion 1 and
+`must_not_return` and nothing else.
+
+Removing the carve-out and computing full top-8 on the same two scorecards gives
+the opposite of the earlier reading:
+
+| filtered probe | in-filter (reported) | full top-8 |
+|---|---|---|
+| r02 | 1.00 (scope = 1 id + 6 forbidden) | 0.78 |
+| **r07** | 1.00 (scope = 1 id) | **0.23** |
+| r08 | 1.00 (scope = 1 id) | 0.78 |
+| r09 | 1.00 (scope = 1 id) | 0.60 |
+
+r07 at 0.23 would be the **new gating minimum, below r01's 0.33** — a filtered
+probe dragging the gate under the floor while both tiers return its single
+expected chunk, its divergence being Tier B filling slots with
+`cfr-21-101.65` version variants where Tier A fills with `2024-29957` preamble.
+That is verbatim the scenario SPEC/02 wrote the carve-out to prevent. **The
+carve-out's reasoning was right and is vindicated; what is defective is the
+approximation standing in for it**, which degenerates whenever
+`must_not_return` is empty and `expected_chunk_ids` has one member — i.e. it
+exempts filtered probes from the measurement rather than measuring them
+in-filter. SPEC/02 says "computed over the in-filter result set" without
+defining how to derive that set from a filter predicate, and the implementation
+silently filled the gap.
 
 ### The conflict that does not depend on the failing number
 
@@ -149,12 +202,21 @@ The mitigation actually applied is `pm-spec-reviewer` on this document and the
 SPEC/02 diff that follows it — an independent read of acceptance quality, which
 matters more here than it would for a ruling the PM seat had drafted unaided.
 
-> **The test applied to each amendment below.** An amendment that changes a
-> criterion's *principle* is defensible — it would have been arguable before the
-> measurement. An amendment whose new threshold *equals the observed number* is
-> curve-fitting and the ruling is worthless. No ruling below sets a new
-> numeric threshold; Ruling 2 deliberately declines to propose a lower floor for
-> this reason.
+> **The test applied to each amendment below**, in the form it survived review.
+> An amendment must be one a reader can see would have been proposed **against a
+> green measurement**. Two corollaries, because the first draft of this test could
+> not fail the move Ruling 2 actually made:
+>
+> 1. *No fitted thresholds.* An amendment whose new threshold equals an observed
+>    number is curve-fitting. Ruling 2 rejects a c=5 floor and a
+>    minimum→mean switch on exactly this ground.
+> 2. *A removal must clear a higher bar than a loosening,* because "changes the
+>    principle" would otherwise license deletion outright — removal being the
+>    maximal change to a principle — and a deleted gate passes any
+>    threshold test trivially, having no threshold. **A ruling that removes a gate
+>    must show which narrower gate was considered and why that also fails.**
+>    Ruling 2's aggregation sweep exists to discharge this, and it is why that
+>    ruling now replaces the floor rather than deleting it.
 
 ---
 
@@ -197,6 +259,27 @@ the narrative over the measured recall would invert the project's own ordering.
 What to do about the consequence is Ruling 3's subject, not a reason to move
 this bar.
 
+**The second counter-argument, which is the repo's own and is stronger.**
+SPEC/02 says of the probe set: "a 3-probe set that engineering authored, selected
+`k` for, and needs 100% on is self-certifying." Criterion 1 demands 100% on nine
+self-authored probes with `k` chosen by the same seat, so a single probe is 11.1%
+and there is no failure budget anywhere in the criterion. Declaring such a
+criterion "sound" without engaging the property the repository itself flags as its
+weakest would be a gap in a ruling whose whole job is to certify soundness.
+
+It does not overturn the ruling, for two reasons. The mitigations SPEC/02 names
+are real and were met — two distractor probes, `must_not_return` assertions on
+both, and ADR-0008 recording the two judgment-bearing entries with primary
+sources. More decisively, **the specific chunk Tier B misses is not justified by
+the probe set at all.** `2025-03118#0003` is required by ADR-0008 Ruling 1, on
+Federal Register text a reader can check, authored before any tier was measured.
+So the failing assertion does not depend on the probe set being large enough to
+certify itself; it depends on a sourced regulatory ruling. What the
+self-certification objection does establish is that **recall 1.0 on nine probes
+should never be quoted as a retrieval-quality claim** — SPEC/02 and the M02
+evidence pack both already say so, and this ruling does not license reading it
+that way.
+
 **Scope of this ruling.** It settles that the *criterion* is sound. It does
 **not** settle whether `2025-03118#0003` is the right expected chunk. Tier B
 returns `2025-03118#0005` in its place, and whether `#0005` — *"the compliance
@@ -205,68 +288,122 @@ compliance date in the final rule is not until 2028"* — is an acceptable
 citation for "did the compliance date change?" is an **SME-seat question**
 requiring a primary-source reading of both paragraphs. This ruling is compatible
 with either SME outcome: if `#0005` is acceptable, the truth set changes and
-Tier B passes a criterion that never moved. It also does not rule on what Tier B
-should do about the failure, and it does not endorse any particular BM25 weight.
+criterion 1's *text* never moves — though its substance does, and Consequences
+records that path as the one carrying the highest evidentiary burden, not the
+easiest.
+
+**One consequence of that SME path, recorded here so it is not discovered
+later.** ADR-0008 Ruling 1 requires **two** chunks for r01 on the reasoning that
+a context saying the date did not change, *without the date*, forces the model to
+generate "February 25, 2028". `#0005` states "the compliance date in the final
+rule is not until 2028" — the **year, not the full date**, so it does not simply
+satisfy that reasoning. But it comes close enough that an SME ruling accepting
+`#0005` would have to say why `2024-29957#0000` is still required, i.e. it
+reopens ADR-0008 Ruling 1's two-chunk holding rather than only r01's expected
+set. r01 is q01's retrieval precondition and q01 is the trap this product exists
+to defeat.
+
+This ruling also does not rule on what Tier B should do about the failure, and it
+does not endorse any particular BM25 weight.
 
 ---
 
-## Ruling 2 (criterion 3) — the 0.60 floor does not stand as a gate
+## Ruling 2 (criterion 3) — the 0.60 similarity floor is replaced by an anti-collapse floor; the carve-out stays and its implementation is defective
 
 **The criterion, as written** (SPEC/02 "Done when" 3): Jaccard of the full top-8
 chunk_id sets across tiers, "computed per probe; the gate is the minimum across
 probes"; "Below 0.60 fails." Plus the in-filter carve-out for filtered probes.
+SPEC/02 makes **both the floor and the aggregation** PM-approvable.
 
-**Bearing evidence.** Facts 3 and 4 above.
+**Bearing evidence.** Facts 3 and 4 above, plus the aggregation sweep below.
 
-**RULING. Criterion 3 does not stand as a gate. Cross-tier drift becomes
-reported, not gating — the same standing as criterion 4's MRR — and the
-in-filter carve-out is deleted.**
+**RULING, in three parts.**
 
-The criterion measures Jaccard over the **full top-8** while stating, in the
-same paragraph, that "BM25 hybrid and vector+GSI fusion legitimately differ in
-the tail." The arithmetic makes those two statements inconsistent on their face:
-for two 8-element sets, Jaccard = `c/(16−c)`, so a 0.60 floor requires agreement
-on six of eight slots and licenses two. A criterion cannot both concede tail
-divergence and permit two slots of it. That inconsistency is derivable from the
-spec text alone and required no measurement to find.
+**(i) The 0.60 similarity floor does not stand.** The criterion measures Jaccard
+over the **full top-8** while stating, in the same paragraph, that "BM25 hybrid
+and vector+GSI fusion legitimately differ in the tail." The arithmetic makes
+those inconsistent on their face: for two 8-element sets, Jaccard = `c/(16−c)`,
+so a 0.60 floor requires agreement on six of eight slots and licenses two. A
+criterion cannot both concede tail divergence and permit two slots of it. That is
+derivable from the spec text alone and required no measurement to find.
 
-The in-filter carve-out goes with it: its premise was that filtered probes'
-"long arbitrary tail" would drag the minimum down, and fact 4 falsified that
-directly — every filtered probe scored 1.00 while all four failures were
-unfiltered. A carve-out protecting against something that does not happen, while
-the thing that does happen goes unprotected, is not worth keeping in the spec.
+**(ii) The in-filter carve-out STAYS. Its implementation is defective and must be
+replaced.** Per fact 4, the carve-out's reasoning is vindicated — r07's full
+top-8 Jaccard is 0.23, which would gate M02 on a probe where both tiers return
+the expected chunk. What is broken is `run_parity.py:117`, which approximates the
+in-filter set as `expected ∪ must_not_return` and thereby exempts rather than
+measures any probe with one expected chunk and no forbidden ones. SPEC/02 must
+define the in-filter set from the **filter predicate** — the chunks that satisfy
+`Filters.matches` — so the carve-out measures what it claims to.
 
-The gating content criterion 3 was reaching for is per-tier expected-chunk
-coverage, and criterion 1 already enforces exactly that, per tier and directly.
+**(iii) The gate becomes an anti-collapse floor, stated as a principle:** the two
+tiers must share, per probe, **every chunk criterion 1 requires plus at least one
+further slot.** This is not a similarity threshold and is not derived from any
+observed value. It encodes the one thing a cross-tier gate can assert on nine
+probes — that the tiers have not become effectively disjoint — and it fires only
+on collapse, which is what SPEC/02 said the aggregation was for ("so one
+collapsed probe cannot hide behind seven healthy ones").
 
-**The counter-argument, and why it loses.** The strongest case against:
-criterion 3 is a canary for a tier broken in a way nine probes do not happen to
-test; demoting it removes the only mechanical cross-tier check in the milestone;
-and doing so immediately after it went red is textbook relaxation-under-
-pressure, by the same seat that built the tier. The demotion is real, and the
-timing is genuinely bad. This is the ruling in this document most likely to be
-wrong, and the one a reviewer should attack first.
+**Why not a narrower similarity gate? Measured, not asserted.** SPEC/02 put the
+aggregation in scope, so the window and the statistic were swept on the same two
+scorecards. At a 0.60 floor, the set of probes that fails changes almost
+completely with the window:
 
-It loses on calibration. Nine probes cannot determine a full-top-8 similarity
-threshold, and this milestone proved that point independently on a different
-constant: the `RETRIEVAL_PER_DOC_CAP` sweep is non-monotonic on both tiers and
-the tiers disagree about which values pass, so nine probes cannot separate
-ranking policies at all. A threshold nine probes cannot calibrate is not a gate —
-it fires or does not fire according to which tail chunks happened to land. And
-it fired here on r04, r05 and r06, where the expected chunk was present on
-**both** tiers and both passed criterion 1. A canary that cannot distinguish
-collapse from tail churn is not protecting anything, and would not have been
-protecting anything had it come back green.
+| aggregation | probes that fail | count |
+|---|---|---|
+| full top-8 (as specified) | r01 .33, r03 .45, r04 .45, r05 .45 | 4 |
+| top-3 prefix | r01 .50, r02 .50, r04 .20, r06 .50, r07 .50, r09 .20 | 6 |
+| top-4 prefix | r04 .33, r06 .33, r09 .33 | 3 |
+| top-5 prefix | r01 .43, r04 .25, r05 .43, r06 .43, r07 .43, r09 .25 | 6 |
 
-**Scope of this ruling.** It removes the *gate*, not the *measurement*.
-Per-probe Jaccard continues to be computed and recorded in every scorecard, and
-`make retrieval-parity` continues to run and report — it simply no longer exits
-non-zero on drift. It does **not** license ignoring drift: a probe whose Jaccard
-collapses toward zero remains a signal an engineer must explain. It does **not**
-set a lower floor — proposing 0.33, or any number derived from what was
-observed, would be curve-fitting, and the ruling is that a full-top-8 floor is
-uncalibratable at this probe-set size, not that it should be looser. It does not
-touch criterion 2, which passed on both halves. And it is scoped to *this probe
+r03 scores **1.00 at top-3 and 0.45 at top-8**. r06 **passes at top-8 and fails
+at top-4 and top-5**. The head diverges *more* than the full set on r04 and r09.
+So the gate's verdict is an artifact of the window rather than a property of the
+tiers, and this is evidence about *this statistic on this probe set* — not
+borrowed from the cap sweep. Two specific alternatives were also rejected on the
+anti-fitting test: a floor at c=5 (Jaccard 0.4545) passes r03/r04/r05 exactly and
+fails only r01, and switching the aggregation from minimum to mean yields 0.698
+and a pass. Both reproduce the observation too precisely to be anything but
+fitted, and the mean additionally discards the property SPEC/02 chose the minimum
+for.
+
+**The counter-argument, and why it loses.** The strongest case against: replacing
+a similarity floor with an anti-collapse floor that **currently passes on all nine
+probes** (minimum shared slots = 3, on r07) is a gate that gates nothing, and
+ADR-0005's own closing warns that "asserting a control and never exercising it is
+the exact failure mode this product exists to catch in regulatory text." Swapping
+a gate that fires for one that does not, by the seat that failed the first one, is
+relaxation with extra steps.
+
+It loses, but only partly, and the remainder is conceded. The anti-collapse floor
+*is* exercised — it runs on every parity invocation and evaluates a real
+condition; it is not an unreachable requirement of the kind ADR-0005 found in the
+CODEOWNERS ruleset. And the similarity floor it replaces cannot be defended at
+this probe-set size, per the sweep above. But the honest accounting is that
+**cross-tier protection is weaker after this ruling than before it**, and the
+sound fix is a probe set large enough to calibrate a similarity threshold, which
+is out of M02's scope. What is not defensible is keeping a floor whose verdict
+flips with an arbitrary window choice.
+
+**What this ruling does not claim.** It does **not** claim the failing gate was
+pure noise. Of the four probes that fired, **two (r01, r03) tracked the genuine
+criterion-1 miss** of `2025-03118#0003` and two (r04, r05) were tail churn — so
+the gate ran at roughly 50% precision on nine probes, which is weak, not empty.
+An earlier draft of this ruling said the gate "fired here on r04, r05 and r06"
+and that a canary of this kind "is not protecting anything." **Both were wrong:**
+r06 scored 0.60 and *passed* at the floor with zero slack, and the 50% figure is
+in this document's own fact 3.
+
+**Scope of this ruling.** Per-probe Jaccard over the full top-8 continues to be
+computed and recorded in every scorecard and printed by `make retrieval-parity`,
+as reported instrumentation — the *similarity* number stops gating; the
+anti-collapse condition starts. It does **not** set a lower similarity floor;
+proposing 0.33, 0.45, or c=5 would be curve-fitting, and the finding is that a
+full-top-8 similarity floor is not calibratable at nine probes, not that it should
+be looser. It does not touch criterion 2, which passed on both halves. It does
+**not** authorise the `run_parity.py` change that (ii) requires — that is
+implementation, and per ROLES.md flow 3 it follows PM approval of the spec diff
+rather than accompanying it. And it is scoped to *this probe
 set*: a probe set large enough to calibrate a similarity threshold could justify
 restoring the gate, and that is the correct way to get it back.
 
@@ -290,13 +427,17 @@ passes" and therefore means M02 does not close; or (c) fix the retrieval.
 
 (c) is deferred-to rather than chosen, on three grounds:
 
-1. **SPEC/02 already pre-registered it, before any measurement.** The "Optional"
-   section specifies "Claude rerank of top-20 → top-k behind flag `RERANK=1`",
-   requires the delta be measured "in recall@8 and MRR on the probe set", and
-   requires both `RERANK=0` and `RERANK=1` runs be recorded. "Out of scope"
-   excludes reranking *"unless it earns the measured clause"*. So pursuing it is
-   executing a clause that predates the failure — the one available option whose
-   legitimacy does not depend on any ruling in this document.
+1. **SPEC/02 pre-registered the mechanism and the instrument, before any
+   measurement — but not an adoption bar.** The "Optional" section specifies
+   "Claude rerank of top-20 → top-k behind flag `RERANK=1`", requires the delta be
+   measured "in recall@8 and MRR on the probe set", and requires both `RERANK=0`
+   and `RERANK=1` runs be recorded. "Out of scope" excludes reranking *"unless it
+   earns the measured clause"* — and **"earns" is nowhere defined in SPEC/02**.
+   So the pre-registration is narrower than an earlier draft of this ruling
+   claimed: it fixes what to measure and that the default is off, not what result
+   adopts. Writing that bar after the numbers arrive would be curve-fitting by the
+   test above, so **it must go into SPEC/02 now, before the measurement runs**;
+   Consequences records it as owed.
 2. **The failure signature is the canonical case for reranking.**
    `2025-03118#0003` is ranked 6th–7th by kNN and 14th by BM25 — mediocre on
    both lanes, so RRF has no signal to promote it with. A reranker reads the text
@@ -308,12 +449,38 @@ passes" and therefore means M02 does not close; or (c) fix the retrieval.
    milestone. If reranking earns its clause, criterion 1 is met unamended, Tier B
    stays hybrid, and this ruling never needs an answer.
 
-**What would make this deferral wrong.** If the `RERANK=1` runs show no recall
-delta on the probe set, the clause is not earned, reranking stays off per
-SPEC/02, and this question returns live as a straight (a)-versus-(b) choice with
-one more piece of evidence and nothing lost but the measurement. The deferral is
-therefore bounded by a specific experiment, not open-ended — a deferral without
-a terminating condition would be this document declining to do its job.
+**The counter-argument, and why it loses.** The strongest case against deferring:
+reranking is being reached for as the remedy to a criterion that just went red,
+after the failure, by the seat that failed it. That is the same shape as relaxing
+ground truth, implemented in code instead of JSON. SPEC/02's pre-registration
+blunts this but grants less license than ground 1 originally claimed — what it
+pre-registered is that *if* reranking is implemented its delta must be measured,
+and "Out of scope" listing it means the default was **exclusion**. It did not
+pre-register reranking as the remedy for a criterion-1 failure. Meanwhile the
+deferral itself has a cost: it keeps M02 open on the strength of an experiment
+nobody has run.
+
+It loses on one distinction, and only that one. **A remedy that must pass a
+pre-registered measurement to be adopted is not the same act as a relaxation that
+takes effect by being written down.** Relaxing `retrieval_truth.json` would make
+Tier B pass by redefining the target; reranking must actually retrieve
+`2025-03118#0003` into the top-8, judged by the instrument SPEC/02 named before
+the failure. If it does not, nothing is adopted and the question returns live.
+That is why this deferral is conditional on the adoption bar reaching SPEC/02
+first: without it, the objection stands and the deferral becomes exactly what the
+objection says it is.
+
+**What would make this deferral wrong.** If the `RERANK=1` runs do not clear the
+adoption bar this ADR requires SPEC/02 to state, the clause is not earned,
+reranking stays off per SPEC/02, and this question returns live as a straight
+(a)-versus-(b) choice with one more piece of evidence and nothing lost but the
+measurement. The bar must be stated as an executable condition — what command
+produces the two scorecards, and what observable result adopts versus rejects —
+and it must be strong enough that a single probe flipping does not clear it, since
+"one probe traded for another" is the pattern this document cites (fact 2, and the
+`minimum_should_match` rejection) as proof that nine probes cannot distinguish
+ranking policies. A bar looser than the one used to discredit engineering's
+earlier changes would be incoherent.
 
 **Two risks the deferral carries, recorded now rather than discovered later.**
 
@@ -338,35 +505,62 @@ lead seat's to do, and this ruling only scopes what that seat would face.
 
 ## Consequences
 
-**SPEC/02 changes in one place only.** Criterion 3 is rewritten from a gate to
-reported instrumentation, and its in-filter carve-out paragraph is deleted.
-Criterion 1 is untouched — the ruling that mattered most left the spec text
-alone. `evals/run_parity.py` stops exiting non-zero on drift while continuing to
-compute and print it, and criterion 2's resolved-tier assertion stays gating.
+**Four SPEC/02 changes are owed, all in "Done when" or "Optional".** Criterion 3's
+0.60 similarity floor is replaced by the anti-collapse floor of Ruling 2(iii);
+the drift number stays as reported instrumentation; the in-filter carve-out is
+**kept** and its definition changed to derive from the filter predicate rather
+than from the probe's assertions; and the `RERANK` adoption bar Ruling 3 depends
+on is added to "Optional" as an executable condition. Criterion 1 is untouched —
+the ruling that mattered most left the spec text alone. Criterion 2 stays gating.
+
+**Two implementation changes follow the spec diff, and do not accompany it**
+(ROLES.md flow 3): `run_parity.py:117`'s in-filter approximation is replaced, and
+its exit condition moves from the similarity floor to the anti-collapse floor.
+Neither is authorised by this ADR.
 
 **M02 does not close on this document.** Criterion 1 still fails on Tier B, and
-Ruling 1 declined to move it. Closure now requires one of: the SME-seat ruling on
-`#0005` going in favour of the truth set changing, or the `RERANK` measurement
-earning its clause, or Ruling 3 returning live and resolving as (a). No path to
-closure runs through relaxing criterion 1.
+Ruling 1 declined to move it. Three closure paths exist and they are **not
+equivalent**:
+
+1. The `RERANK` measurement clearing the adoption bar — no ground-truth change,
+   and the only path whose instrument was pre-registered.
+2. Ruling 3 returning live and resolving as (a), dropping BM25 — no ground-truth
+   change, but it costs ADR-0001's hybrid claim and the tier-switch demo beat.
+3. The SME seat accepting `#0005` — **this is a post-failure ground-truth change,
+   the move CLAUDE.md routes to a stop, and it carries the highest evidentiary
+   burden of the three, not the lowest.** It also reopens ADR-0008 Ruling 1's
+   two-chunk holding (see Ruling 1's scope). Listing it first in an earlier draft
+   understated it.
+
+No path runs through relaxing criterion 1.
 
 **Tier B needs re-measuring under any of those paths**, which costs a `make up`
 cycle (≈$0.24/hr) and moves both scorecards to a new sha. `evals/retrieval_truth.json`
-is untouched by this document; only the SME path would touch it, and that seat
-has not ruled.
+is untouched by this document; only path 3 would touch it, and that seat has not
+ruled.
 
-+ The two criteria that were failing for specification reasons are settled with a
-  basis a reader can check, and the one failing for a retrieval reason is left
-  failing, which is the correct asymmetry.
-+ Ruling 3 is bounded by a named experiment rather than left open.
-− The cross-tier gate is gone. Criterion 2 and per-tier criterion 1 remain, but
-  nothing mechanically compares the tiers' output after this, and restoring that
-  protection properly requires a larger probe set. Recorded as a real loss rather
-  than as a tidy simplification.
++ Criterion 3's inconsistency is settled on a basis derivable from the spec text
+  alone, and criterion 1 — failing for a genuine retrieval reason — is left
+  failing. That asymmetry is the point.
++ Ruling 3 is bounded by a named experiment, and the bar for that experiment is
+  now owed to SPEC/02 *before* it runs rather than settled after.
+− **Cross-tier protection is weaker after this ruling than before it.** The
+  anti-collapse floor catches disjointness, not drift, and it currently passes on
+  all nine probes (minimum shared slots = 3). Restoring real similarity gating
+  requires a probe set large enough to calibrate a threshold, which is out of
+  M02's scope.
+− **Ruling 2 removes the only mechanical backing for two claims made elsewhere.**
+  ADR-0001's Consequences promise "two retrieval code paths to keep at eval parity
+  (enforced by CI matrix)", and its Decision calls the "live tier-switch … itself a
+  demo moment". After this, nothing asserts that switching tiers mid-demo yields
+  comparable output. SPEC/02:6 already promises re-verification at M04; SPEC/04's
+  "Done when" is where that claim needs a home, and it does not have one yet.
 − These rulings were drafted by the seat they judge (see "How these rulings were
-  produced"). `pm-spec-reviewer` is the only independent check applied.
-− Ruling 2 is the most likely of the three to be wrong. If the calibration
-  argument does not hold, it is relaxation-under-pressure wearing an argument.
+  produced"). `pm-spec-reviewer` is the only independent check applied — and its
+  first pass returned REQUEST CHANGES with four blockers, including a factually
+  false leg of Ruling 2 that this document had asserted twice and that its own
+  cited evidence refuted. That is the strongest available argument for not
+  trusting a ruling because it reads carefully.
 
 ## Evidence
 
@@ -375,6 +569,13 @@ has not ruled.
 - Both committed in `8b01fc9`; parity output reproduced by `make retrieval-parity`
 - Weight and cap sweeps: `milestones/M02/README.md`, sections "The obvious lever
   does not work, and the sweep is why" and "The number this milestone is least
-  sure of"; full cap sweep recorded in `src/shared/config.py:27` beside the value
-- A reader who doubts any number above should re-run `make retrieval-parity` at
-  `e596166` rather than trust this document
+  sure of"; full cap sweep recorded in `src/shared/config.py:27` beside the value.
+  **Both carry a stale Tier A row — see the caveat under fact 2.**
+- The in-filter tautology (fact 4) and the aggregation sweep (Ruling 2) are both
+  derived from the two scorecards above plus `evals/retrieval_truth.json` and
+  `evals/run_parity.py:117`. Neither required a new measurement, and both are
+  reproducible without AWS access — which is why they could correct this document
+  after the hot tier was already destroyed.
+- A reader who doubts any number above should re-derive it from the two
+  scorecards, or re-run `make retrieval-parity` at `e596166`, rather than trust
+  this document. The first version of it asserted a falsified finding twice.
