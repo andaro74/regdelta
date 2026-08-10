@@ -6,18 +6,21 @@
   the structural lane becomes a query) · `11489e5` (AOSS index-visibility
   propagation)
 - Spec: SPEC/02 (amended, 2 deviations)   ADRs: **ADR-0008** (new)
-- Status: **Both tiers measured live. Tier A meets criterion 1; Tier B does
-  not, and the reason is a finding rather than an unfinished task.**
+- Status: **Both tiers measured live at one sha, and the cross-run gate has
+  run. Tier A meets criterion 1; Tier B does not, and criterion 3's Jaccard
+  floor fails on the tail divergence the criterion itself calls legitimate.
+  Both are findings about the criteria rather than unfinished tasks, and both
+  want one PM ruling.**
 
 ## Done-when status (SPEC/02)
 
 | criterion | status |
 |-----------|--------|
 | 5. Date attribution, all 3 stores (gating preflight) | ✅ green against the live corpus |
-| 1. Recall@8 = 1.0, **S3 Vectors** | ✅ **9/9 probes, recall 1.0** (`17bf6dc-retrieval-s3vectors.json`) |
-| 1. Recall@8 = 1.0, **AOSS** | ❌ **7/9, recall 0.833** (`11489e5-retrieval-aoss.json`). Both misses are one chunk. See "Tier B does not meet criterion 1". |
-| 2. Resolved-tier assertion | ✅ implemented + unit-tested; the cross-run half needs both scorecards at one sha |
-| 3. Cross-tier Jaccard ≥ 0.60 (per-probe minimum) | ⏳ needs both scorecards at one sha |
+| 1. Recall@8 = 1.0, **S3 Vectors** | ✅ **9/9 probes, recall 1.0** (`e596166-retrieval-s3vectors.json`) |
+| 1. Recall@8 = 1.0, **AOSS** | ❌ **7/9, recall 0.833** (`e596166-retrieval-aoss.json`). Both misses are one chunk. See "Tier B does not meet criterion 1". |
+| 2. Resolved-tier assertion | ✅ **both halves met.** Two cards at `e596166`, resolved tiers distinct (`s3vectors` / `aoss`), assertion held on both runs |
+| 3. Cross-tier Jaccard ≥ 0.60 (per-probe minimum) | ❌ **minimum 0.33**, four probes under floor. See "Criterion 3 fails, and the carve-out protected the wrong probes". |
 | 4. MRR reported, not gating | ✅ 0.796 Tier A / 0.648 Tier B, recorded with `mrr_is_gating: false` |
 | B. Hydration count-parity fails the deploy | ⏳ code + 16 unit tests; the required evidence is a REAL failed deploy |
 | C. `/evals/` in CODEOWNERS | ✅ landed with ADR-0005 |
@@ -208,6 +211,56 @@ reusing the stored embeddings, no Bedrock calls, no chunk-id changes. That was
 owed anyway: the architecture rule says search indexes are pure functions of
 the corpus bucket, and before this only AOSS had a rebuild path.
 
+## Criterion 3 fails, and the carve-out protected the wrong probes
+
+With both cards recorded at `e596166`, `make retrieval-parity` ran — the
+cross-run gate that neither tier invocation can evaluate from inside itself.
+**Criterion 2 passes on both halves.** Criterion 3 does not:
+
+| probe | Jaccard | filtered | note |
+|---|---|---|---|
+| r01 | **0.33** | | 4 of 8 slots shared |
+| r02 | 1.00 | ✔ | in-filter set only |
+| r03 | **0.45** | | |
+| r04 | **0.45** | | |
+| r05 | **0.45** | | |
+| r06 | 0.60 | | passes *exactly* at the floor — no slack |
+| r07 | 1.00 | ✔ | in-filter set only |
+| r08 | 1.00 | ✔ | in-filter set only |
+| r09 | 1.00 | ✔ | in-filter set only |
+
+Minimum 0.33 against a floor of 0.60. Two observations, both of which are
+findings about the criterion rather than about the tiers:
+
+**The carve-out aimed at the wrong probes.** SPEC/02 computes Jaccard over the
+in-filter result set only, and says why: "a filtered probe returns few in-filter
+hits and a long arbitrary tail … so one filter probe could drag the per-probe
+minimum under 0.60 and fail M02 for a reason unrelated to correctness." That was
+settled before first measurement, correctly, on the reasoning available then.
+Measured, every filtered probe scores **1.00** and all four failures are
+*unfiltered*. The instinct was right and the target was wrong.
+
+**The floor permits two slots of divergence, not "a tail".** For two 8-element
+sets, Jaccard = `c / (16 - c)`, so 0.60 requires `c = 6` — agreement on six of
+eight slots. The same criterion concedes in prose that "BM25 hybrid and
+vector+GSI fusion legitimately differ in the tail." Observed divergence is three
+slots on r03/r04/r05. On **r04, r05 and r06 the divergence is entirely
+non-expected tail** — the expected chunk is present on both tiers and those
+probes pass criterion 1 on both — so the gate is failing on exactly the
+difference the criterion says is legitimate. On r01 and r03 the differing member
+includes `2025-03118#0003`, which is the known criterion-1 miss, not a separate
+defect.
+
+**No floor change is proposed here.** SPEC/02: the floor and the aggregation
+"may not be changed to match whatever is observed — changing either is a spec
+edit requiring PM approval." I have now observed it, which is the condition that
+disqualifies engineering from arguing the number. Recorded as measured.
+
+What this does change is the *shape* of the open decision below: criterion 1's
+"identically on both tiers" and criterion 3's 0.60 floor are two instances of
+one question — how far may a hybrid tier diverge from a vector tier before the
+divergence stops being legitimate? They want one ruling, not two.
+
 ## The number this milestone is least sure of
 
 `RETRIEVAL_PER_DOC_CAP`. Swept against the probe set:
@@ -317,21 +370,26 @@ botocore already does. `src/retrieval/aoss_client.py` is ~60 lines instead.
 
 ## Remaining to close M02
 
-1. **A ruling on criterion 1 for Tier B** — see "The open decision" above. This
-   blocks closure and is not engineering's to make.
-2. **Criteria 2 and 3.** `11489e5-retrieval-aoss.json` exists; the Tier A card
-   at the same sha does not, because the router chooses its tier by the
-   presence of `/regdelta/search/endpoint` and there is deliberately no
-   override. So the pair is recorded across a `make down`:
+1. **One PM-seat ruling covering criterion 1 *and* criterion 3** — how far may
+   the hybrid tier diverge from the vector tier? See "The open decision" and
+   "Criterion 3 fails" above. This blocks closure and is not engineering's to
+   make. The SME-seat question about `2025-03118#0005` is separate and is the
+   one CLAUDE.md routes to a stop.
+2. ~~**Criteria 2 and 3.**~~ **Done — both measured at `e596166`.** The pair was
+   recorded across a `make down` (the router picks its tier from the presence of
+   `/regdelta/search/endpoint`, with deliberately no override, so the two cards
+   cannot exist at one sha any other way):
 
    ```bash
    make down               # stops OCU billing; the SSM param goes with it
-   make retrieval-evals    # records 11489e5-retrieval-s3vectors.json
+   make retrieval-evals    # recorded e596166-retrieval-s3vectors.json
    make retrieval-parity   # criteria 2 and 3 — the cross-run gate
    ```
 
-   HEAD must not move between the two runs. `--record`'s dirty-tree guard
-   already excludes `evals/history/` for exactly this workflow.
+   HEAD did not move between the two runs; `--record`'s dirty-tree guard
+   excludes `evals/history/` for exactly this workflow, and that is what made it
+   possible. **Criterion 2 passes. Criterion 3 fails at 0.33 vs a 0.60 floor**
+   and is now part of item 1.
 3. **(B): a deliberate partial-index deploy** with `REINDEX_FAULT_DROP` set,
    capturing the failed CloudFormation event here. The fault hook can only ever
    *cause* a failing deploy — there is no switch in `reindex.py` that relaxes
