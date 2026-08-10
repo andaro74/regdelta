@@ -90,6 +90,13 @@ default; it never defined what "earns the measured clause" means, so that is
 fixed here — **before the measurement runs**, because a bar written after the
 numbers arrive is fitted to them.
 
+**The bar is reachable, which is what distinguishes it from an impossible
+one.** `2025-03118#0003` sits at **fused rank 13 on r01 and 12 on r03** — both
+inside the top-20 the reranker scores — so condition 1 is attainable without
+any change to the lanes, provided condition 4's placement holds. If a future
+measurement moves it outside 20, this bar becomes unreachable and must be
+revisited rather than quietly failed.
+
 Reranking is adopted only if **all** of the following hold:
 
 1. **Recall@8 = 1.0 on BOTH tiers at RERANK=1**, satisfying criterion 1 as
@@ -100,17 +107,29 @@ Reranking is adopted only if **all** of the following hold:
 2. **No probe regresses on either tier** — no `expected_chunk_ids` member
    present at RERANK=0 and absent at RERANK=1, and no new `must_not_return`
    violation.
-3. **The anti-collapse floor of criterion 3(a) still holds** on both tiers.
-4. **Both runs are recorded per tier** — four scorecards, `RERANK=0` and
-   `RERANK=1` × two tiers, at one sha — and the reranker is on the fused
-   candidate set *before* per-document diversification. Placed after it, the
-   cap has already evicted the chunk reranking exists to recover, so a null
-   result there measures the ordering rather than the reranker.
+3. **The anti-collapse floor of criterion 3(a) still holds at RERANK=1.** (It
+   is a cross-run condition computed *between* tiers, so it holds of a run
+   pair, not "on a tier".)
+4. **Four scorecards at one sha**, named
+   `<sha>-retrieval-<tier>-rerank{0,1}.json` — the base
+   `<sha>-retrieval-<tier>.json` namespace cannot express four cards at one sha
+   and the second pair would overwrite the first. Each card **records the
+   candidate set the reranker scored: its size, and whether it was taken
+   before or after per-document diversification.** A null result over a
+   post-diversification candidate set does not satisfy this bar, because the
+   per-document cap has already evicted the chunk reranking exists to recover —
+   such a run measures the ordering, not the reranker.
+
+**MRR is recorded for both runs and is not an adoption condition** (criterion
+4 bars citing it as one).
 
 Commands: `make retrieval-evals` per tier per flag value, then
-`make retrieval-parity`. **If any condition fails, reranking stays off**,
-SPEC/02 is unchanged, and ADR-0009 Ruling 3 returns live as a choice between
-dropping BM25 and not closing M02.
+`make retrieval-parity --rerank {0,1}` on the matching pair. Producing four
+cards at one sha costs **two `make up`/`make down` cycles**, because the router
+takes its tier from SSM-param presence with deliberately no override — that is
+the price the deferral is being bought with. **If any condition fails,
+reranking stays off**, SPEC/02 is unchanged, and ADR-0009 Ruling 3 returns live
+as a choice between dropping BM25 and not closing M02.
 
 ## Files
 src/retrieval/{router.py, s3vectors_tier.py, aoss_tier.py, fusion.py}
@@ -160,6 +179,14 @@ non-zero on 2 and 3. **All three steps must run for (A) to be satisfied.**
    Recall is computed only over probes with a non-empty
    `expected_chunk_ids`; a pure-negative probe contributes no recall term,
    and its `must_not_return` violations fail regardless.
+
+   > **This criterion is per-tier and independent — it does not require the
+   > two tiers to return the same results.** Cross-tier agreement is
+   > criterion 3's subject. Ruled unamended by ADR-0009 Ruling 1, which is
+   > also where the reading is argued; an earlier gloss of "identically on
+   > both tiers" caused real confusion. **Reranking is a licensed route to
+   > satisfying this criterion** if and only if it clears the RERANK adoption
+   > bar under "Optional" — see ADR-0009 Ruling 3.
 2. **Resolved-tier assertion (gating).** The harness takes
    `--tier {s3vectors,aoss}`, records the tier the router actually
    resolved, and **exits non-zero if resolved ≠ requested**. The two
@@ -171,22 +198,40 @@ non-zero on 2 and 3. **All three steps must run for (A) to be satisfied.**
    the original 0.60 similarity floor and the reasoning that replaced it are
    both recorded there. Two parts:
 
-   **(a) Gating: the anti-collapse floor.** Per probe, the two tiers must
-   share **every chunk criterion 1 requires, plus at least one further
-   slot** of the top-8. Aggregation is the minimum across probes, unchanged
-   and for the original reason — one collapsed probe cannot hide behind
-   seven healthy ones. This is not a similarity threshold and is not derived
-   from any observed value; it asserts only that the tiers have not become
-   effectively disjoint. It is deliberately weak, and **the honest reading is
-   that cross-tier protection is weaker than the original criterion
-   promised**: it catches collapse, not drift. Restoring real similarity
-   gating needs a probe set large enough to calibrate a threshold, which is
-   not this milestone's.
+   **(a) Gating: the anti-collapse floor.** Per probe, let `I` be the
+   intersection of the two tiers' top-8 chunk_id sets, computed over the
+   **full top-8 on every probe** — there is no filtered-probe carve-out here.
+   Both must hold:
+
+   - **(i)** `I` contains every member of `expected_chunk_ids`; and
+   - **(ii)** `I` contains at least one chunk_id **not** in
+     `expected_chunk_ids`.
+
+   Clause (i) is entailed by criterion 1 holding on both tiers, so **(a)'s
+   independent content is clause (ii)**: the tiers must agree on at least one
+   chunk beyond the ones the probe itself asserts. Where criterion 1 has
+   failed on a tier, (a) fails with it and reports the same chunk — it is not
+   independent evidence there, and must not be counted as a second failure.
+   Aggregation is the minimum across probes, unchanged and for the original
+   reason: one collapsed probe cannot hide behind seven healthy ones.
+   Pure-negative probes (empty `expected_chunk_ids`) satisfy (i) trivially
+   and are still bound by (ii).
+
+   This is not a similarity threshold and is not derived from any observed
+   value; it asserts only that the tiers have not become effectively
+   disjoint. **The margin — `|I| − |expected_chunk_ids|`, the number of
+   further shared slots — is recorded per probe in the scorecard**, so
+   distance-to-firing is observable rather than asserted. It is deliberately
+   weak, and **the honest reading is that cross-tier protection is weaker
+   than the original criterion promised**: it catches collapse, not drift.
+   Restoring real similarity gating needs a probe set large enough to
+   calibrate a threshold, which is not this milestone's.
 
    **(b) Reported, not gating: per-probe Jaccard of the full top-8**
-   chunk_id sets across the two tiers, printed by `make retrieval-parity`
-   and recorded in every scorecard. It may **never** be cited as a
-   criterion, the same bar criterion 4 sets for MRR.
+   chunk_id sets across the two tiers, on **every** probe including filtered
+   ones, printed by `make retrieval-parity` and recorded in every scorecard.
+   It may **never** be cited as a criterion, the same bar criterion 4 sets
+   for MRR.
 
    > **Why the 0.60 floor went.** It required agreement on six of eight
    > slots — `Jaccard = c/(16−c)`, so 0.60 ⇒ `c = 6` — while this same
@@ -196,23 +241,42 @@ non-zero on 2 and 3. **All three steps must run for (A) to be satisfied.**
    > anything. Measurement then showed the verdict is a window artifact: at a
    > 0.60 floor the failing set changes almost completely between full top-8,
    > top-3, top-4 and top-5 (r03 scores 1.00 at top-3 and 0.45 at top-8; r06
-   > passes at top-8 and fails at top-4). Full-set identity is still *not*
-   > required, and **criterion 1 remains the thing that must hold on both
-   > tiers** — per tier and independently, which is what that has always
-   > meant.
+   > passes at top-8 and fails at top-4) — though top-8 is the one window
+   > with an independent justification, `k` being the served page, so that
+   > instability is a reason to distrust *any* similarity floor here rather
+   > than proof the specified window was arbitrary. The stronger leg is the
+   > internal inconsistency above, which needs no measurement at all.
+   > Full-set identity is still *not* required, and **criterion 1 remains the
+   > thing that must hold on both tiers** — per tier and independently; see
+   > ADR-0009 Ruling 1, which replaces this criterion's former "criterion 1 is
+   > what must hold identically".
 
-   **Filtered probes: Jaccard is computed over the in-filter result set
-   only** — and **the in-filter set is defined by the filter predicate**,
-   i.e. the returned chunks satisfying `Filters.matches`. It may **not** be
-   approximated by the probe's own `expected_chunk_ids ∪ must_not_return`:
-   that degenerates to a single chunk id whenever `must_not_return` is empty,
-   making Jaccard 1.0 by construction and exempting the probe instead of
-   measuring it. The carve-out itself is sound and is **kept** — measured at
-   `e596166`, r07's full top-8 Jaccard is 0.23 while both tiers return its
-   one expected chunk, which is exactly the "fail M02 for a reason unrelated
-   to correctness" this paragraph was written to prevent. Pure-negative
-   probes (empty `expected_chunk_ids`) contribute no Jaccard term and are
-   exempt from (a), mirroring their carve-out in criterion 1.
+   **The filtered-probe carve-out is removed, because nothing it protected
+   remains at risk.** Its purpose was to stop a filtered probe "fail[ing] M02
+   for a reason unrelated to correctness" while Jaccard was the gate. Under
+   (b) no Jaccard value can fail anything, and (a) is an identity condition
+   over the full top-8 that a long divergent tail cannot break. A carve-out
+   with nothing to protect is removed rather than redefined.
+
+   > **Two wrong reasons this was nearly removed for, recorded so neither is
+   > repeated.** First: *"the carve-out protected the wrong probes — every
+   > filtered probe scores 1.00 and all four failures are unfiltered."* False.
+   > Those 1.00s were the carve-out's own output: the implementation
+   > approximated the in-filter set as
+   > `expected_chunk_ids ∪ must_not_return`, which for a probe with one
+   > expected chunk and no forbidden ones is a **single chunk id**, so Jaccard
+   > was 1/1 by construction. Measured at `e596166`, r07's *full* top-8
+   > Jaccard is **0.23** — it would have been the gating minimum, below r01's
+   > 0.33, while both tiers return its one expected chunk. The carve-out's
+   > reasoning was correct for as long as the number gated.
+   >
+   > Second: *"define the in-filter set from the filter predicate instead."*
+   > A no-op. `router._finish` already applies `Filters.matches` to every
+   > candidate before returning, so every returned chunk satisfies the
+   > predicate and "in-filter" would equal the full top-8 — reinstating the
+   > 0.23 the carve-out existed to prevent. Any future in-filter definition
+   > must name a discriminator narrower than the predicate the router has
+   > already applied.
 4. **MRR: reported, not gating.** Instrumentation for M03 to compare
    against. It is not a criterion and may never be cited as one.
 5. **Date attribution (gating, preflight).** Before any probe runs, the
@@ -366,7 +430,9 @@ a skip** — chunk ids change when the chunker changes.
 
 ### Scorecard namespace
 Retrieval scorecards write to `evals/history/` with a distinct prefix
-(`<sha>-retrieval-<tier>.json`) and an explicit
+(`<sha>-retrieval-<tier>.json`, or
+`<sha>-retrieval-<tier>-rerank{0,1}.json` when the RERANK adoption bar is
+being measured — see "Optional") and an explicit
 `"comparable_to_baseline": false` field. The M00b control
 (`7f012b8-naive-full.json`) measures answer quality; a recall number is
 not a delta against it and must not be read as one.

@@ -20,7 +20,7 @@
 | 1. Recall@8 = 1.0, **S3 Vectors** | ✅ **9/9 probes, recall 1.0** (`e596166-retrieval-s3vectors.json`) |
 | 1. Recall@8 = 1.0, **AOSS** | ❌ **7/9, recall 0.833** (`e596166-retrieval-aoss.json`). Both misses are one chunk. See "Tier B does not meet criterion 1". |
 | 2. Resolved-tier assertion | ✅ **both halves met.** Two cards at `e596166`, resolved tiers distinct (`s3vectors` / `aoss`), assertion held on both runs |
-| 3. Cross-tier Jaccard ≥ 0.60 (per-probe minimum) | ❌ **minimum 0.33**, four probes under floor (r01, r03, r04, r05 — *not* r06, which passed at 0.60). Floor replaced by ADR-0009 Ruling 2. See "Criterion 3 fails, and the carve-out is a tautology". |
+| 3. ~~Cross-tier Jaccard ≥ 0.60~~ → **anti-collapse floor** (ADR-0009 Ruling 2) | ❌ **fails on r01 and r03**, for the same reason criterion 1 does — `2025-03118#0003` is absent from Tier B's top-8, so the shared set cannot contain every expected chunk. Holds on the other seven; minimum independent margin 2 (r07). Reported Jaccard: minimum 0.33 over the full top-8, which no longer gates. The old floor failed on r01/r03/r04/r05 — *not* r06, which passed at 0.60. |
 | 4. MRR reported, not gating | ✅ 0.796 Tier A / 0.648 Tier B, recorded with `mrr_is_gating: false` |
 | B. Hydration count-parity fails the deploy | ⏳ code + 16 unit tests; the required evidence is a REAL failed deploy |
 | C. `/evals/` in CODEOWNERS | ✅ landed with ADR-0005 |
@@ -144,7 +144,17 @@ write after seeing the failure:
   says a hybrid tier cannot hold it identically on this corpus while remaining
   hybrid. That is a finding about the criterion, not about the implementation.
 
-Recorded unresolved. The failing scorecard stands as the evidence.
+  > **Overturned by ADR-0009 Ruling 1.** Criterion 1 never required the tiers to
+  > agree — it requires each tier *independently* to place every expected chunk in
+  > its own top-8, and criterion 3's "criterion 1 is what must hold identically"
+  > means that recall *outcome* holds on both. So this is a finding about the
+  > *implementation* after all: Tier B has a genuine retrieval deficiency, and
+  > criterion 1 stands unamended. The "hold identically" gloss above is what
+  > caused the confusion. Criterion 3's floor *was* mis-specified — see Ruling 2 —
+  > which is a separate matter from criterion 1.
+
+Recorded unresolved at the time. ADR-0009 carries the rulings; the failing
+scorecard is still the evidence.
 
 ### Why I stopped instead of closing the gap
 
@@ -250,12 +260,18 @@ reason unrelated to correctness."
 > Computing full top-8 on the same two cards inverts the reading: r02 0.78,
 > **r07 0.23**, r08 0.78, r09 0.60. r07 would be the new gating minimum, *below*
 > r01's 0.33, while both tiers return its one expected chunk — precisely the
-> scenario SPEC/02 wrote the carve-out to prevent. So the carve-out is vindicated
-> and stays; what is defective is the approximation standing in for it, which
-> exempts a filtered probe from measurement whenever `must_not_return` is empty.
-> ADR-0009 Ruling 2(ii) requires SPEC/02 to define the in-filter set from the
-> filter predicate instead. Recorded as a correction rather than edited away,
-> because the original claim was asserted twice on evidence that refuted it.
+> scenario SPEC/02 wrote the carve-out to prevent. So the carve-out's reasoning
+> was sound while Jaccard gated; what is defective is the approximation standing
+> in for it, which exempts a filtered probe from measurement whenever
+> `must_not_return` is empty.
+>
+> **Where it ended up:** ADR-0009 Ruling 2(ii) **removes** the carve-out, because
+> once the similarity number stops gating there is nothing left for it to protect.
+> An intermediate draft kept it and redefined the in-filter set as "the chunks
+> satisfying `Filters.matches`" — a no-op, since `router._finish` applies exactly
+> that predicate before returning, so "in-filter" equals the full top-8 and the
+> 0.23 comes straight back. Both errors are recorded because the second was
+> introduced *while fixing* the first, which is the more useful warning.
 
 **The floor permits two slots of divergence, not "a tail".** For two 8-element
 sets, Jaccard = `c / (16 - c)`, so 0.60 requires `c = 6` — agreement on six of
@@ -298,9 +314,18 @@ disqualifies engineering from arguing the number. Recorded as measured.
 | Tier A probes passed | 9/9 | **8/9** | 9/9 | 7/9 | 7/9 |
 | Tier B probes passed | 7/9 | **8/9** | 7/9 | 7/9 | 7/9 |
 
-**It is not monotonic, on either tier, and the two tiers disagree about which
-values pass.** A value that fails between two passing values means nine probes
-cannot determine this constant. Removing the mechanism entirely costs two
+**It is not monotonic on the live Tier B row.** A value that fails between two
+passing values means nine probes cannot determine this constant.
+
+> **Correction (ADR-0009 fact 2).** This originally read "not monotonic, on
+> either tier, and the two tiers disagree about which values pass." The
+> disagreement claim is withdrawn: the Tier A row predates `7d65a07`, which
+> deleted the top-N-distinct-documents heuristic, its window bound, its
+> per-document chunk cap and the grouped-vs-interleaved ordering question — so it
+> describes a retrieval path that no longer exists and cannot be compared against
+> a live Tier B row. Non-monotonicity on Tier B alone (3→7/9, 4→8/9, 5→7/9) is
+> what the argument needs and it survives. Re-sweeping Tier A costs nothing and
+> would settle it. Removing the mechanism entirely costs two
 probes, so the mechanism is load-bearing and demonstrable; the exact bound is a
 judgement. The full sweep is recorded in `shared/config.py` next to the value.
 First thing to re-examine if a probe regresses.
@@ -398,11 +423,27 @@ botocore already does. `src/retrieval/aoss_client.py` is ~60 lines instead.
 
 ## Remaining to close M02
 
-1. **One PM-seat ruling covering criterion 1 *and* criterion 3** — how far may
-   the hybrid tier diverge from the vector tier? See "The open decision" and
-   "Criterion 3 fails" above. This blocks closure and is not engineering's to
-   make. The SME-seat question about `2025-03118#0005` is separate and is the
-   one CLAUDE.md routes to a stop.
+1. ~~**One PM-seat ruling covering criterion 1 and criterion 3.**~~ **Done —
+   ADR-0009**, with the SPEC/02 diff it licenses. Criterion 1 stands unamended;
+   criterion 3's similarity floor is replaced by an anti-collapse floor; the
+   non-hybrid question is deferred pending the RERANK bar. Two `pm-spec-reviewer`
+   passes were needed — the first caught a falsified finding this pack had
+   asserted, the second caught a replacement gate whose stated wording contradicted
+   the ADR's claim about it. **What closure now needs is one of ADR-0009's three
+   paths, and they are not equivalent:**
+
+   1. **The RERANK measurement clearing the adoption bar** (SPEC/02 "Optional",
+      four conditions written before the run) — no ground-truth change, and the
+      only path whose instrument was pre-registered. Costs two `make up`/`make
+      down` cycles at one sha.
+   2. **Dropping BM25** — no ground-truth change, but it costs ADR-0001's hybrid
+      claim and the tier-switch demo beat, and reaches a lead-owned ADR.
+   3. **The SME seat accepting `2025-03118#0005`** — a post-failure ground-truth
+      change, the move CLAUDE.md routes to a stop, carrying the **highest**
+      evidentiary burden of the three rather than the lowest. It also reopens
+      ADR-0008 Ruling 1's two-chunk holding, not just r01's expected set.
+
+   No path runs through relaxing criterion 1.
 2. ~~**Criteria 2 and 3.**~~ **Done — both measured at `e596166`.** The pair was
    recorded across a `make down` (the router picks its tier from the presence of
    `/regdelta/search/endpoint`, with deliberately no override, so the two cards
@@ -416,16 +457,26 @@ botocore already does. `src/retrieval/aoss_client.py` is ~60 lines instead.
 
    HEAD did not move between the two runs; `--record`'s dirty-tree guard
    excludes `evals/history/` for exactly this workflow, and that is what made it
-   possible. **Criterion 2 passes. Criterion 3 fails at 0.33 vs a 0.60 floor**
-   and is now part of item 1.
+   possible. **Criterion 2 passes.** Criterion 3's 0.60 floor failed at 0.33 and
+   has since been replaced (item 1); the amended criterion fails on r01/r03 with
+   criterion 1.
 3. **(B): a deliberate partial-index deploy** with `REINDEX_FAULT_DROP` set,
    capturing the failed CloudFormation event here. The fault hook can only ever
    *cause* a failing deploy — there is no switch in `reindex.py` that relaxes
    the count assertion, and a test asserts that property by reading the source.
-4. **The three role gates**, owed regardless of the ruling: `security-reviewer`
-   (IAM data-access policy, Trigger timeout, the SigV4 path),
-   `pm-spec-reviewer` (the SPEC/02 amendments — and criterion 1 itself, if that
-   is the seat that rules), `eng-code-reviewer` before the PR.
+4. **The remaining role gates:** `security-reviewer` (IAM data-access policy,
+   Trigger timeout, the SigV4 path) and `eng-code-reviewer` before the PR.
+   `pm-spec-reviewer` has run twice on ADR-0009 and the SPEC/02 diff; it owes a
+   third pass only if the spec changes again.
+5. **Two implementation changes the SPEC/02 diff now requires**, which per
+   ROLES.md flow 3 follow PM approval rather than accompanying it:
+   `run_parity.py`'s in-filter approximation is deleted with the carve-out, and
+   its exit condition moves from the similarity floor to the anti-collapse floor,
+   emitting the per-probe margin. Neither is authorised by ADR-0009.
+6. **One change owed to SPEC/04:** answer-level cross-tier comparability. SPEC/04
+   already homes ADR-0001's "eval parity" claim, but nothing anywhere asserts that
+   switching tiers mid-demo yields *comparable answers*, which is what the demo
+   beat sells.
 
 ## Open, carried forward
 

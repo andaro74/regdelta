@@ -31,7 +31,15 @@ SSM_SEARCH_ENDPOINT = "/regdelta/search/endpoint"
 # Measured, and worth recording in full because it is NOT monotonic:
 # cap 3 -> 9/9 probes, 4 -> 8/9, 5 -> 9/9, 6 -> 7/9, 8 -> 7/9. A value that
 # fails between two passing values means nine probes cannot robustly determine
-# this constant. The MECHANISM (one document may not crowd the page) is
+# this constant.
+#
+# STALE (ADR-0009 fact 2): that row is Tier A measured BEFORE 7d65a07, which
+# deleted the top-N-distinct-documents heuristic, its window bound, its
+# per-document chunk cap and the grouped-vs-interleaved ordering question. It
+# describes a retrieval path that no longer exists and must not be compared
+# against a live Tier B row. Tier B at 11489e5: 3 -> 7/9, 4 -> 8/9, 5 -> 7/9 —
+# non-monotonic there too, which is what the argument actually rests on.
+# Re-sweeping Tier A costs nothing and would settle it. The MECHANISM (one document may not crowd the page) is
 # load-bearing and demonstrable — removing it entirely drops two probes — but
 # the exact bound is a design judgement the probe set cannot settle. It is the
 # softest number in M02 and the first thing to re-examine if a probe regresses.

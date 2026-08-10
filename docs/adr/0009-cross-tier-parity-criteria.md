@@ -139,13 +139,21 @@ probe dragging the gate under the floor while both tiers return its single
 expected chunk, its divergence being Tier B filling slots with
 `cfr-21-101.65` version variants where Tier A fills with `2024-29957` preamble.
 That is verbatim the scenario SPEC/02 wrote the carve-out to prevent. **The
-carve-out's reasoning was right and is vindicated; what is defective is the
-approximation standing in for it**, which degenerates whenever
+carve-out's reasoning was right for as long as Jaccard gated; what is defective
+is the approximation standing in for it**, which degenerates whenever
 `must_not_return` is empty and `expected_chunk_ids` has one member — i.e. it
 exempts filtered probes from the measurement rather than measuring them
 in-filter. SPEC/02 says "computed over the in-filter result set" without
 defining how to derive that set from a filter predicate, and the implementation
 silently filled the gap.
+
+> Ruling 2(ii) nonetheless **removes** the carve-out — not because this reasoning
+> is wrong, but because once (i) makes Jaccard non-gating there is nothing left
+> for it to protect. Redefining it from the filter predicate was tried and is a
+> no-op: `router._finish` already applies `Filters.matches` to every candidate
+> before returning, so "in-filter" would equal the full top-8 and hand back the
+> 0.23. This fact is what made both of those discoverable, which is why it stays
+> in the record.
 
 ### The conflict that does not depend on the failing number
 
@@ -327,63 +335,114 @@ so a 0.60 floor requires agreement on six of eight slots and licenses two. A
 criterion cannot both concede tail divergence and permit two slots of it. That is
 derivable from the spec text alone and required no measurement to find.
 
-**(ii) The in-filter carve-out STAYS. Its implementation is defective and must be
-replaced.** Per fact 4, the carve-out's reasoning is vindicated — r07's full
-top-8 Jaccard is 0.23, which would gate M02 on a probe where both tiers return
-the expected chunk. What is broken is `run_parity.py:117`, which approximates the
-in-filter set as `expected ∪ must_not_return` and thereby exempts rather than
-measures any probe with one expected chunk and no forbidden ones. SPEC/02 must
-define the in-filter set from the **filter predicate** — the chunks that satisfy
-`Filters.matches` — so the carve-out measures what it claims to.
+**(ii) The in-filter carve-out is removed — because nothing it protected remains
+at risk, which is a different reason from the one two earlier drafts gave.** Its
+purpose was to stop a filtered probe failing M02 "for a reason unrelated to
+correctness" *while Jaccard was the gate*. Under (i) no Jaccard value can fail
+anything, and under (iii) the gate is an identity condition that a long divergent
+tail cannot break. A carve-out with nothing to protect is removed, not redefined.
 
-**(iii) The gate becomes an anti-collapse floor, stated as a principle:** the two
-tiers must share, per probe, **every chunk criterion 1 requires plus at least one
-further slot.** This is not a similarity threshold and is not derived from any
-observed value. It encodes the one thing a cross-tier gate can assert on nine
-probes — that the tiers have not become effectively disjoint — and it fires only
-on collapse, which is what SPEC/02 said the aggregation was for ("so one
+> **The two wrong reasons, kept on the record.** The first draft removed it
+> because "every filtered probe scores 1.00 and all four failures are unfiltered"
+> — false, per fact 4: those 1.00s are the carve-out's own output, 1/1 by
+> construction. The second draft *kept* it and redefined the in-filter set as
+> "the chunks satisfying `Filters.matches`" — **a no-op**, because
+> `router._finish` applies exactly that predicate to every candidate before
+> returning it, so "in-filter" would equal the full top-8 and reinstate the 0.23
+> the carve-out existed to prevent. Both errors are recorded because the second
+> was introduced *while fixing* the first, which is the more useful warning: any
+> future in-filter definition must name a discriminator narrower than the
+> predicate the router has already applied.
+
+**(iii) The gate becomes an anti-collapse floor, stated as a principle.** Per
+probe, let `I` be the intersection of the two tiers' full top-8. Both: **(i)** `I`
+contains every member of `expected_chunk_ids`; **(ii)** `I` contains at least one
+chunk_id *not* in `expected_chunk_ids`. Clause (i) is entailed by criterion 1
+holding on both tiers, so **the independent content is clause (ii)** — the tiers
+must agree on at least one chunk beyond what the probe itself asserts. Where
+criterion 1 has failed, (a) fails with it on the same chunk and is not independent
+evidence there. This is not a similarity threshold and is not derived from any
+observed value; it asserts only that the tiers have not become effectively
+disjoint, which is what SPEC/02 said the minimum aggregation was for ("so one
 collapsed probe cannot hide behind seven healthy ones").
+
+> **Status at `e596166`, corrected.** An earlier draft of this ruling claimed the
+> floor "currently passes on all nine probes (minimum shared slots = 3)". That
+> used a **cardinality** reading — `|I| ≥ |expected| + 1` — while the rule as
+> written is an **identity** reading, and the two give opposite verdicts on the
+> probes that matter. Under the identity reading the floor **fails on r01 and
+> r03**, for the same reason criterion 1 does: `2025-03118#0003` is absent from
+> Tier B's top-8, so `I` cannot contain every expected chunk. It holds on the
+> other seven. The cardinality reading is not defensible — it does not care
+> *which* chunks agree — so the identity reading is the ruling.
+>
+> The independent margin, `|I| − |expected|`: r01 3, r02 6, r03 5, r04 4, r05 4,
+> r06 5, r07 **2**, r08 6, r09 5. **The minimum is 2, on r07** — the probe where
+> Tier B fills slots with `cfr-21-101.65` version variants where Tier A fills
+> with `2024-29957` preamble. Two slots from firing on a real probe, which is
+> what makes this weak-but-reachable rather than theater. SPEC/02 requires the
+> margin be recorded per probe so distance-to-firing stays observable.
 
 **Why not a narrower similarity gate? Measured, not asserted.** SPEC/02 put the
 aggregation in scope, so the window and the statistic were swept on the same two
 scorecards. At a 0.60 floor, the set of probes that fails changes almost
 completely with the window:
 
-| aggregation | probes that fail | count |
+**Restricted to the five unfiltered probes**, so the carve-out is applied
+consistently across rows rather than only to the first:
+
+| aggregation | unfiltered probes that fail | all nine, carve-out not applied |
 |---|---|---|
-| full top-8 (as specified) | r01 .33, r03 .45, r04 .45, r05 .45 | 4 |
-| top-3 prefix | r01 .50, r02 .50, r04 .20, r06 .50, r07 .50, r09 .20 | 6 |
-| top-4 prefix | r04 .33, r06 .33, r09 .33 | 3 |
-| top-5 prefix | r01 .43, r04 .25, r05 .43, r06 .43, r07 .43, r09 .25 | 6 |
+| full top-8 (as specified) | r01 .33, r03 .45, r04 .45, r05 .45 | + r07 .23 |
+| top-3 prefix | r01 .50, r04 .20, r06 .50 | + r02 .50, r07 .50, r09 .20 |
+| top-4 prefix | r04 .33, r06 .33 | + r09 .33 |
+| top-5 prefix | r01 .43, r04 .25, r05 .43, r06 .43 | + r07 .43, r09 .25 |
 
 r03 scores **1.00 at top-3 and 0.45 at top-8**. r06 **passes at top-8 and fails
-at top-4 and top-5**. The head diverges *more* than the full set on r04 and r09.
-So the gate's verdict is an artifact of the window rather than a property of the
-tiers, and this is evidence about *this statistic on this probe set* — not
-borrowed from the cap sweep. Two specific alternatives were also rejected on the
-anti-fitting test: a floor at c=5 (Jaccard 0.4545) passes r03/r04/r05 exactly and
-fails only r01, and switching the aggregation from minimum to mean yields 0.698
-and a pass. Both reproduce the observation too precisely to be anything but
-fitted, and the mean additionally discards the property SPEC/02 chose the minimum
-for.
+at top-4 and top-5**. The head diverges *more* than the full set on r04. Both
+examples are unfiltered, so the instability survives the restriction — but an
+earlier draft compared a carve-out-applied top-8 row against three rows without
+it and reported counts of 4/6/3/6, which overstated the effect. The honest claim
+is that the failing set is *unstable* across windows, not that it "changes almost
+completely."
+
+**And top-8 is the one window with an independent justification** — `k` is the
+served page, the set the answer layer actually sees. So the instability is a
+reason to distrust *any* similarity floor over these nine probes; it is not proof
+that the specified window was arbitrary, and calling it arbitrary would be unfair
+to a window that was pre-registered with a reason. The genuinely strong leg is
+(i), which needs no measurement at all. This sweep is nonetheless evidence about
+*this statistic on this probe set* rather than borrowed from the cap sweep, which
+is what the first version of this ruling got wrong.
+
+Two specific alternatives were also rejected on the anti-fitting test: a floor at
+c=5 (Jaccard 0.4545) passes r03/r04/r05 exactly and fails only r01, and switching
+the aggregation from minimum to mean yields 0.698 and a pass. Both reproduce the
+observation too precisely to be anything but fitted, and the mean additionally
+discards the property SPEC/02 chose the minimum for.
 
 **The counter-argument, and why it loses.** The strongest case against: replacing
-a similarity floor with an anti-collapse floor that **currently passes on all nine
-probes** (minimum shared slots = 3, on r07) is a gate that gates nothing, and
-ADR-0005's own closing warns that "asserting a control and never exercising it is
-the exact failure mode this product exists to catch in regulatory text." Swapping
-a gate that fires for one that does not, by the seat that failed the first one, is
-relaxation with extra steps.
+a similarity floor that fires with an anti-collapse floor whose failing condition
+may be unreachable is relaxation with extra steps, done by the seat that failed
+the first gate. ADR-0005's closing warns that "asserting a control and never
+exercising it is the exact failure mode this product exists to catch in regulatory
+text."
 
-It loses, but only partly, and the remainder is conceded. The anti-collapse floor
-*is* exercised — it runs on every parity invocation and evaluates a real
-condition; it is not an unreachable requirement of the kind ADR-0005 found in the
-CODEOWNERS ruleset. And the similarity floor it replaces cannot be defended at
-this probe-set size, per the sweep above. But the honest accounting is that
-**cross-tier protection is weaker after this ruling than before it**, and the
-sound fix is a probe set large enough to calibrate a similarity threshold, which
-is out of M02's scope. What is not defensible is keeping a floor whose verdict
-flips with an arbitrary window choice.
+An earlier draft answered this by saying the floor "runs on every parity
+invocation and evaluates a real condition" — which **swaps the axis and is no
+defence at all.** ADR-0005's failure was a gate whose *passing* condition was
+unreachable; the objection here is a gate whose *failing* condition may be. "It
+evaluates a condition every run" is true of any tautology.
+
+The real answer is the margin, and it is in the data: (a)'s independent content is
+one bit — at least one shared chunk beyond `expected_chunk_ids` — and the
+**minimum observed margin is 2, on r07**, already the probe where the two tiers
+fill their tails from different documents. Two slots from firing on a real probe
+is weak-but-reachable, not theater, and SPEC/02 now requires the margin be
+recorded per probe so a future reader watches a number instead of trusting this
+paragraph. What remains conceded is that **cross-tier protection is weaker after
+this ruling than before it**; the sound fix is a probe set large enough to
+calibrate a similarity threshold, which is out of M02's scope.
 
 **What this ruling does not claim.** It does **not** claim the failing gate was
 pure noise. Of the four probes that fired, **two (r01, r03) tracked the genuine
@@ -505,18 +564,26 @@ lead seat's to do, and this ruling only scopes what that seat would face.
 
 ## Consequences
 
-**Four SPEC/02 changes are owed, all in "Done when" or "Optional".** Criterion 3's
-0.60 similarity floor is replaced by the anti-collapse floor of Ruling 2(iii);
-the drift number stays as reported instrumentation; the in-filter carve-out is
-**kept** and its definition changed to derive from the filter predicate rather
-than from the probe's assertions; and the `RERANK` adoption bar Ruling 3 depends
-on is added to "Optional" as an executable condition. Criterion 1 is untouched —
-the ruling that mattered most left the spec text alone. Criterion 2 stays gating.
+**Five SPEC/02 changes land with this ADR, all in "Done when", "Optional" or
+"Scorecard namespace".** Criterion 3's 0.60 similarity floor is replaced by the
+anti-collapse floor of Ruling 2(iii), stated as the two-clause identity condition
+with the margin recorded per probe; the drift number stays as reported
+instrumentation over the full top-8 on **every** probe; the in-filter carve-out is
+**removed**, per Ruling 2(ii); the `RERANK` adoption bar is added to "Optional" as
+four executable conditions plus a reachability argument; and the scorecard
+namespace gains the `-rerank{0,1}` suffix without which four cards cannot exist at
+one sha. Criterion 1's text is unchanged — the ruling that mattered most left it
+alone — and gains only a note recording the per-tier reading and pointing at the
+RERANK bar as a licensed route to satisfying it. Criterion 2 stays gating.
 
 **Two implementation changes follow the spec diff, and do not accompany it**
-(ROLES.md flow 3): `run_parity.py:117`'s in-filter approximation is replaced, and
-its exit condition moves from the similarity floor to the anti-collapse floor.
-Neither is authorised by this ADR.
+(ROLES.md flow 3): `run_parity.py:117`'s in-filter approximation is deleted with
+the carve-out, and the exit condition moves from the similarity floor to the
+anti-collapse floor, which also has to emit the per-probe margin. Neither is
+authorised by this ADR.
+
+**One change is owed to SPEC/04 and is not in this diff:** answer-level
+cross-tier comparability, per the second bullet under the losses below.
 
 **M02 does not close on this document.** Criterion 1 still fails on Tier B, and
 Ruling 1 declined to move it. Three closure paths exist and they are **not
@@ -549,12 +616,20 @@ ruled.
   all nine probes (minimum shared slots = 3). Restoring real similarity gating
   requires a probe set large enough to calibrate a threshold, which is out of
   M02's scope.
-− **Ruling 2 removes the only mechanical backing for two claims made elsewhere.**
-  ADR-0001's Consequences promise "two retrieval code paths to keep at eval parity
-  (enforced by CI matrix)", and its Decision calls the "live tier-switch … itself a
-  demo moment". After this, nothing asserts that switching tiers mid-demo yields
-  comparable output. SPEC/02:6 already promises re-verification at M04; SPEC/04's
-  "Done when" is where that claim needs a home, and it does not have one yet.
+− **Ruling 2 touches two ADR-0001 claims, and only one of them is unhomed.** An
+  earlier draft said both were, which was wrong.
+  - *"Two retrieval code paths to keep at eval parity"* (ADR-0001 Consequences) —
+    **homed.** SPEC/04's "Done when" already requires
+    `run_evals.py --subset retrieval` to pass against the deployed API "on BOTH
+    tiers (search stack down, then up)", and names this exact gap: "after M02,
+    cross-tier evidence is chunk-level only".
+  - *"Live tier-switch is itself a demo moment"* (ADR-0001 Decision) — **not
+    homed, and weaker than it sounds.** Passing the same assertions on both tiers
+    is not the same as producing *comparable answers*, which is what the demo beat
+    sells. Nothing in SPEC/02 or SPEC/04 asserts answer-level comparability. This
+    is a change to what a demo scenario means, it is **owed to SPEC/04's "Done
+    when"**, and it belongs to the PM seat since SPEC/** is PM-owned. Listed here
+    rather than left for the demo to discover.
 − These rulings were drafted by the seat they judge (see "How these rulings were
   produced"). `pm-spec-reviewer` is the only independent check applied — and its
   first pass returned REQUEST CHANGES with four blockers, including a factually
