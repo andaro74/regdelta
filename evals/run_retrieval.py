@@ -292,6 +292,7 @@ def run(tier_requested: str, record: bool, allow_dirty: bool = False) -> int:
     results = []
     resolved_tiers = set()
     fallbacks = []
+    rerank_notes = {}
     t0 = time.monotonic()
     for probe in probes:
         filters = Filters.from_dict(probe.get("filters"))
@@ -299,6 +300,12 @@ def run(tier_requested: str, record: bool, allow_dirty: bool = False) -> int:
         resolved_tiers.add(resolution.tier)
         if resolution.fallback_reason:
             fallbacks.append(f"{probe['probe_id']}: {resolution.fallback_reason}")
+        # SPEC/02's RERANK adoption bar, condition 4: each card records the
+        # candidate set the reranker scored and which side of diversify it came
+        # from. Per probe, not once per run — a reranker that silently fell open
+        # on three probes and worked on six is not a measured reranker, and the
+        # aggregate would hide it.
+        rerank_notes[probe["probe_id"]] = resolution.rerank
         r = score_probe(probe, [c.chunk_id for c in chunks])
         results.append(r)
         if r["pass"]:
@@ -342,7 +349,12 @@ def run(tier_requested: str, record: bool, allow_dirty: bool = False) -> int:
     elif record:
         HISTORY.mkdir(exist_ok=True)
         sha = git_sha()
-        out = HISTORY / f"{sha}-retrieval-{tier_requested}.json"
+        # SPEC/02 "Scorecard namespace": the -rerank{0,1} suffix exists because
+        # the adoption bar needs FOUR cards at one sha (two tiers x two flag
+        # values) and the base <sha>-retrieval-<tier> namespace can only express
+        # two — the second pair would silently overwrite the first.
+        suffix = f"-rerank{int(config.RERANK)}" if config.RERANK else ""
+        out = HISTORY / f"{sha}-retrieval-{tier_requested}{suffix}.json"
         out.write_text(json.dumps({
             "sha": sha,
             "dirty": dirty,
@@ -352,6 +364,11 @@ def run(tier_requested: str, record: bool, allow_dirty: bool = False) -> int:
             "tier_requested": tier_requested,
             "tier_resolved": sorted(resolved_tiers),
             "fallbacks": fallbacks,
+            # Condition 4 of the adoption bar. `rerank_enabled` is the flag as
+            # the run saw it; `rerank` is what actually happened per probe, so a
+            # card cannot claim a reranked run that fell open.
+            "rerank_enabled": config.RERANK,
+            "rerank": rerank_notes,
             "corpus_snapshot": truth.get("corpus_snapshot"),
             # Recall is not answer quality. The M00b control measures answer
             # quality, so a recall number is not a delta against it and must
