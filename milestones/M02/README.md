@@ -22,7 +22,7 @@
 | 2. Resolved-tier assertion | ✅ **both halves met.** Two cards at `e596166`, resolved tiers distinct (`s3vectors` / `aoss`), assertion held on both runs |
 | 3. ~~Cross-tier Jaccard ≥ 0.60~~ → **anti-collapse floor** (ADR-0009 Ruling 2) | ❌ **fails on r01 and r03**, for the same reason criterion 1 does — `2025-03118#0003` is absent from Tier B's top-8, so the shared set cannot contain every expected chunk. Holds on the other seven; minimum independent margin 2 (r07). Reported Jaccard: minimum 0.33 over the full top-8, which no longer gates. The old floor failed on r01/r03/r04/r05 — *not* r06, which passed at 0.60. |
 | 4. MRR reported, not gating | ✅ 0.796 Tier A / 0.648 Tier B, recorded with `mrr_is_gating: false` |
-| B. Hydration count-parity fails the deploy | ⏳ code + 16 unit tests; the required evidence is a REAL failed deploy |
+| B. Hydration count-parity fails the deploy | ✅ **real failed deploy captured** — `cdk deploy -c faultDrop=3` → `UPDATE_FAILED` on 982 vs 985, stack rolled back. Evidence: `faultdrop-deploy.md` + `faultdrop-deploy-events.json` |
 | C. `/evals/` in CODEOWNERS | ✅ landed with ADR-0005 |
 | Probe set floor (≥8 probes, ≥2 distractors) | ✅ 9 probes, 2 distractor probes, 4 filtered |
 
