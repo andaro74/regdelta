@@ -18,16 +18,33 @@
 |-----------|--------|
 | 5. Date attribution, all 3 stores (gating preflight) | ✅ green against the live corpus |
 | 1. Recall@8 = 1.0, **S3 Vectors** | ✅ **9/9 probes, recall 1.0** (`e596166-retrieval-s3vectors.json`) |
-| 1. Recall@8 = 1.0, **AOSS** | ❌ **7/9, recall 0.833** hybrid (`e596166-retrieval-aoss.json`, reproduced at `9e47ce7`). Both misses are one chunk. RERANK took it to 8/9 and broke Tier A — bar not cleared. ADR-0009 Ruling 3 resolved as **(a)**, lexical lane off; ⏳ **awaiting the confirming measurement**, which is what decides this row. |
+| 1. Recall@8 = 1.0, **AOSS** | ✅ **9/9, recall 1.0** with the lexical lane off (`b16f596-retrieval-aoss.json`). Hybrid measured 7/9 at the same sha (`-lex1`), both misses one chunk; RERANK reached 8/9 and broke Tier A, bar not cleared. ADR-0009 Ruling 3(a) and its confirming measurement — see "Ruling 3 resolved as (a)". |
 | 2. Resolved-tier assertion | ✅ **both halves met.** Two cards at `e596166`, resolved tiers distinct (`s3vectors` / `aoss`), assertion held on both runs |
-| 3. ~~Cross-tier Jaccard ≥ 0.60~~ → **anti-collapse floor** (ADR-0009 Ruling 2) | ❌ **fails on r01 and r03**, for the same reason criterion 1 does — `2025-03118#0003` is absent from Tier B's top-8, so the shared set cannot contain every expected chunk. Holds on the other seven; minimum independent margin 2 (r07). Reported Jaccard: minimum 0.33 over the full top-8, which no longer gates. The old floor failed on r01/r03/r04/r05 — *not* r06, which passed at 0.60. |
-| 4. MRR reported, not gating | ✅ 0.796 Tier A / 0.648 Tier B, recorded with `mrr_is_gating: false` |
+| 3. ~~Cross-tier Jaccard ≥ 0.60~~ → **anti-collapse floor** (ADR-0009 Ruling 2) | ✅ **holds on all nine at `b16f596`**, minimum margin **6**. ⚠️ **and it is now close to vacuous** — see the caveat below. Previously (hybrid): failed r01/r03 for the same reason criterion 1 did, minimum margin 2. The old 0.60 floor failed r01/r03/r04/r05 — *not* r06, which passed at exactly 0.60. |
+| 4. MRR reported, not gating | ✅ **0.796 on both tiers, identical to the last digit**, recorded with `mrr_is_gating: false`. Hybrid was 0.648 on Tier B |
 | B. Hydration count-parity fails the deploy | ✅ **real failed deploy captured** — `cdk deploy -c faultDrop=3` → `UPDATE_FAILED` on 982 vs 985, stack rolled back. Evidence: `faultdrop-deploy.md` + `faultdrop-deploy-events.json` |
 | C. `/evals/` in CODEOWNERS | ✅ landed with ADR-0005 |
 | Probe set floor (≥8 probes, ≥2 distractors) | ✅ 9 probes, 2 distractor probes, 4 filtered |
 
 **Nothing here is a trap score.** Recall@8 and MRR are retrieval metrics.
 SPEC/00b bars any trap score until the q03 tightening closes; it has not.
+
+> ⚠️ **Criterion 3 passing is now weak evidence, and this is a cost of Ruling
+> 3(a) that ADR-0009 did not anticipate.** With the lexical lane off, both tiers
+> run the same algorithm over the same embeddings, so cross-tier agreement is
+> close to tautological: minimum margin went 2 → **6**, eight of nine probes score
+> Jaccard **1.00**, the minimum is 0.78, and Tier A and Tier B report MRR
+> identical to the last digit. The 0.60 floor Ruling 2 removed as unmeetable would
+> now pass with room to spare — which is *not* the floor being vindicated. It is
+> the two tiers no longer being different enough for a cross-tier gate to measure
+> anything. Criterion 3 was written to catch drift between a hybrid tier and a
+> vector tier; (a) removed the drift by removing the difference.
+>
+> ADR-0009's Consequences already recorded that cross-tier protection would be
+> weaker after Ruling 2. It is weaker again, for a second and different reason.
+> **Whether criterion 3 still earns its place is a PM-seat question**, and it is
+> owed alongside the other two SPEC items — a gate that passes 9/9 at margin 6 is
+> testing that one algorithm agrees with itself.
 
 ## What the first live measurement found
 
