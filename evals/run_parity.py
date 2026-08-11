@@ -8,6 +8,7 @@ tiers do not disagree about what they return.
 Usage:
   python evals/run_parity.py                    # newest pair for HEAD's sha
   python evals/run_parity.py --sha abc1234
+  python evals/run_parity.py --rerank 1         # the RERANK=1 pair at that sha
 
 Exit 0 = parity holds. Non-zero = drift, a missing run, or two runs of the
 same tier — which is what "both tiers pass" quietly degrades into when the
@@ -50,14 +51,30 @@ TIERS = ("s3vectors", "aoss")
 MIN_MARGIN_BEYOND_EXPECTED = 1
 
 
-def load(sha: str) -> dict:
+def card_path(sha: str, tier: str, rerank: int) -> Path:
+    """Where run_retrieval.py --record wrote that card.
+
+    The RERANK=0 card carries NO suffix, matching run_retrieval.py: RERANK=0 is
+    the default, so the base name is the un-reranked card and every scorecard
+    recorded before the flag existed stays readable. Base + `-rerank1` is four
+    cards at one sha, which is what SPEC/02 condition 4 requires — the point of
+    the suffix is that the second pair must not overwrite the first, and one
+    suffix achieves that. SPEC/02 writes the pair as `-rerank{0,1}`; the
+    RERANK=0 half of that literal is not what the harness emits.
+    """
+    suffix = "-rerank1" if rerank else ""
+    return HISTORY / f"{sha}-retrieval-{tier}{suffix}.json"
+
+
+def load(sha: str, rerank: int = 0) -> dict:
     out = {}
     for tier in TIERS:
-        path = HISTORY / f"{sha}-retrieval-{tier}.json"
+        path = card_path(sha, tier, rerank)
         if not path.exists():
+            env = "RERANK=1 " if rerank else ""
             sys.exit(f"missing scorecard {path.name} — run "
-                     f"`python evals/run_retrieval.py --tier {tier} --record` "
-                     "on this commit first")
+                     f"`{env}python evals/run_retrieval.py --tier {tier} "
+                     "--record` on this commit first")
         out[tier] = json.loads(path.read_text(encoding="utf-8"))
     return out
 
@@ -72,10 +89,13 @@ def jaccard(a: list[str], b: list[str]) -> float:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--sha", default=None, help="defaults to HEAD's short sha")
+    ap.add_argument("--rerank", type=int, default=0, choices=[0, 1],
+                    help="which pair to gate: the RERANK=0 cards or the "
+                         "RERANK=1 cards (SPEC/02 adoption bar, condition 3)")
     args = ap.parse_args()
     sha = args.sha or git_sha()
 
-    cards = load(sha)
+    cards = load(sha, args.rerank)
     truth_doc = json.loads(TRUTH.read_text(encoding="utf-8"))
     truth = {p["probe_id"]: p for p in truth_doc["probes"]}
     truth_snapshot = truth_doc.get("corpus_snapshot")
@@ -145,6 +165,37 @@ def main() -> int:
                 f"{brief(snap)!r}, but retrieval_truth.json now declares "
                 f"{brief(truth_snapshot)!r} — chunk ids are only comparable "
                 "within one snapshot, so re-record rather than reconcile")
+        # The filename is the only thing that separates the two pairs, and a
+        # filename is not evidence — a card copied or renamed by hand would be
+        # gated under the wrong flag with nothing to notice it. `rerank_enabled`
+        # is what the run itself saw.
+        if bool(card.get("rerank_enabled")) != bool(args.rerank):
+            failures.append(
+                f"the {tier} card at {card_path(sha, tier, args.rerank).name} "
+                f"records rerank_enabled={card.get('rerank_enabled')}, but this "
+                f"gate was asked for the RERANK={args.rerank} pair — the "
+                "filename and the run disagree about what was measured")
+        elif args.rerank:
+            # SPEC/02 adoption-bar condition 4: a card cannot claim a reranked
+            # run that fell open. Per probe, because a reranker that failed on
+            # three probes and worked on six is not a measured reranker, and the
+            # candidate set must have been taken BEFORE diversification — after
+            # it, the cap has already evicted the chunk reranking exists to
+            # recover, so a null result measures the ordering instead.
+            notes = card.get("rerank") or {}
+            bad = sorted(pid for pid, n in notes.items()
+                         if not (str(n).startswith("reranked")
+                                 and str(n).endswith("before diversify")))
+            if bad:
+                failures.append(
+                    f"the {tier} RERANK=1 card did not actually rerank every "
+                    f"probe before diversification: {bad} → "
+                    f"{[notes[p] for p in bad]}. Condition 4 is not satisfied, "
+                    "so this pair is not a reranked measurement")
+            if not notes:
+                failures.append(
+                    f"the {tier} RERANK=1 card records no per-probe rerank "
+                    "notes at all, so it cannot show the reranker ran")
         if card.get("passed") != card.get("total"):
             # Criterion 1 is per-run and already failed inside that run, but a
             # pair gate that prints ✅ over `7/9` invites the summary to be read
@@ -193,7 +244,7 @@ def main() -> int:
         note = "" if not probe.get("filters") else "filtered"
         rows.append((pid, j, margin, absent, note))
 
-    print(f"sha {sha} · {TIERS[0]} vs {TIERS[1]}\n"
+    print(f"sha {sha} · {TIERS[0]} vs {TIERS[1]} · RERANK={args.rerank}\n"
           "gate: anti-collapse floor (criterion 3a) · Jaccard: reported only "
           "(criterion 3b)\n")
     print("      probe  margin  jaccard")

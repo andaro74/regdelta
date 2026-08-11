@@ -6,6 +6,11 @@ STACK_CORE   := regdelta-core
 STACK_SEARCH := regdelta-search
 REGION       ?= us-west-2
 SSM_ENDPOINT := /regdelta/search/endpoint
+# SPEC/02 "Optional". Passed explicitly into the recipe rather than left to the
+# environment: `RERANK=1 make ...` only works in a POSIX shell, and this repo is
+# driven from PowerShell as often as from Git Bash. `make retrieval-evals
+# RERANK=1` behaves identically in both. `?=` still honours an exported RERANK.
+RERANK       ?= 0
 CDK          := cd infra && npx cdk
 
 .PHONY: help bootstrap core up down status smoke evals lint test demo ingest-backfill synth diff \
@@ -18,6 +23,7 @@ help:
 	@echo "make smoke / evals   - golden-set checks (definition of done)"
 	@echo "make retrieval-evals - probe set vs the CURRENT tier (SPEC/02 A)"
 	@echo "make retrieval-parity- cross-tier gate; needs both runs recorded"
+	@echo "                       (ARGS=\"--rerank 1\" gates the RERANK=1 pair)"
 	@echo "make preflight       - date-attribution check alone (cheap)"
 	@echo "make rebuild-vectors - rebuild S3 Vectors from the corpus (no re-embed)"
 	@echo "make lint            - ruff (same scope as the eval gate)"
@@ -90,14 +96,19 @@ retrieval-evals:
 	  if echo "$$out" | grep -q '^https://'; then tier=aoss; \
 	  elif echo "$$out" | grep -q 'ParameterNotFound'; then tier=s3vectors; \
 	  else echo "cannot determine the search tier: $$out" >&2; exit 1; fi; \
-	  echo "→ hot tier $$tier"; \
-	  python evals/run_retrieval.py --tier $$tier --record
+	  echo "→ hot tier $$tier (RERANK=$(RERANK))"; \
+	  RERANK=$(RERANK) python evals/run_retrieval.py --tier $$tier --record
 
 # Criteria 2 and 3 are cross-run: neither invocation above can see the
 # other's output. Run retrieval-evals once with the hot tier DOWN and once
 # with it UP, on the same commit, then this.
+#
+# ARGS, not a bare flag: SPEC/02 writes this as `make retrieval-parity --rerank
+# 1`, which make parses as its OWN option and rejects. Use
+# `make retrieval-parity ARGS="--rerank 1"` — same passthrough as
+# rebuild-vectors.
 retrieval-parity:
-	python evals/run_parity.py
+	python evals/run_parity.py $(ARGS)
 
 preflight:
 	python evals/run_retrieval.py --tier s3vectors --preflight-only

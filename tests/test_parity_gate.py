@@ -30,12 +30,17 @@ sys.path.insert(0, str(ROOT / "evals"))
 import run_parity  # noqa: E402
 
 
-def card(tier: str, probes: dict[str, list[str]], sha: str = "testsha") -> dict:
+def card(tier: str, probes: dict[str, list[str]], sha: str = "testsha",
+         rerank: int = 0, note: str | None = None) -> dict:
+    if note is None:
+        note = "reranked 20/20 before diversify" if rerank else "off"
     return {
         "sha": sha, "dirty": False, "kind": "retrieval", "k": 8,
         "tier_requested": tier, "tier_resolved": [tier], "fallbacks": [],
         "corpus_snapshot": "fixture", "comparable_to_baseline": False,
         "recall_at_k": 1.0, "mrr": 1.0, "mrr_is_gating": False,
+        "rerank_enabled": bool(rerank),
+        "rerank": {pid: note for pid in probes},
         "passed": len(probes), "total": len(probes), "wall_s": 0.1,
         "probes": [{"probe_id": pid, "pass": True, "missing": [], "leaked": [],
                     "recall": 1.0, "rr": 1.0, "returned": returned}
@@ -43,14 +48,18 @@ def card(tier: str, probes: dict[str, list[str]], sha: str = "testsha") -> dict:
     }
 
 
-def run(tmp_path, monkeypatch, truth_probes, a_probes, b_probes):
+def run(tmp_path, monkeypatch, truth_probes, a_probes, b_probes, rerank=0,
+        note=None):
     """Invoke the real gate over fixture scorecards. Returns (rc, stdout)."""
     hist = tmp_path / "history"
     hist.mkdir()
-    (hist / "testsha-retrieval-s3vectors.json").write_text(
-        json.dumps(card("s3vectors", a_probes)), encoding="utf-8")
-    (hist / "testsha-retrieval-aoss.json").write_text(
-        json.dumps(card("aoss", b_probes)), encoding="utf-8")
+    suffix = "-rerank1" if rerank else ""
+    (hist / f"testsha-retrieval-s3vectors{suffix}.json").write_text(
+        json.dumps(card("s3vectors", a_probes, rerank=rerank, note=note)),
+        encoding="utf-8")
+    (hist / f"testsha-retrieval-aoss{suffix}.json").write_text(
+        json.dumps(card("aoss", b_probes, rerank=rerank, note=note)),
+        encoding="utf-8")
     truth = tmp_path / "retrieval_truth.json"
     # Must match the cards' corpus_snapshot: the gate pins them together, since
     # run_retrieval.py copies the value from truth at record time and a mismatch
@@ -60,7 +69,8 @@ def run(tmp_path, monkeypatch, truth_probes, a_probes, b_probes):
 
     monkeypatch.setattr(run_parity, "HISTORY", hist)
     monkeypatch.setattr(run_parity, "TRUTH", truth)
-    monkeypatch.setattr(sys, "argv", ["run_parity.py", "--sha", "testsha"])
+    monkeypatch.setattr(sys, "argv", ["run_parity.py", "--sha", "testsha",
+                                      "--rerank", str(rerank)])
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         rc = run_parity.main()
@@ -288,6 +298,107 @@ def test_no_jaccard_floor_constant_survives_anywhere_in_the_module():
     for forbidden in ("< 0.6", "<0.6", "< 0.45", "<0.45", "0.4545",
                       "statistics.mean", "sum(js) / len(js)"):
         assert forbidden not in code, f"a similarity floor reappeared: {forbidden}"
+
+
+def test_the_rerank_flag_selects_the_other_pair_at_the_same_sha(tmp_path, monkeypatch):
+    """SPEC/02 adoption-bar condition 4: four cards at one sha.
+
+    Without `--rerank` the gate read `<sha>-retrieval-<tier>.json` only, so the
+    RERANK=1 pair was unreachable and condition 3 — the anti-collapse floor "at
+    RERANK=1" — could not be evaluated at all.
+    """
+    truth = [{"probe_id": "p1", "expected_chunk_ids": ["shared#0000"]}]
+    a = {"p1": ["shared#0000", "also#0000", *[f"a-{i}#0000" for i in range(6)]]}
+    b = {"p1": ["shared#0000", "also#0000", *[f"b-{i}#0000" for i in range(6)]]}
+    rc, out = run(tmp_path, monkeypatch, truth, a, b, rerank=1)
+    assert rc == 0, out
+    assert "RERANK=1" in out
+
+
+def test_a_card_recorded_under_the_other_flag_is_rejected(tmp_path, monkeypatch):
+    """The filename is not evidence; `rerank_enabled` is.
+
+    A card copied or renamed by hand would otherwise be gated as the pair it is
+    not — and the whole adoption bar is a comparison BETWEEN the two pairs, so
+    mixing them silently would corrupt the only measurement that decides it.
+    """
+    truth = [{"probe_id": "p1", "expected_chunk_ids": ["shared#0000"]}]
+    a = {"p1": ["shared#0000", "also#0000", *[f"a-{i}#0000" for i in range(6)]]}
+    b = {"p1": ["shared#0000", "also#0000", *[f"b-{i}#0000" for i in range(6)]]}
+    hist = tmp_path / "history"
+    hist.mkdir()
+    # RERANK=0 content, filed under the RERANK=1 name.
+    for tier, probes in (("s3vectors", a), ("aoss", b)):
+        (hist / f"testsha-retrieval-{tier}-rerank1.json").write_text(
+            json.dumps(card(tier, probes, rerank=0)), encoding="utf-8")
+    t = tmp_path / "retrieval_truth.json"
+    t.write_text(json.dumps({"corpus_snapshot": "fixture", "probes": truth}),
+                 encoding="utf-8")
+    monkeypatch.setattr(run_parity, "HISTORY", hist)
+    monkeypatch.setattr(run_parity, "TRUTH", t)
+    monkeypatch.setattr(sys, "argv", ["run_parity.py", "--sha", "testsha",
+                                      "--rerank", "1"])
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = run_parity.main()
+    out = buf.getvalue()
+    assert rc == 1, out
+    assert "the filename and the run disagree about what was measured" in out
+
+
+@pytest.mark.parametrize("note", [
+    "off",                                        # flag never reached the router
+    "unparseable reply, order unchanged",         # fell open
+    "failed, order unchanged: RuntimeError: AccessDeniedException",
+    "reranked 20/20 after diversify",             # wrong side of the cap
+])
+def test_a_rerank1_pair_that_did_not_actually_rerank_fails_condition_4(
+        tmp_path, monkeypatch, note):
+    """"A card cannot claim a reranked run that fell open" — and the placement
+    half matters just as much.
+
+    `diversify` is what evicted the chunk reranking exists to recover, so a
+    candidate set taken AFTER the per-document cap measures the ordering, not the
+    reranker. A null result from such a run would be read as "reranking does not
+    help", which is the specific misreading SPEC/02 condition 4 exists to block.
+    """
+    truth = [{"probe_id": "p1", "expected_chunk_ids": ["shared#0000"]}]
+    a = {"p1": ["shared#0000", "also#0000", *[f"a-{i}#0000" for i in range(6)]]}
+    b = {"p1": ["shared#0000", "also#0000", *[f"b-{i}#0000" for i in range(6)]]}
+    rc, out = run(tmp_path, monkeypatch, truth, a, b, rerank=1, note=note)
+    assert rc == 1, out
+    assert "not a reranked measurement" in out
+
+
+def test_the_recorded_9e47ce7_rerank_pair_shows_the_bar_was_not_cleared():
+    """The real four-card measurement, and the verdict it produced.
+
+    The reranker did what it was built to do — `2025-03118#0003` is recovered on
+    r01 and r03 on Tier B, so the reachability argument in SPEC/02's bar was
+    right. It also cost `2024-29957#0000` on r01 on BOTH tiers, which is
+    condition 2's regression clause, and leaves recall at 0.944 rather than 1.0,
+    which is condition 1. Reranking therefore stays off.
+
+    Pinned here because "we measured it and it did not clear the bar" is a claim
+    the evidence pack makes; if these cards stop reproducing it, the pack is
+    describing a measurement that no longer exists.
+    """
+    hist = ROOT / "evals" / "history"
+    if not (hist / "9e47ce7-retrieval-aoss-rerank1.json").exists():
+        pytest.skip("9e47ce7 rerank pair not present")
+    p = subprocess.run([sys.executable, str(PARITY), "--sha", "9e47ce7",
+                        "--rerank", "1"], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", cwd=str(ROOT))
+    assert p.returncode == 1
+    out = p.stdout
+    # Condition 1: not 1.0 on either tier.
+    assert "recall@8=0.9444444444444444" in out
+    # Condition 2: r01 lost a chunk it had at RERANK=0, on both tiers.
+    assert "r01: anti-collapse (i)" in out
+    assert "2024-29957#0000" in out
+    # Condition 4 IS satisfied — the reranker really ran, before diversify, on
+    # every probe. Otherwise the failures above would not be about the reranker.
+    assert "not a reranked measurement" not in out
 
 
 def test_the_recorded_e596166_pair_reproduces_the_adr_0009_verdict():
