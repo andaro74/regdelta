@@ -27,11 +27,27 @@ from run_evals import git_sha  # noqa: E402  (path set above)
 HISTORY = HERE / "history"
 TRUTH = HERE / "retrieval_truth.json"
 
-# Written here, BEFORE first measurement, and not renegotiable against what
-# is observed. Changing it is a spec edit requiring PM approval (SPEC/02
-# criterion 3). A floor chosen after seeing the number is not a floor.
-JACCARD_FLOOR = 0.60
+# There is deliberately NO Jaccard floor. SPEC/02 criterion 3 carried one at
+# 0.60 until ADR-0009 Ruling 2 replaced it: over two 8-element sets,
+# Jaccard = c/(16-c), so 0.60 demanded agreement on six of eight slots while
+# the same criterion conceded that "BM25 hybrid and vector+GSI fusion
+# legitimately differ in the tail". Measured, the failing set was also unstable
+# across windows — r03 scores 1.00 at top-3 and 0.45 at top-8; r06 passes at
+# top-8 and fails at top-4. Jaccard is now REPORTED (criterion 3b) and the gate
+# is the anti-collapse floor below (criterion 3a).
+#
+# Do not reintroduce a floor here without a spec edit. A floor whose value came
+# from looking at these scorecards is fitted, which is why ADR-0009 rejected
+# c=5 (it passes r03/r04/r05 exactly and fails only r01) and minimum-vs-mean.
 TIERS = ("s3vectors", "aoss")
+
+# SPEC/02 criterion 3(a). Clause (i) — the shared set contains every expected
+# chunk — is entailed by criterion 1 holding on both tiers, so the independent
+# content is clause (ii): at least this many shared chunks BEYOND the ones the
+# probe itself asserts. One is the minimum that means anything; it is not
+# derived from any observed value. Minimum observed margin at e596166 is 2, on
+# r07, so the gate sits two slots from firing on a real probe.
+MIN_MARGIN_BEYOND_EXPECTED = 1
 
 
 def load(sha: str) -> dict:
@@ -91,49 +107,58 @@ def main() -> int:
     if missing := sorted(set(by_probe[TIERS[0]]) ^ set(by_probe[TIERS[1]])):
         failures.append(f"probes present in only one run: {missing}")
 
+    # There is no filtered-probe carve-out. It existed to stop a filtered probe
+    # failing M02 on tail divergence while Jaccard gated; nothing gates on
+    # Jaccard now, and 3(a) is an identity condition a divergent tail cannot
+    # break. Its implementation was also a tautology — approximating the
+    # in-filter set as `expected | must_not_return` gives a SINGLE id whenever
+    # must_not_return is empty, so Jaccard was 1/1 by construction on r07/r08/
+    # r09 and measured nothing. Redefining it from the filter predicate is a
+    # no-op: router._finish already applies Filters.matches to every candidate
+    # before returning. Any future in-filter definition needs a discriminator
+    # narrower than the predicate the router has already applied.
     rows = []
     for pid in ids:
         probe = truth.get(pid, {})
         a = by_probe[TIERS[0]][pid]["returned"]
         b = by_probe[TIERS[1]][pid]["returned"]
-        expected = probe.get("expected_chunk_ids") or []
-        filtered = bool(probe.get("filters"))
+        expected = set(probe.get("expected_chunk_ids") or [])
 
-        if not expected:
-            # Pure-negative probes contribute no Jaccard term, mirroring their
-            # carve-out from recall in criterion 1. Their must_not_return
-            # violations already failed the per-tier run.
-            rows.append((pid, None, "pure-negative: no Jaccard term"))
-            continue
-        if filtered:
-            # SPEC/02: for a filtered probe, Jaccard is computed over the
-            # in-filter result set only. A filter returns few in-filter hits
-            # and a long arbitrary tail, and the two engines' tails
-            # legitimately differ — one filter probe could otherwise drag the
-            # per-probe minimum under the floor for a reason unrelated to
-            # correctness. In-filter is approximated by the union of the
-            # probe's expected and forbidden ids, the only ids whose
-            # membership the probe actually asserts.
-            scope = set(expected) | set(probe.get("must_not_return") or [])
-            a = [c for c in a if c in scope]
-            b = [c for c in b if c in scope]
-            note = "filtered: in-filter set only"
-        else:
-            note = ""
+        shared = set(a) & set(b)
+        margin = len(shared - expected)
+        # (i) is entailed by criterion 1 on both tiers, so when it fails here it
+        # is the SAME failure, reported on the same chunk — not a second defect.
+        absent = sorted(expected - shared)
+        if absent:
+            failures.append(
+                f"{pid}: anti-collapse (i) — not shared by both tiers: "
+                f"{absent}. This is criterion 1's failure on one of the tiers, "
+                "not independent evidence of drift")
+        elif margin < MIN_MARGIN_BEYOND_EXPECTED:
+            failures.append(
+                f"{pid}: anti-collapse (ii) — the tiers share {len(shared)} "
+                f"chunk(s), none beyond the {len(expected)} the probe asserts, "
+                "so their pages have collapsed to the assertion alone")
+
         j = jaccard(a, b)
-        rows.append((pid, j, note))
-        if j < JACCARD_FLOOR:
-            failures.append(f"{pid}: Jaccard {j:.2f} < floor {JACCARD_FLOOR}")
+        note = "" if not probe.get("filters") else "filtered"
+        rows.append((pid, j, margin, absent, note))
 
-    scored = [j for _, j, _ in rows if j is not None]
-    print(f"sha {sha} · {TIERS[0]} vs {TIERS[1]} · floor {JACCARD_FLOOR} "
-          f"(minimum across probes, not mean)\n")
-    for pid, j, note in rows:
-        mark = "  " if j is None else ("✅" if j >= JACCARD_FLOOR else "❌")
-        shown = "  n/a" if j is None else f"{j:5.2f}"
-        print(f"{mark} {pid}  {shown}  {note}")
-    if scored:
-        print(f"\nminimum Jaccard {min(scored):.2f} over {len(scored)} probes")
+    print(f"sha {sha} · {TIERS[0]} vs {TIERS[1]}\n"
+          "gate: anti-collapse floor (criterion 3a) · Jaccard: reported only "
+          "(criterion 3b)\n")
+    print("      probe  margin  jaccard")
+    for pid, j, margin, absent, note in rows:
+        mark = "❌" if absent or margin < MIN_MARGIN_BEYOND_EXPECTED else "✅"
+        why = "  missing " + ",".join(absent) if absent else f"  {note}"
+        print(f"  {mark}  {pid}    {margin:>4}   {j:5.2f}{why}")
+    margins = [m for _, _, m, _, _ in rows]
+    js = [j for _, j, _, _, _ in rows]
+    if margins:
+        print(f"\nminimum margin {min(margins)} "
+              f"(floor {MIN_MARGIN_BEYOND_EXPECTED}) over {len(margins)} probes")
+        print(f"minimum Jaccard {min(js):.2f} — reported, NOT gating "
+              "(ADR-0009 Ruling 2)")
 
     for tier, card in cards.items():
         print(f"{tier}: {card['passed']}/{card['total']} probes, "

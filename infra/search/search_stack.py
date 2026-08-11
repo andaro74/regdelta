@@ -81,16 +81,34 @@ class RegDeltaSearchStack(cdk.Stack):
         # names or cross-tier Jaccard measures the disagreement instead of the
         # retrieval; one importable module makes that unrepresentable.
         # SPEC/02's Files list is amended in the same PR.
+        # SPEC/02 Done-when (B) needs a REAL failed deploy, and reindex.py's
+        # FAULT_DROP hook reads REINDEX_FAULT_DROP from the Lambda environment —
+        # which nothing was passing, so the hook was unit-tested and unreachable
+        # in production. Same context idiom as devPrincipalArn below, and
+        # deliberately absent from the environment unless asked for:
+        # `cdk deploy regdelta-search -c faultDrop=3`.
+        #
+        # One-directional by construction. The hook can only DROP records before
+        # indexing, after which reindex.py's own count assertion fails — there is
+        # no switch anywhere that relaxes that assertion (tests/
+        # test_reindex_parity.py asserts the property by reading the source). So
+        # this can only ever cause a failing deploy, never convert a partial
+        # index into a reported success.
+        reindex_env = {
+            "CORPUS_BUCKET": corpus_bucket.bucket_name,
+            "COLLECTION_ENDPOINT": collection.attr_collection_endpoint,
+        }
+        fault_drop = self.node.try_get_context("faultDrop")
+        if fault_drop:
+            reindex_env["REINDEX_FAULT_DROP"] = str(int(fault_drop))
+
         reindex = _lambda.Function(
             self, "ReindexFn",
             runtime=_lambda.Runtime.PYTHON_3_14,
             handler="retrieval.reindex.handler",
             code=_lambda.Code.from_asset(SRC),
             timeout=Duration.minutes(15), memory_size=1024,
-            environment={
-                "CORPUS_BUCKET": corpus_bucket.bucket_name,
-                "COLLECTION_ENDPOINT": collection.attr_collection_endpoint,
-            })
+            environment=reindex_env)
         corpus_bucket.grant_read(reindex)
         reindex.add_to_role_policy(iam.PolicyStatement(
             actions=["aoss:APIAccessAll"], resources=[collection.attr_arn]))
