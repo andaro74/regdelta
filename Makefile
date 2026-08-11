@@ -11,6 +11,10 @@ SSM_ENDPOINT := /regdelta/search/endpoint
 # driven from PowerShell as often as from Git Bash. `make retrieval-evals
 # RERANK=1` behaves identically in both. `?=` still honours an exported RERANK.
 RERANK       ?= 0
+# ADR-0009 Ruling 3(a): off is the default and the ruling. Passed through for the
+# confirming measurement, which compares lane-off against lane-on at one sha —
+# `make retrieval-evals LEXICAL_LANE=1`.
+LEXICAL_LANE ?= 0
 CDK          := cd infra && npx cdk
 
 .PHONY: help bootstrap core up down status smoke evals lint test demo ingest-backfill synth diff \
@@ -96,8 +100,9 @@ retrieval-evals:
 	  if echo "$$out" | grep -q '^https://'; then tier=aoss; \
 	  elif echo "$$out" | grep -q 'ParameterNotFound'; then tier=s3vectors; \
 	  else echo "cannot determine the search tier: $$out" >&2; exit 1; fi; \
-	  echo "→ hot tier $$tier (RERANK=$(RERANK))"; \
-	  RERANK=$(RERANK) python evals/run_retrieval.py --tier $$tier --record
+	  echo "→ hot tier $$tier (RERANK=$(RERANK) LEXICAL_LANE=$(LEXICAL_LANE))"; \
+	  RERANK=$(RERANK) RETRIEVAL_LEXICAL_LANE=$(LEXICAL_LANE) \
+	    python evals/run_retrieval.py --tier $$tier --record
 
 # Criteria 2 and 3 are cross-run: neither invocation above can see the
 # other's output. Run retrieval-evals once with the hot tier DOWN and once
