@@ -18,7 +18,7 @@
 |-----------|--------|
 | 5. Date attribution, all 3 stores (gating preflight) | ✅ green against the live corpus |
 | 1. Recall@8 = 1.0, **S3 Vectors** | ✅ **9/9 probes, recall 1.0** (`e596166-retrieval-s3vectors.json`) |
-| 1. Recall@8 = 1.0, **AOSS** | ❌ **7/9, recall 0.833** (`e596166-retrieval-aoss.json`). Both misses are one chunk. See "Tier B does not meet criterion 1". |
+| 1. Recall@8 = 1.0, **AOSS** | ❌ **7/9, recall 0.833** hybrid (`e596166-retrieval-aoss.json`, reproduced at `9e47ce7`). Both misses are one chunk. RERANK took it to 8/9 and broke Tier A — bar not cleared. ADR-0009 Ruling 3 resolved as **(a)**, lexical lane off; ⏳ **awaiting the confirming measurement**, which is what decides this row. |
 | 2. Resolved-tier assertion | ✅ **both halves met.** Two cards at `e596166`, resolved tiers distinct (`s3vectors` / `aoss`), assertion held on both runs |
 | 3. ~~Cross-tier Jaccard ≥ 0.60~~ → **anti-collapse floor** (ADR-0009 Ruling 2) | ❌ **fails on r01 and r03**, for the same reason criterion 1 does — `2025-03118#0003` is absent from Tier B's top-8, so the shared set cannot contain every expected chunk. Holds on the other seven; minimum independent margin 2 (r07). Reported Jaccard: minimum 0.33 over the full top-8, which no longer gates. The old floor failed on r01/r03/r04/r05 — *not* r06, which passed at 0.60. |
 | 4. MRR reported, not gating | ✅ 0.796 Tier A / 0.648 Tier B, recorded with `mrr_is_gating: false` |
@@ -155,6 +155,66 @@ write after seeing the failure:
 
 Recorded unresolved at the time. ADR-0009 carries the rulings; the failing
 scorecard is still the evidence.
+
+### The RERANK bar was measured and not cleared
+
+ADR-0009 Ruling 3 deferred the non-hybrid question to one bounded experiment, and
+SPEC/02's "Optional" section fixed the adoption bar as four executable conditions
+**before the run**, precisely so the result could not be argued about afterwards.
+It ran. Four cards at `9e47ce7`, committed in `ae18a42`:
+
+| | Tier A lane n/a | Tier B hybrid |
+|---|---|---|
+| RERANK=0 | **9/9**, recall 1.000, MRR 0.796 | 7/9, recall 0.833, MRR 0.648 |
+| RERANK=1 | 8/9, recall 0.944, MRR 0.926 | 8/9, recall 0.944, MRR 0.889 |
+
+Conditions **1, 2 and 3 fail**; **4 holds**. Reproduce with
+`make retrieval-parity ARGS="--sha 9e47ce7 --rerank 1"`.
+
+**The reranker did the job it was built for, and that is what makes this a
+measurement rather than a write-off.** `2025-03118#0003` — the chunk both failing
+probes turn on — was recovered on r01 *and* r03, inside the top-20 window SPEC/02
+argued in advance it would be reachable in (fused rank 13 and 12). Tier B went
+7/9 → 8/9 and its MRR moved 0.648 → 0.889.
+
+It paid with `2024-29957#0000` on r01, on **both** tiers. The mechanism is visible
+in the pages: reranking put `#0301`, `#0300` and `#0303` above `#0000` — three
+chunks of one document — saturating `RETRIEVAL_PER_DOC_CAP = 3` with the page
+already full, so nothing back-filled. **Whether a cap of 4 recovers it is not
+derivable from these cards**; the pre-diversification ordering is not recorded.
+Left as a measurement rather than promoted to an inference, which is the mistake
+the stale cap row in this pack already made once.
+
+Net, **Tier A went 9/9 → 8/9**: enabling the flag breaks the tier that passes.
+That is the third "one probe traded for another" in M02, after the
+`minimum_should_match` rejection and the two reverted ranking changes in the table
+above — and condition 1 was written before the numbers arrived in order to refuse
+exactly this. Applying it against the reranker this milestone itself wrote is the
+only thing that made writing it first mean anything.
+
+The flag stays, defaulted off, with its measurement recorded. Deleting the code
+would leave an unfalsifiable claim about an experiment.
+
+### Ruling 3 resolved as (a): Tier B drops the lexical lane
+
+With path 1 closed, ADR-0009 Ruling 3 came back live and resolved as **(a)**,
+reversible on a named condition. `config.RETRIEVAL_LEXICAL_LANE` defaults to
+**off**: Tier B no longer issues a BM25 query, and its relevance lane is the raw
+kNN list — the same shape as Tier A's, because that is the honest content of (a).
+The query is not issued rather than issued-and-down-weighted, since a lane
+weighted to nothing is cost with no effect on the page.
+
+**What Tier B claims now.** Latency and concurrent load, not better relevance.
+That claim is *also* currently unmeasured — nothing in SPEC/02 or SPEC/04 asserts
+it — so retiring the hybrid claim in favour of it without a criterion would be the
+same defect wearing new clothes. Recorded as owed to the PM seat.
+
+**The reversal condition, in one sentence:** author a probe the lexical lane wins
+— an `expected_chunk_ids` member BM25 places in the top-8 and the vector lane does
+not — and the default flips back. Nine probes can witness a counterexample; they
+cannot establish that BM25 never helps, and the ruling claims only the former.
+This is the weakest part of (a) and it is written into `config.py` beside the flag
+rather than left in a document nobody reads at the point of change.
 
 ### Why I stopped instead of closing the gap
 
@@ -295,8 +355,11 @@ disqualifies engineering from arguing the number. Recorded as measured.
 > and not a criterion defect. Criterion 3's 0.60 similarity floor is **replaced**
 > by an anti-collapse floor, after an aggregation sweep showed which probes fail
 > changes almost completely with the window (r03 scores 1.00 at top-3 and 0.45 at
-> top-8; r06 passes at top-8 and fails at top-4). The non-hybrid question is
-> **deferred** pending the `RERANK` measurement SPEC/02 pre-registered.
+> top-8; r06 passes at top-8 and fails at top-4). The non-hybrid question was
+> **deferred** pending the `RERANK` measurement SPEC/02 pre-registered, and is
+> now **resolved as (a): Tier B drops the lexical lane**, off by default and
+> reversible on a named condition. The measurement ran at `9e47ce7` and did not
+> clear the bar — see "The RERANK bar was measured and not cleared" below.
 >
 > Two claims in this section did not survive that ruling. "Criterion 1's
 > 'identically on both tiers'" misreads the criterion — see ADR-0009 Ruling 1.
@@ -426,24 +489,37 @@ botocore already does. `src/retrieval/aoss_client.py` is ~60 lines instead.
 1. ~~**One PM-seat ruling covering criterion 1 and criterion 3.**~~ **Done —
    ADR-0009**, with the SPEC/02 diff it licenses. Criterion 1 stands unamended;
    criterion 3's similarity floor is replaced by an anti-collapse floor; the
-   non-hybrid question is deferred pending the RERANK bar. Two `pm-spec-reviewer`
-   passes were needed — the first caught a falsified finding this pack had
-   asserted, the second caught a replacement gate whose stated wording contradicted
-   the ADR's claim about it. **What closure now needs is one of ADR-0009's three
-   paths, and they are not equivalent:**
+   non-hybrid question was deferred pending the RERANK bar and is now resolved.
+   Two `pm-spec-reviewer` passes were needed — the first caught a falsified
+   finding this pack had asserted, the second caught a replacement gate whose
+   stated wording contradicted the ADR's claim about it. **ADR-0009 named three
+   closure paths, and they were not equivalent:**
 
    1. **The RERANK measurement clearing the adoption bar** (SPEC/02 "Optional",
       four conditions written before the run) — no ground-truth change, and the
-      only path whose instrument was pre-registered. Costs two `make up`/`make
-      down` cycles at one sha.
+      only path whose instrument was pre-registered. **CLOSED: measured at
+      `9e47ce7`, conditions 1, 2 and 3 failed.** Cost one `make up` cycle, not
+      two — Tier A needs no hot tier, so three of the four cards came from one
+      window.
    2. **Dropping BM25** — no ground-truth change, but it costs ADR-0001's hybrid
-      claim and the tier-switch demo beat, and reaches a lead-owned ADR.
+      claim and the tier-switch demo beat, and reaches a lead-owned ADR. **This
+      is the path taken**, conditional on a lane-off Tier B actually measuring
+      9/9: the sweep behind it tested BM25 at weight 0.05, and weighting a lane
+      to almost nothing is not the same code path as not issuing its query.
    3. **The SME seat accepting `2025-03118#0005`** — a post-failure ground-truth
       change, the move CLAUDE.md routes to a stop, carrying the **highest**
       evidentiary burden of the three rather than the lowest. It also reopens
-      ADR-0008 Ruling 1's two-chunk holding, not just r01's expected set.
+      ADR-0008 Ruling 1's two-chunk holding, not just r01's expected set. **Still
+      unexercised; Ruling 3's resolution does not license it.**
 
    No path runs through relaxing criterion 1.
+
+   > **What remains before M02 can be tagged.** One `make up` cycle recording
+   > Tier B lane-off (the new default), Tier B lane-on (reproducing 7/9 at the
+   > same sha), and Tier A (hot tier down, unaffected by the flag — it has no
+   > lexical lane). M02 closes only if lane-off Tier B reads **9/9** and
+   > `make retrieval-parity` passes on the new pair. If it reads below 9/9,
+   > Ruling 3 returns live and (a) has bought nothing.
 2. ~~**Criteria 2 and 3.**~~ **Done — both measured at `e596166`.** The pair was
    recorded across a `make down` (the router picks its tier from the presence of
    `/regdelta/search/endpoint`, with deliberately no override, so the two cards

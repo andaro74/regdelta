@@ -115,6 +115,19 @@ def main() -> int:
     if any(card.get("corpus_snapshot") != cards[TIERS[0]].get("corpus_snapshot")
            for card in cards.values()):
         failures.append("the two runs used different corpus snapshots")
+
+    # A pair is ONE retrieval configuration measured on two tiers. Tier A has no
+    # lexical lane, so the flag cannot change its result — but a pair whose halves
+    # disagree about it was not recorded as one configuration, and ADR-0009
+    # Ruling 3's confirming measurement is precisely a comparison between two
+    # configurations. `.get` rather than indexing: cards predating the flag carry
+    # no field, and None == None keeps those pairs readable.
+    lanes = {tier: card.get("lexical_lane") for tier, card in cards.items()}
+    if len(set(lanes.values())) > 1:
+        failures.append(
+            f"the two cards disagree about the lexical lane: {lanes}. A pair is "
+            "one configuration measured on two tiers, so these are two "
+            "measurements and not a pair")
     for tier, card in cards.items():
         if card.get("dirty"):
             failures.append(

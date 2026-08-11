@@ -58,6 +58,26 @@ SSM_SEARCH_ENDPOINT = "/regdelta/search/endpoint"
 # question — which is the entire reason the lane exists. `summary` is
 # deliberately out: it is context, not an operative provision, and including
 # it triples the lane without adding an answer.
+#
+# RETRIEVAL_LEXICAL_LANE — whether Tier B fuses a BM25 lane into its relevance
+# lane. DEFAULT OFF per ADR-0009 Ruling 3, resolved as (a). Measured: with the
+# lane on, Tier B scores 7/9 against Tier A's 9/9, and the one chunk it loses
+# (`2025-03118#0003`, which states "the compliance date remains unchanged at
+# this time") is ranked 14th by BM25 on r03 and not returned at all on r01,
+# because BM25 over verbose regulatory prose prefers shorter chunks that repeat
+# the query's terms without answering it. The only weight at which Tier B passes
+# criterion 1 is 0.05, where the lane has stopped affecting the outcome.
+#
+# The flag exists rather than the lane being deleted because the ruling is
+# REVERSIBLE ON A NAMED CONDITION: author a probe the lexical lane wins — an
+# expected_chunk_ids member BM25 places in the top-8 and the vector lane does
+# not — and this default flips back. Nine probes can witness a counterexample;
+# they cannot establish that BM25 never helps, and the ruling claims only the
+# former. Off, Tier B's relevance lane is pure kNN, which makes it the same
+# algorithm as Tier A on different infrastructure — that is the honest reading
+# and the reason Tier B's remaining claim is latency and concurrent load, not
+# relevance.
+RETRIEVAL_LEXICAL_LANE = os.environ.get("RETRIEVAL_LEXICAL_LANE", "0") == "1"
 RETRIEVAL_STRUCTURAL_KINDS = tuple(
     k for k in os.environ.get("RETRIEVAL_STRUCTURAL_KINDS",
                               "dates,amdpar").split(",") if k)

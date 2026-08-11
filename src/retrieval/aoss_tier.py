@@ -1,14 +1,24 @@
-"""Tier B — AOSS hybrid (ephemeral). SPEC/02.
+"""Tier B — AOSS (ephemeral hot tier). SPEC/02.
 
-BM25 on chunk_text + citation_path, kNN on the stored embedding, the same
-filters expressed as bool/filter clauses, then client-side RRF of the two
-ranked lists.
+kNN on the stored embedding, filters expressed as bool/filter clauses, and —
+**only when `config.RETRIEVAL_LEXICAL_LANE` is on** — BM25 on chunk_text +
+citation_path fused into the relevance lane by client-side RRF.
+
+**The lexical lane is off by default (ADR-0009 Ruling 3, resolved as (a)).**
+Measured, hybrid scored 7/9 against Tier A's 9/9: BM25 over verbose regulatory
+prose ranks a short chunk that repeats the query's terms above the preamble
+paragraph that answers it. So this tier is no longer hybrid by default, and its
+claim is latency and concurrent load rather than better relevance. The flag is
+reversible on a named condition — see config.py. Anything below that describes
+"hybrid" is describing the flag-on path.
 
 SPEC/02 says "single hybrid query ... client-side RRF". Those two halves pull
-against each other: one query yields one ranked list, and RRF needs two. This
-sends both as one `_msearch` — a single round trip carrying two queries, which
-is what the spec's intent (no extra latency, fusion done here rather than by a
-search pipeline) actually requires. Noted rather than silently resolved.
+against each other: one query yields one ranked list, and RRF needs two. With
+the lexical lane on, both go out as one `_msearch` — a single round trip
+carrying two queries, which is what the spec's intent (no extra latency, fusion
+done here rather than by a search pipeline) actually requires. Noted rather than
+silently resolved. With the lane off the `_msearch` carries one query, and the
+response-count check follows what was sent rather than a hardcoded 2.
 """
 import json
 
@@ -127,23 +137,30 @@ def retrieve_aoss(endpoint: str, query: str, filters: Filters, k: int) -> list[C
     # result set. k//3 is the page size by construction of the router.
     page = max(1, k // 3)
 
+    # The lexical lane is OFF by default (ADR-0009 Ruling 3, resolved as (a)).
+    # The BM25 query is not issued at all rather than issued and down-weighted:
+    # a lane weighted to nothing is latency and cost with no effect on the page,
+    # and Tier B's remaining claim after this ruling is latency.
+    lexical = config.RETRIEVAL_LEXICAL_LANE
+    bodies = [_bm25_body(query, clauses, k)] if lexical else []
+    bodies.append(_knn_body(vector, clauses, k))
+
     header = json.dumps({"index": aoss_client.INDEX_NAME})
-    ndjson = "\n".join([
-        header, json.dumps(_bm25_body(query, clauses, k)),
-        header, json.dumps(_knn_body(vector, clauses, k)),
-    ]) + "\n"
+    ndjson = "".join(f"{header}\n{json.dumps(b)}\n" for b in bodies)
 
     resp = aoss_client.request(
         endpoint, "POST", "_msearch", ndjson.encode(),
         content_type="application/x-ndjson")
     responses = resp.get("responses") or []
-    if len(responses) != 2:
+    if len(responses) != len(bodies):
         raise aoss_client.AossError(
-            f"_msearch returned {len(responses)} responses, expected 2")
-    bm25, knn = (_hits(r) for r in responses)
+            f"_msearch returned {len(responses)} responses, expected "
+            f"{len(bodies)}")
+    hits = [_hits(r) for r in responses]
 
-    # BM25 and kNN fuse into ONE relevance lane, so this tier presents the same
-    # two-lane shape as Tier A: [relevance, structural].
+    # With the lexical lane on, BM25 and kNN fuse into ONE relevance lane, so
+    # this tier presents the same two-lane shape as Tier A: [relevance,
+    # structural].
     #
     # Three flat lanes was tried and measured strictly worse — 6/9 -> 4/9. The
     # argument for flattening was that pre-fusing halves each relevance signal
@@ -153,7 +170,12 @@ def retrieve_aoss(endpoint: str, query: str, filters: Filters, k: int) -> list[C
     # ("which paragraphs state what this document does") rather than offering a
     # third opinion on the same one. Flattening buried the DATES paragraphs
     # again, which is the failure the lane exists to fix.
-    relevance = rrf([bm25, knn], k=k)
+    #
+    # With it off, `relevance` is the raw kNN list — NOT rrf([knn]), which would
+    # re-score by rank and differ from Tier A's shape for no reason. Tier A's
+    # relevance lane is its raw vector result (s3vectors_tier.py), and the point
+    # of (a) is that the two tiers now run the same algorithm.
+    relevance = rrf(hits, k=k) if lexical else hits[0][:k]
 
     # The structural lane is NOT a Tier A workaround for weak vector search.
     # Measured on the live hot tier: Tier B scored 3/9 without it and missed

@@ -353,7 +353,15 @@ def run(tier_requested: str, record: bool, allow_dirty: bool = False) -> int:
         # the adoption bar needs FOUR cards at one sha (two tiers x two flag
         # values) and the base <sha>-retrieval-<tier> namespace can only express
         # two — the second pair would silently overwrite the first.
+        #
+        # RETRIEVAL_LEXICAL_LANE gets a suffix on the same reasoning: ADR-0009
+        # Ruling 3's confirming measurement compares a lane-off Tier B against a
+        # lane-on one, and two cards at one sha cannot share a filename. `-lex1`
+        # only when on, so the default configuration keeps the base name and
+        # every card recorded before this flag existed stays readable.
         suffix = f"-rerank{int(config.RERANK)}" if config.RERANK else ""
+        if config.RETRIEVAL_LEXICAL_LANE:
+            suffix += "-lex1"
         out = HISTORY / f"{sha}-retrieval-{tier_requested}{suffix}.json"
         out.write_text(json.dumps({
             "sha": sha,
@@ -369,6 +377,12 @@ def run(tier_requested: str, record: bool, allow_dirty: bool = False) -> int:
             # card cannot claim a reranked run that fell open.
             "rerank_enabled": config.RERANK,
             "rerank": rerank_notes,
+            # Which retrieval configuration produced this card. ADR-0009 Ruling
+            # 3 turned on a measured comparison between lane-on and lane-off, so
+            # a card that cannot say which one it is is not evidence for either.
+            # Tier A has no lexical lane; the field records the flag as the run
+            # saw it, which is what makes a pair one configuration.
+            "lexical_lane": config.RETRIEVAL_LEXICAL_LANE,
             "corpus_snapshot": truth.get("corpus_snapshot"),
             # Recall is not answer quality. The M00b control measures answer
             # quality, so a recall number is not a delta against it and must
