@@ -19,8 +19,17 @@ Python 3.14 · LangGraph · Bedrock (Claude + Titan v2 embeddings, 1024-dim)
 ## Architecture rules
 - S3 corpus bucket is the source of truth. Search indexes are pure functions
   of it. Never write ingestion output directly to AOSS.
-- Retrieval routes by SSM param `/regdelta/search/endpoint`: present → AOSS
-  hybrid (BM25+kNN); absent → S3 Vectors path. Both paths must pass evals.
+- Retrieval routes by SSM param `/regdelta/search/endpoint`: present → AOSS;
+  absent → S3 Vectors path. Both paths must pass evals.
+- AOSS is **not hybrid by default** (ADR-0009 Ruling 3(a)). Measured, BM25
+  ranked the chunk that answered the question 14th while promoting shorter
+  chunks that merely repeat the query's terms: hybrid scored 7/9 against
+  vector-only's 9/9. `config.RETRIEVAL_LEXICAL_LANE=1` restores it and is off
+  by default. Do not re-enable it to "fix" a probe — the reversal condition is
+  a probe the lexical lane *wins*, and it is written beside the flag.
+  Consequently both tiers now run the same algorithm on different
+  infrastructure: AOSS earns its place on latency and concurrent load, not on
+  relevance. Say that, not "hybrid".
 - Embeddings are computed once at ingest and persisted with chunks. Never
   re-embed during index hydration.
 - Every answer must cite FR doc number and/or CFR section for each claim.

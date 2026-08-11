@@ -37,9 +37,39 @@ precondition is Done-when criterion 5.
   then merge with vector results via RRF (src/retrieval/fusion.py).
 
 ## Tier B — AOSS (ephemeral hot tier)
-- Index `chunks` (mapping lives in src/retrieval/aoss_client.py): BM25 on
-  chunk_text + citation_path, kNN on embedding, filters as bool/filter
-  clauses; client-side RRF. Sent as one `_msearch` — see the amendment note.
+- Index `chunks` (mapping lives in src/retrieval/aoss_client.py): kNN on
+  embedding, filters as bool/filter clauses. **BM25 on chunk_text +
+  citation_path is available but OFF by default** — see "The lexical lane" —
+  and when on, the two lanes fuse by client-side RRF and go out as one
+  `_msearch` (see the amendment note).
+
+### The lexical lane, and what Tier B now claims
+**Amended by ADR-0009 Ruling 3, resolved as (a), after measurement.**
+`config.RETRIEVAL_LEXICAL_LANE=1` restores BM25; the default is off, and with
+it off Tier B's relevance lane is the raw kNN list.
+
+Measured at `b16f596`, one sha, both configurations: lane-off **9/9, recall
+1.000, MRR 0.796**; lane-on **7/9, recall 0.833, MRR 0.648**. Both lane-on
+misses are the same chunk, `2025-03118#0003` — the paragraph stating *"the
+compliance date remains unchanged at this time"* — which BM25 ranks 14th on r03
+and does not return at all on r01, preferring a shorter chunk that repeats the
+query's terms without answering it. The only BM25 weight satisfying criterion 1
+is 0.05, at which the lane has stopped affecting the outcome.
+
+**Consequently the two tiers now run the same algorithm on different
+infrastructure**, and their scorecards agree to sixteen digits of MRR. Tier B's
+justification is therefore **latency and concurrent load, not relevance** —
+say that rather than "hybrid". That claim is not gated here: SPEC/04 specifies
+the retrieval-latency readout in the UI, and **the acceptance criterion for it
+is owed to SPEC/04's "Done when"**, not invented in this milestone after the
+fact. Recorded as owed rather than left for the demo to discover.
+
+**Reversal condition.** A probe the lexical lane *wins* — an
+`expected_chunk_ids` member BM25 places in the top-8 and the vector lane does
+not — flips the default back and voids the ruling. Nine probes can witness a
+counterexample; they cannot establish that BM25 never helps, and (a) claims only
+the former. Re-enabling the lane to make a failing probe pass is the move
+CLAUDE.md routes to a stop, in code rather than in JSON.
 - Hydration: reindex Lambda streams corpus/chunks/*.jsonl, bulk 500/batch;
   asserts index count == source count (raise → deploy fails).
 
@@ -60,6 +90,12 @@ precondition is Done-when criterion 5.
 >    carrying both, which honours the intent (no extra latency, fusion here
 >    rather than in a search pipeline). Written down because "single query" is
 >    the kind of phrase a later reader would take literally.
+>
+>    **Superseded in effect by ADR-0009 Ruling 3(a):** with the lexical lane off
+>    there is only one query, so the tension this note resolves no longer
+>    arises. Kept because it describes the flag-on path, which the reversal
+>    condition can restore — and because deleting the record of a resolved
+>    tension leaves the next reader to rediscover it.
 > 3. **`kind` joins the Filters contract, and both indexes now store it.** The
 >    chunker has labelled every chunk `dates | summary | amdpar | preamble |
 >    regtext` since M01 and it has been in `corpus/chunks/**/*.jsonl` all
@@ -84,11 +120,15 @@ set — that is M04's instrument) and record both RERANK=0 and RERANK=1 runs.
 Unmeasured, it stays off and out of scope.
 
 ### The RERANK adoption bar
-Added by **ADR-0009 Ruling 3**, which defers the non-hybrid-Tier-B question
-pending this measurement. The clause above fixed the instrument and the
-default; it never defined what "earns the measured clause" means, so that is
-fixed here — **before the measurement runs**, because a bar written after the
-numbers arrive is fitted to them.
+Added by **ADR-0009 Ruling 3**, which *deferred* the non-hybrid-Tier-B question
+pending this measurement. The measurement ran, the bar was not cleared, and
+Ruling 3 then **resolved as (a)** — see "The lexical lane" above and "Result"
+below. The bar is preserved as written; the outcome is recorded beneath it.
+
+The clause above fixed the instrument and the default; it never defined what
+"earns the measured clause" means, so that is fixed here — **before the
+measurement runs**, because a bar written after the numbers arrive is fitted to
+them.
 
 **The bar is reachable, which is what distinguishes it from an impossible
 one.** `2025-03118#0003` sits at **fused rank 13 on r01 and 12 on r03** — both
@@ -122,6 +162,42 @@ Reranking is adopted only if **all** of the following hold:
 
 **MRR is recorded for both runs and is not an adoption condition** (criterion
 4 bars citing it as one).
+
+#### Result: measured at `9e47ce7`, bar NOT cleared — reranking stays off
+**The bar above is unchanged. That is the point of having written it first**, and
+it is recorded here rather than edited, so a reader can check the conditions
+against the outcome instead of taking this sentence on trust.
+
+| | Tier A RERANK=0 | Tier A RERANK=1 | Tier B RERANK=0 | Tier B RERANK=1 |
+|---|---|---|---|---|
+| probes | **9/9** | 8/9 | 7/9 | 8/9 |
+| recall@8 | **1.000** | 0.944 | 0.833 | 0.944 |
+| MRR | 0.796 | 0.926 | 0.648 | 0.889 |
+
+- **Condition 1 fails** — recall 0.944, not 1.0, on both tiers.
+- **Condition 2 fails** — r01 loses `2024-29957#0000` on *both* tiers.
+- **Condition 3 fails** — anti-collapse clause (i) fails on r01 on that chunk;
+  r07's margin falls to 1, exactly on the floor.
+- **Condition 4 holds** — every probe on both `-rerank1` cards reads
+  `reranked 20/20 before diversify`, so the failure is a finding about the
+  reranker and not an artefact of measuring it after the per-document cap.
+
+The reachability argument held: `2025-03118#0003` was recovered on r01 *and* r03,
+from fused rank 13 and 12. Reranking then placed three chunks of one document
+above `2024-29957#0000`, saturating `RETRIEVAL_PER_DOC_CAP` with the page full so
+nothing back-filled. Whether a cap of 4 recovers it is **not derivable from these
+cards** — the pre-diversification ordering is not recorded — and is left as a
+measurement rather than promoted to an inference.
+
+Net: Tier A went 9/9 → 8/9, so enabling the flag breaks the tier that passes.
+That is the third "one probe traded for another" in this milestone, after the
+`minimum_should_match` rejection and two reverted ranking changes, and condition
+1 was written before the numbers arrived in order to refuse exactly it.
+
+**Reranking stays off and out of scope. The flag and its tests remain in the
+tree** so the measurement is reproducible — a deleted experiment is an
+unfalsifiable claim about an experiment. Adoption would need a fresh run clearing
+all four conditions, not a re-reading of these cards.
 
 Commands: `make retrieval-evals` per tier per flag value, then
 `make retrieval-parity --rerank {0,1}` on the matching pair. Producing four
@@ -226,6 +302,34 @@ non-zero on 2 and 3. **All three steps must run for (A) to be satisfied.**
    than the original criterion promised**: it catches collapse, not drift.
    Restoring real similarity gating needs a probe set large enough to
    calibrate a threshold, which is not this milestone's.
+
+   > **This criterion changed job when the lexical lane went off, and the
+   > wording above is now about the wrong thing.** With both tiers running the
+   > same algorithm over the same embeddings, cross-tier agreement is close to
+   > tautological: at `b16f596` the minimum margin is **6** (it was 2 with
+   > hybrid), eight of nine probes score Jaccard **1.00**, and the minimum is
+   > 0.78 — so the 0.60 floor this criterion removed as unmeetable would now
+   > pass comfortably. **That is not the floor being vindicated.** It is the
+   > two tiers no longer differing enough for a *ranking-drift* gate to
+   > measure anything, because Ruling 3(a) removed the drift by removing the
+   > difference.
+   >
+   > **The criterion is kept, and what it protects is restated.** It is no
+   > longer a ranking-drift gate; it is a **tier-health** gate. The remaining
+   > way for two runs of one algorithm to disagree is that a tier has diverged
+   > *operationally* — a partially hydrated index, a filter dialect that
+   > silently matches everything or nothing, a stale reindex against a moved
+   > corpus. Those are real, and they are the same failure class Done-when (B)
+   > catches from the deploy side, so this is defence in depth from the query
+   > side. A margin of 6 should be read as "both tiers are healthy", **not** as
+   > "ranking is six slots from trouble".
+   >
+   > Two consequences follow, and neither is hidden. Its **sensitivity is now
+   > low**: it fires only on gross divergence, so a subtly wrong Tier B index
+   > can still pass. And if the lexical lane is ever restored under the
+   > reversal condition, this criterion **reverts to its original job** and the
+   > margin-2 reading returns with it — the threshold does not need changing in
+   > either direction, only the reading.
 
    **(b) Reported, not gating: per-probe Jaccard of the full top-8**
    chunk_id sets across the two tiers, on **every** probe including filtered
