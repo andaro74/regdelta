@@ -15,6 +15,9 @@ Exit codes:
   0  all gating criteria pass
   1  a gating criterion failed (recall, must_not_return, resolved tier)
   2  the date-attribution preflight failed — no probe was run
+  3  the harness did not complete (crash) — NOTHING was measured, and no
+     scorecard from this run is valid. Distinct from 1 so a caller cannot
+     read "never measured" as "measured a failure".
 
 Criteria 2 (partially) and 3 are CROSS-run and cannot be judged inside one
 invocation: neither run can see the other's output. This asserts the half it
@@ -26,6 +29,7 @@ import datetime as dt
 import json
 import sys
 import time
+import traceback
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -377,9 +381,22 @@ def main() -> int:
     ap.add_argument("--allow-dirty", action="store_true",
                     help="record from a dirty tree, stamped dirty:true")
     args = ap.parse_args()
-    if args.preflight_only:
-        return 2 if preflight() else 0
-    return run(args.tier, args.record, args.allow_dirty)
+    # 1 is reserved for "measured a gating failure". An uncaught exception —
+    # a missing CloudFormation output, an unreachable tier, a malformed card —
+    # also exits 1 via traceback, so a caller cannot tell "the criterion failed"
+    # from "nothing was ever measured". The second is not evidence, and a CI job
+    # or a milestone record that treats it as evidence records a failure that
+    # never happened.
+    try:
+        if args.preflight_only:
+            return 2 if preflight() else 0
+        return run(args.tier, args.record, args.allow_dirty)
+    except Exception:  # noqa: BLE001 — the point is that ANY crash is not a measurement
+        traceback.print_exc()
+        print("\n❌ the harness did not complete — NOTHING was measured.\n"
+              "   This is exit 3, not 1: no scorecard is valid from this run "
+              "and no criterion was judged.", file=sys.stderr)
+        return 3
 
 
 if __name__ == "__main__":

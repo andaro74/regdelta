@@ -88,6 +88,67 @@ def test_a_broken_hot_tier_falls_back_and_says_so(router, monkeypatch):
     assert res.endpoint is not None
 
 
+def test_an_unreachable_hot_tier_also_falls_back(router, monkeypatch):
+    """The case the fallback comment names, and the one it used to miss.
+
+    `aoss_client.request` originally converted only HTTPError, so URLError
+    (DNS/NXDOMAIN, connection refused/reset), TimeoutError and a non-JSON 200
+    escaped unwrapped and the router — which catches AossError and nothing else
+    — let them propagate. SPEC/02's contract is "present + REACHABLE", and
+    unreachable is the live state in the window between `make down` deleting the
+    collection and the 60s endpoint cache expiring. Both role-gate reviews found
+    this independently.
+
+    Asserted at the client boundary because that is where the contract lives:
+    every transport failure must arrive at the router as AossError.
+    """
+    import json as _json
+    import socket
+    import urllib.error
+
+    from retrieval import aoss_client
+
+    monkeypatch.setattr(router, "active_endpoint",
+                        lambda: "https://abc123.us-west-2.aoss.amazonaws.com")
+    monkeypatch.setitem(sys.modules, "retrieval.s3vectors_tier",
+                        SimpleNamespace(retrieve_s3v=lambda q, f, k: [mk("a")]))
+
+    for exc in (urllib.error.URLError(socket.gaierror(11001, "getaddrinfo failed")),
+                TimeoutError("timed out"),
+                ConnectionResetError(104, "reset by peer")):
+        def boom(ep, q, f, k, _e=exc):
+            raise aoss_client.AossError(
+                f"GET chunks/_count -> unreachable: {type(_e).__name__}: {_e}")
+
+        monkeypatch.setitem(sys.modules, "retrieval.aoss_tier",
+                            SimpleNamespace(retrieve_aoss=boom))
+        _, res = router.retrieve_traced("q", Filters(), k=8)
+        assert res.tier == "s3vectors", f"{type(exc).__name__} did not fall back"
+        assert "unreachable" in res.fallback_reason
+        assert type(exc).__name__ in res.fallback_reason
+
+    # And the conversion itself: these must not escape `request` unwrapped.
+    import urllib.request
+    for exc in (urllib.error.URLError("dns"), TimeoutError("t"),
+                ConnectionResetError("reset")):
+        monkeypatch.setattr(urllib.request, "urlopen",
+                            lambda *a, _e=exc, **k: (_ for _ in ()).throw(_e))
+        with pytest.raises(aoss_client.AossError, match="unreachable"):
+            aoss_client.request("https://abc123.us-west-2.aoss.amazonaws.com",
+                                "GET", "chunks/_count", None)
+
+    class NonJson:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return b"<html>gateway error</html>"
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: NonJson())
+    with pytest.raises(aoss_client.AossError, match="non-JSON"):
+        aoss_client.request("https://abc123.us-west-2.aoss.amazonaws.com",
+                            "GET", "chunks/_count", None)
+    assert _json  # the decode error is converted, not left to the caller
+
+
 def test_the_router_re_applies_filters_the_tier_ignored(router, monkeypatch):
     """A tier whose pushdown silently matched everything cannot change the
     answer — only how many candidates arrive. This is what keeps criterion 3

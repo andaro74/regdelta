@@ -460,14 +460,30 @@ botocore already does. `src/retrieval/aoss_client.py` is ~60 lines instead.
    possible. **Criterion 2 passes.** Criterion 3's 0.60 floor failed at 0.33 and
    has since been replaced (item 1); the amended criterion fails on r01/r03 with
    criterion 1.
-3. **(B): a deliberate partial-index deploy** with `REINDEX_FAULT_DROP` set,
-   capturing the failed CloudFormation event here. The fault hook can only ever
-   *cause* a failing deploy — there is no switch in `reindex.py` that relaxes
-   the count assertion, and a test asserts that property by reading the source.
-4. **The remaining role gates:** `security-reviewer` (IAM data-access policy,
-   Trigger timeout, the SigV4 path) and `eng-code-reviewer` before the PR.
-   `pm-spec-reviewer` has run twice on ADR-0009 and the SPEC/02 diff; it owes a
-   third pass only if the spec changes again.
+3. **(B): a deliberate partial-index deploy** with `-c faultDrop=3`, capturing
+   the failed CloudFormation event here. The hook can only ever *cause* a failing
+   deploy — no switch in `reindex.py` relaxes the count assertion, and a test
+   asserts that by reading the source.
+
+   > **Run it, then `make down`, before anything queries the tier.** The
+   > one-directional guarantee is scoped to CloudFormation, not to the
+   > collection. On a stack *update* — which is what this is against an already-up
+   > tier — rollback reverts the Lambda's environment but **not AOSS index
+   > contents**, and `/regdelta/search/endpoint` from the earlier successful
+   > deploy survives. `router.active_endpoint()` reads only that parameter, so
+   > retrieval would route to a knowingly-short index and answer with citations,
+   > and neither the resolved-tier assertion nor the date-attribution preflight
+   > looks at index completeness — a scorecard could be recorded against it.
+   > Found by `security-reviewer` (M2). The residue is not specific to the fault
+   > hook: any Trigger failure on an update leaves it. Nothing in the retrieval
+   > path checks hydration health, because the SSM parameter is written by the
+   > stack rather than by a successful hydration — worth fixing properly at
+   > SPEC/05, out of scope here.
+4. ~~**The remaining role gates.**~~ **`security-reviewer` and
+   `eng-code-reviewer` have both run**; `pm-spec-reviewer` ran twice on ADR-0009
+   and the SPEC/02 diff. Verdicts: security — nothing blocks merge, 3 medium /
+   4 low; engineering — two blockers, both fixed (see "What the role gates
+   found"). All owe a re-run only if the code or spec changes again.
 5. **Two implementation changes the SPEC/02 diff now requires**, which per
    ROLES.md flow 3 follow PM approval rather than accompanying it:
    `run_parity.py`'s in-filter approximation is deleted with the carve-out, and
@@ -477,6 +493,137 @@ botocore already does. `src/retrieval/aoss_client.py` is ~60 lines instead.
    already homes ADR-0001's "eval parity" claim, but nothing anywhere asserts that
    switching tiers mid-demo yields *comparable answers*, which is what the demo
    beat sells.
+
+## What the role gates found
+
+`security-reviewer`: **nothing blocks merge.** The two highest-risk items held up
+under reading rather than assumption — the hand-rolled SigV4 path (payload hash
+set before signing so it lands in `SignedHeaders`, no query strings anywhere, every
+URL path a module constant with no corpus-derived interpolation, credentials never
+in a log or exception) and `reindex.py`'s "can only delay a failure, never convert
+one into a success" claim. Three mediums and four lows, all fixed below.
+
+`eng-code-reviewer`: **two blockers, both fixed.** Also flagged, correctly, that
+**the Done-when does not currently pass** — the only recorded pair is `e596166`
+and it exits 1.
+
+### The blocker worth remembering
+
+**The gate could be turned green by editing ground truth alone.** `run_parity.py`
+re-derived `expected` from `retrieval_truth.json` at gate time and compared it to
+`returned` lists recorded earlier, with nothing tying the two together. Measured
+against the real cards — drop `2025-03118#0003` from r01/r03's expected sets, touch
+no scorecard:
+
+```
+minimum margin 2 (floor 1) over 9 probes
+s3vectors: 9/9 probes ... aoss: 7/9 probes, recall@8=0.833 (reported, not gating)
+✅ parity holds        rc = 0
+```
+
+No re-run, no sha change, no dirty flag — and `7/9` printed one line above the
+green verdict. CLAUDE.md routes editing golden data to make a failure pass to a
+stop; a gate that cannot see the edit is not enforcing that. Three further holes
+in the same class: zero probes returned ✅, a card probe absent from truth was
+silently downgraded to pure-negative (making clause (i) vacuous), and `passed`
+vs `total` was never gated — so a `must_not_return` leak could fail criterion 1
+while the pair gate reported parity, since clause (i) only looks at
+`expected_chunk_ids`.
+
+Closed by four checks in `main()`: the cards and truth must agree on the probe
+set, the set must be non-empty, each card's `corpus_snapshot` must equal truth's
+(`run_retrieval.py` copies it at record time, so a mismatch means truth changed
+after recording), and `passed != total` fails the pair. Three tests cover them.
+
+### The other blocker, found independently by both gates
+
+`aoss_client.request` converted only `urllib.error.HTTPError`. `URLError`
+(DNS/NXDOMAIN, connection refused/reset), `TimeoutError` and a non-JSON 200
+escaped unwrapped, and `router.retrieve_traced` catches `AossError` and nothing
+else — so "a deployed-but-broken hot tier must not take the API down" did not
+cover **unreachable**, which is the live state between `make down` deleting the
+collection and the 60s endpoint cache expiring. SPEC/02's contract says "present +
+*reachable*". Both reviews landed on it separately. `AossError` is now the tier's
+entire failure contract, with the four modes tested.
+
+### Fixed, non-blocking
+
+- **Tier B did not push `kind` into the engine.** `_filter_clauses` hand-listed
+  four keyword fields; `kind` joined `KEYWORD_FIELDS` later and the list never
+  caught up, while Tier A iterates the shared lists. `Filters(kind=…)` meant Tier
+  A filled its 24 candidate slots with matching chunks and Tier B filled them with
+  anything, `router._finish` then discarding nearly all — a short page on one tier
+  and a full one on the other, exactly the silent divergence this design exists to
+  prevent. No probe filters on `kind`, so no recorded scorecard changes.
+- `devPrincipalArn` took an unvalidated string into a policy granting `aoss:*` on a
+  collection with `AllowFromPublic: True`; a mistyped account id was corpus data
+  leaving the account. Now shape- and account-checked, with the SSO assumed-role
+  form rejected explicitly and named — it is what `make up` passes and AOSS does
+  not match on it. Six new synth tests, including the env-var widening path, which
+  every prior test deleted before asserting.
+- `faultDrop` accepted 0 and negatives, producing a *passing* deploy while the
+  operator believed the fault fired.
+- `Code.from_asset(SRC)` shipped `src/` with no exclusions.
+- Exit code 3 now distinguishes "the harness crashed, nothing was measured" from
+  exit 1's "a criterion failed" — a caller could not tell them apart, and only one
+  is evidence.
+- A dead `_client("registry")` branch in `s3vectors_tier`.
+- Test quality: an `assert "0.14" in out or "0.1" in out` that also passed on 0.10,
+  0.17 and 0.19; a row comparison coupled to print-format column widths; and a
+  source-reading floor guard that inspected only `main()`, so a threshold added in
+  `jaccard()` would have slipped through.
+
+## Deferred: four findings that change ranking, and why they are not in this PR
+
+Each of these is real and none is fixed, because **every one alters what retrieval
+returns and therefore invalidates both scorecards** — re-measuring costs a `make
+up` cycle. Fixing them alongside a closure-path change is one cycle; fixing them
+now is two. Recorded here so the deferral is a decision rather than an omission.
+
+- **`RETRIEVAL_PER_DOC_CAP = 3` is the value the live measurement likes least.**
+  The comment defends it with a Tier A row it also marks stale; the only live row
+  is Tier B's 3 → 7/9, 4 → 8/9, 5 → 7/9. And both recorded failures are
+  cap-boundary artifacts: `2025-03118` gets exactly 3 slots on both tiers, and
+  Tier B spends them on `#0000/#0001/#0005` where Tier A spends them on
+  `#0000/#0003/#0001`. So the AOSS miss is `fusion.diversify` hitting the cap while
+  Tier B ranks `#0005` above `#0003` *within* that document — not a retrieval
+  failure in the lanes. Falsifiable for the price of one hot-tier run.
+  **Note this does not by itself close criterion 1**: cap 4 measured 8/9, not 9/9.
+- **The tie-break is also a ranking rule, and it favours older documents.**
+  `sorted(scores, key=lambda cid: (-scores[cid], cid))` breaks ties by chunk_id
+  ascending, and chunk ids are year-prefixed FR doc numbers — so ties resolve
+  toward *older* rules, backwards for a product whose question is "what changed".
+  Not rare on Tier B: it fuses two equal-length lanes where most chunks appear in
+  exactly one, so a BM25 rank-*r* singleton and a kNN rank-*r* singleton score
+  identically and the alphabetical order decides. Tier B applies the tie-break
+  twice (inner and outer fusion) where Tier A applies it once — an asymmetry the
+  anti-collapse floor cannot see. `(-score, min_rank_across_lanes, chunk_id)`
+  stays deterministic without the corpus-order bias.
+- **`rebuild_s3v` is upsert-only, so it is not the counterpart it claims to be.**
+  `reindex._create_index` earns the "indexes are pure functions of the corpus"
+  rule by deleting and recreating, with the reason stated: "a leftover document
+  from a previous corpus is a citation to text that is no longer in the corpus."
+  `rebuild_s3v` only calls `put_vectors`; re-chunk a document into fewer chunks and
+  the orphaned vectors stay queryable and citable. It also has no post-write count
+  assertion, where `reindex` fails the deploy on one.
+- **Lane assembly is written twice, in two dialects** — the thing `fusion.py`'s
+  own docstring says is avoided. Only the native structural query genuinely differs
+  between the tiers; the page derivation, lane order and weights are duplicated, so
+  changing one tier's rule silently diverges the pages, and the shipped gate will
+  not fire on it.
+
+### And one contract note, for M03 rather than M02
+
+CLAUDE.md: "Timeline questions (effective vs compliance dates, supersession) are
+answered from the DynamoDB amendment graph, not vector similarity." **r01 and r03
+are timeline questions**, and `src/retrieval/` reaches DynamoDB only for the
+citations GSI — never the amendment graph. The structural lane is explicitly a
+similarity device for surfacing DATES paragraphs, and the per-document cap is being
+tuned to make similarity surface a delay notice's DATES paragraph that the graph
+would return deterministically. Nothing here emits a claim, so no citation rule is
+broken at M02. But the two probes Tier B cannot pass are exactly the two the rule
+says should not be answered this way, and M03 is about to build the timeline node
+on top of a retrieval path tuned to substitute for the graph.
 
 ## Open, carried forward
 

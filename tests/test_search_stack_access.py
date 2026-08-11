@@ -95,3 +95,78 @@ def test_the_reindex_lambda_ships_the_shared_source_tree():
     handlers = [r["Properties"]["Handler"] for r in template["Resources"].values()
                 if r["Type"] == "AWS::Lambda::Function"]
     assert "retrieval.reindex.handler" in handlers
+
+
+def lambda_env(template: dict) -> dict:
+    for res in template["Resources"].values():
+        if res["Type"] == "AWS::Lambda::Function" and \
+                res["Properties"]["Handler"] == "retrieval.reindex.handler":
+            return res["Properties"].get("Environment", {}).get("Variables", {})
+    raise AssertionError("no reindex Lambda in the template")
+
+
+def test_the_env_var_path_also_widens_the_policy(monkeypatch):
+    """The env fallback is the one that can widen a deploy invisibly.
+
+    `-c devPrincipalArn=` is visible in the deploy command; a leftover
+    `export REGDELTA_DEV_PRINCIPAL_ARN=...` in a shell profile silently widens
+    EVERY subsequent `make up`. Every other test here deletes the variable
+    first, so before this one the env path was never exercised as a widening —
+    they proved the CONTEXT default is empty, not the environment one.
+    """
+    monkeypatch.setenv("REGDELTA_DEV_PRINCIPAL_ARN", DEV_ARN)
+    principals = access_principals(synth())
+    assert DEV_ARN in principals, \
+        "the env fallback is documented as a supported path; if it is removed, " \
+        "delete it from the comment too"
+
+
+@pytest.mark.parametrize("bad", [
+    "arn:aws:sts::111122223333:assumed-role/Admin/session",  # what STS returns
+    "arn:aws:iam::999988887777:user/someone",                # cross-account
+    "arn:aws:iam::111122223333:root",                         # account root
+    "*",
+    "someone",
+])
+def test_a_principal_that_is_not_an_in_account_iam_arn_fails_synth(monkeypatch, bad):
+    """Unvalidated, this string lands in a policy granting aoss:* on a collection
+    whose network policy is AllowFromPublic — so a mistyped account id is corpus
+    data leaving the account, one token away.
+
+    The assumed-role form matters most: it is exactly what
+    `aws sts get-caller-identity --query Arn` returns under SSO, which is what
+    `make up` passes. AOSS does not match on it, and the symptom is a bare 403
+    that reads like policy propagation.
+    """
+    monkeypatch.delenv("REGDELTA_DEV_PRINCIPAL_ARN", raising=False)
+    with pytest.raises(Exception, match=r"devPrincipalArn|assumed-role|account"):
+        synth({"devPrincipalArn": bad})
+
+
+def test_the_fault_hook_is_absent_unless_asked_for(monkeypatch):
+    """REINDEX_FAULT_DROP is a deliberately deploy-breaking switch.
+
+    reindex.py reads it from the Lambda environment, so its presence in a normal
+    deploy would mean a normal deploy fails. The mirror of the devPrincipalArn
+    opt-in test — and the wiring commit shipped without it.
+    """
+    monkeypatch.delenv("REGDELTA_DEV_PRINCIPAL_ARN", raising=False)
+    assert "REINDEX_FAULT_DROP" not in lambda_env(synth())
+
+
+def test_the_fault_hook_reaches_the_lambda_when_asked_for(monkeypatch):
+    """The hook was unit-tested and UNREACHABLE before this wiring existed: the
+    stack passed only CORPUS_BUCKET and COLLECTION_ENDPOINT, so SPEC/02
+    Done-when (B) had no way to be triggered on a real deploy."""
+    monkeypatch.delenv("REGDELTA_DEV_PRINCIPAL_ARN", raising=False)
+    assert lambda_env(synth({"faultDrop": 3}))["REINDEX_FAULT_DROP"] == "3"
+
+
+@pytest.mark.parametrize("bad", [0, -3])
+def test_a_fault_drop_that_cannot_fail_a_deploy_is_rejected(monkeypatch, bad):
+    """A value below 1 drops nothing and deploys normally, while the operator
+    believes the fault fired — the wrong direction for evidence-gathering, since
+    (B) needs a deploy that FAILED. Silence there is worse than an error."""
+    monkeypatch.delenv("REGDELTA_DEV_PRINCIPAL_ARN", raising=False)
+    with pytest.raises(Exception, match="faultDrop"):
+        synth({"faultDrop": bad})

@@ -117,10 +117,31 @@ def request(endpoint: str, method: str, path: str, body=None,
 
     req = urllib.request.Request(url, data=data, method=method,
                                  headers=dict(aws.headers))
+    # AossError is this tier's ENTIRE failure contract, and that is load-bearing
+    # rather than tidy: router.retrieve_traced catches AossError and nothing
+    # else, so anything escaping unwrapped defeats the "a deployed-but-broken hot
+    # tier must not take the API down" fallback. Converting only HTTPError left
+    # the fallback missing for the state it most needs to cover — SSM parameter
+    # present, collection unreachable — which is the live window between
+    # `make down` deleting the collection and the endpoint cache expiring.
+    # HTTPError must be caught FIRST: it subclasses URLError.
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read()
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", "replace")[:2000]
         raise AossError(f"{method} {path} -> {e.code}: {detail}") from e
-    return json.loads(raw) if raw else {}
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        # DNS failure, connection refused/reset, TLS failure, read timeout. No
+        # status code exists, so the reason is all the caller gets — it still
+        # reaches the scorecard's `fallbacks` field via the router.
+        raise AossError(f"{method} {path} -> unreachable: "
+                        f"{type(e).__name__}: {e}") from e
+    try:
+        return json.loads(raw) if raw else {}
+    except json.JSONDecodeError as e:
+        # A 200 with a non-JSON body — a proxy or error page in front of the
+        # collection. Wrapped for the same reason: unwrapped it bypasses the
+        # fallback and surfaces as a 500 at M04.
+        raise AossError(f"{method} {path} -> 200 with a non-JSON body: "
+                        f"{raw[:200]!r}") from e

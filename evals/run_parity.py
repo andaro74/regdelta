@@ -76,8 +76,9 @@ def main() -> int:
     sha = args.sha or git_sha()
 
     cards = load(sha)
-    truth = {p["probe_id"]: p
-             for p in json.loads(TRUTH.read_text(encoding="utf-8"))["probes"]}
+    truth_doc = json.loads(TRUTH.read_text(encoding="utf-8"))
+    truth = {p["probe_id"]: p for p in truth_doc["probes"]}
+    truth_snapshot = truth_doc.get("corpus_snapshot")
     failures: list[str] = []
 
     # ---- criterion 2, the cross-run half -------------------------------
@@ -100,12 +101,60 @@ def main() -> int:
                 f"the {tier} scorecard was recorded from a dirty tree, so its "
                 f"sha {card.get('sha')} cannot reproduce it")
 
-    # ---- criterion 3, per-probe Jaccard --------------------------------
+    # ---- the cards and the truth must describe the same measurement ----
+    # This gate re-derives `expected` from TRUTH at gate time and compares it to
+    # `returned` lists recorded earlier, so nothing structural ties the two
+    # together. Without the checks below, editing retrieval_truth.json ALONE
+    # flips the gate green with no re-measurement, no sha change and no dirty
+    # flag — measured: dropping 2025-03118#0003 from r01/r03's expected sets
+    # printed "parity holds" over a card reading `aoss: 7/9, recall@8=0.833`.
+    # CLAUDE.md routes editing ground truth to make a failure pass to a stop;
+    # an exit gate that cannot see that edit is the wrong shape.
     by_probe = {tier: {p["probe_id"]: p for p in card["probes"]}
                 for tier, card in cards.items()}
     ids = [pid for pid in by_probe[TIERS[0]] if pid in by_probe[TIERS[1]]]
     if missing := sorted(set(by_probe[TIERS[0]]) ^ set(by_probe[TIERS[1]])):
         failures.append(f"probes present in only one run: {missing}")
+
+    if not ids:
+        failures.append(
+            "no probes in common between the two cards — an empty probe list "
+            "otherwise skips every per-probe check and reports parity")
+    if drift := sorted(set(ids) ^ set(truth)):
+        # A card probe absent from truth would silently get expected=set(),
+        # making clause (i) vacuous; a truth probe absent from the cards is an
+        # unmeasured assertion. Both are the same defect: the cards and the
+        # truth are not describing the same probe set.
+        failures.append(
+            f"the scorecards and retrieval_truth.json disagree about which "
+            f"probes exist: {drift}. Re-record both tiers against this truth "
+            "rather than reconciling by hand")
+    def brief(s: object, n: int = 60) -> str:
+        t = str(s)
+        return t if len(t) <= n else t[:n] + "…"
+
+    for tier, card in cards.items():
+        # run_retrieval.py copies corpus_snapshot verbatim from the truth file at
+        # record time, so a mismatch means the truth changed after the card was
+        # recorded — the cards describe a corpus the truth no longer claims.
+        # Truncated in the message: these are ~250 chars of prose and printing
+        # both in full buries every other failure on the list.
+        if (snap := card.get("corpus_snapshot")) != truth_snapshot:
+            failures.append(
+                f"the {tier} card was recorded against corpus snapshot "
+                f"{brief(snap)!r}, but retrieval_truth.json now declares "
+                f"{brief(truth_snapshot)!r} — chunk ids are only comparable "
+                "within one snapshot, so re-record rather than reconcile")
+        if card.get("passed") != card.get("total"):
+            # Criterion 1 is per-run and already failed inside that run, but a
+            # pair gate that prints ✅ over `7/9` invites the summary to be read
+            # as "both tiers pass". Clause (i) does NOT cover this: it only sees
+            # expected_chunk_ids, so a must_not_return leak fails criterion 1
+            # while leaving the anti-collapse floor satisfied.
+            failures.append(
+                f"the {tier} card records {card.get('passed')}/"
+                f"{card.get('total')} probes passing, so criterion 1 failed in "
+                "that run — the pair cannot be reported as parity")
 
     # There is no filtered-probe carve-out. It existed to stop a filtered probe
     # failing M02 on tail divergence while Jaccard gated; nothing gates on

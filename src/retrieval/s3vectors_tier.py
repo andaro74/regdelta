@@ -20,13 +20,13 @@ _clients: dict = {}
 
 
 def _client(name):
+    # The "registry" branch that used to live here was dead: the DynamoDB table
+    # handle is built by expansion._registry(), and nothing ever called
+    # _client("registry"). Removed with the config.REGISTRY_TABLE reference it
+    # was the only user of in this module.
     if name not in _clients:
         import boto3
-        if name == "registry":
-            _clients[name] = boto3.resource(
-                "dynamodb", region_name=config.REGION).Table(config.REGISTRY_TABLE)
-        else:
-            _clients[name] = boto3.client(name, region_name=config.REGION)
+        _clients[name] = boto3.client(name, region_name=config.REGION)
     return _clients[name]
 
 

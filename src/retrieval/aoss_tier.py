@@ -26,11 +26,21 @@ def _filter_clauses(filters: Filters) -> list[dict]:
     (a document is selected only by a date it establishes) and matches
     DateRange.contains(None) is False on the client side.
     """
+    # Iterate the shared field lists rather than hand-listing, for the same
+    # reason _SOURCE_FIELDS does: a hand-list silently omits a field the other
+    # tier honours. It had already drifted — `kind` is in KEYWORD_FIELDS and
+    # Filters.matches enforces it, but this list predated it, so Tier B pushed
+    # no `kind` clause into the engine. Tier A filled its 24 candidate slots
+    # with matching chunks while Tier B filled them with anything and
+    # router._finish then discarded nearly all of them: a short page on one tier
+    # and a full one on the other, which is the silent divergence this design
+    # exists to make unrepresentable. No current probe filters on `kind`, so no
+    # recorded scorecard changes.
     clauses: list[dict] = []
-    for key in ("cfr_title", "cfr_part", "doc_type", "fr_doc_number"):
+    for key in models.KEYWORD_FIELDS:
         if (want := getattr(filters, key)) is not None:
             clauses.append({"term": {key: want}})
-    for key in ("pub_date", "effective_date", "compliance_date", "version_date"):
+    for key in models.DATE_FIELDS:
         if (rng := getattr(filters, key)) is None:
             continue
         bounds = {}

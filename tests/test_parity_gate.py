@@ -52,7 +52,11 @@ def run(tmp_path, monkeypatch, truth_probes, a_probes, b_probes):
     (hist / "testsha-retrieval-aoss.json").write_text(
         json.dumps(card("aoss", b_probes)), encoding="utf-8")
     truth = tmp_path / "retrieval_truth.json"
-    truth.write_text(json.dumps({"probes": truth_probes}), encoding="utf-8")
+    # Must match the cards' corpus_snapshot: the gate pins them together, since
+    # run_retrieval.py copies the value from truth at record time and a mismatch
+    # means truth changed after the cards were recorded.
+    truth.write_text(json.dumps({"corpus_snapshot": "fixture",
+                                 "probes": truth_probes}), encoding="utf-8")
 
     monkeypatch.setattr(run_parity, "HISTORY", hist)
     monkeypatch.setattr(run_parity, "TRUTH", truth)
@@ -130,13 +134,18 @@ def test_a_catastrophic_jaccard_does_not_fail_the_gate(tmp_path, monkeypatch):
     is now reported and nothing more. If this test ever fails, a floor has been
     reintroduced without a spec edit.
     """
+    # A far worse overlap than the passing case above: ONE shared chunk beyond
+    # the expected one, and thirteen unshared. Distinct from that test's
+    # scenario, not the same fixture with extra asserts.
     truth = [{"probe_id": "p1", "expected_chunk_ids": ["shared#0000"]}]
     rc, out = run(tmp_path, monkeypatch, truth,
-                  {"p1": ["shared#0000", "also#0000"] + [f"a-{i}#0000" for i in range(6)]},
-                  {"p1": ["shared#0000", "also#0000"] + [f"b-{i}#0000" for i in range(6)]})
+                  {"p1": ["shared#0000", "also#0000", *[f"a-{i}#0000" for i in range(6)]]},
+                  {"p1": ["shared#0000", "also#0000", *[f"b-{i}#0000" for i in range(6)]]})
     assert rc == 0, out
-    assert "0.14" in out or "0.1" in out   # 2 shared / 14 union
-    assert "NOT gating" in out
+    # Exact, not a disjunct: `in out or "0.1" in out` also passed on 0.10, 0.17
+    # and 0.19, so a broken Jaccard would have slipped through.
+    assert " 0.14" in out, out          # 2 shared / 14 union
+    assert "minimum Jaccard 0.14 — reported, NOT gating" in out
 
 
 def test_filtered_probes_get_no_special_treatment(tmp_path, monkeypatch):
@@ -159,11 +168,20 @@ def test_filtered_probes_get_no_special_treatment(tmp_path, monkeypatch):
     ]
     rc, out = run(tmp_path, monkeypatch, truth, a, b)
     assert rc == 0, out
-    lines = [ln for ln in out.splitlines() if " p1 " in ln or " p2 " in ln]
-    assert len(lines) == 2
-    # Same margin and same Jaccard on both rows.
-    assert lines[0].split("filtered")[0].strip().replace("p1", "") == \
-        lines[1].split("filtered")[0].strip().replace("p2", "")
+    # Parse (margin, jaccard) rather than string-slicing the rendered row: the
+    # earlier version compared `line.split("filtered")[0]` and was coupled to the
+    # exact column widths of the print format, so a formatting change would have
+    # broken it for a reason unrelated to the property.
+    def row(pid: str) -> tuple[str, str]:
+        for ln in out.splitlines():
+            parts = ln.split()
+            if pid in parts:
+                i = parts.index(pid)
+                return parts[i + 1], parts[i + 2]   # margin, jaccard
+        raise AssertionError(f"no row for {pid} in:\n{out}")
+
+    assert row("p1") == row("p2")
+    assert row("p2") == ("1", "0.14")
 
 
 def test_pure_negative_probes_are_still_bound_by_clause_ii(tmp_path, monkeypatch):
@@ -183,19 +201,93 @@ def test_pure_negative_probes_are_still_bound_by_clause_ii(tmp_path, monkeypatch
     assert "anti-collapse (ii)" in out
 
 
-def test_no_jaccard_floor_constant_survives_in_the_module():
+def test_editing_ground_truth_alone_cannot_turn_the_gate_green(tmp_path, monkeypatch):
+    """The hole that made this gate the wrong shape, and the reason for the
+    truth/card consistency checks.
+
+    The gate re-derives `expected` from TRUTH at gate time and compares it to
+    `returned` lists recorded earlier, so nothing structural ties them together.
+    Measured against the real e596166 cards: dropping 2025-03118#0003 from
+    r01/r03's expected sets printed "✅ parity holds", exit 0, with
+    `aoss: 7/9, recall@8=0.833` on the line above — no re-run, no sha change, no
+    dirty flag. CLAUDE.md routes editing ground truth to make a failure pass to a
+    stop; a gate that cannot see the edit is not enforcing that.
+
+    Here: a card that failed its own run (passed < total) can never be reported
+    as parity, whatever truth now says about the expected sets.
+    """
+    truth = [{"probe_id": "p1", "expected_chunk_ids": ["shared#0000"]}]
+    a = {"p1": ["shared#0000", "also#0000", *[f"a-{i}#0000" for i in range(6)]]}
+    b = {"p1": ["shared#0000", "also#0000", *[f"b-{i}#0000" for i in range(6)]]}
+    hist = tmp_path / "history"
+    hist.mkdir()
+    for tier, probes in (("s3vectors", a), ("aoss", b)):
+        c = card(tier, probes)
+        c["passed"], c["total"] = 6, 9     # criterion 1 failed inside that run
+        (hist / f"testsha-retrieval-{tier}.json").write_text(
+            json.dumps(c), encoding="utf-8")
+    t = tmp_path / "retrieval_truth.json"
+    t.write_text(json.dumps({"corpus_snapshot": "fixture", "probes": truth}),
+                 encoding="utf-8")
+    monkeypatch.setattr(run_parity, "HISTORY", hist)
+    monkeypatch.setattr(run_parity, "TRUTH", t)
+    monkeypatch.setattr(sys, "argv", ["run_parity.py", "--sha", "testsha"])
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = run_parity.main()
+    out = buf.getvalue()
+    assert rc == 1, out
+    assert "criterion 1 failed in that run" in out
+    assert "parity holds" not in out
+
+
+def test_an_empty_probe_list_cannot_report_parity(tmp_path, monkeypatch):
+    """Zero probes previously skipped every per-probe check and returned 0.
+
+    `ids` empty → `rows` empty → the summary block is skipped → "parity holds".
+    A gate that passes when it measured nothing is worse than no gate, because
+    it produces evidence.
+    """
+    rc, out = run(tmp_path, monkeypatch, [], {}, {})
+    assert rc == 1, out
+    assert "no probes in common" in out
+
+
+def test_a_card_probe_missing_from_truth_cannot_pass_vacuously(tmp_path, monkeypatch):
+    """`truth.get(pid, {})` yields expected=set(), making clause (i) vacuous.
+
+    Renaming a probe in truth would let both tiers miss its expected chunk with
+    the gate still green — the cards and the truth must agree on the probe set or
+    the comparison is meaningless.
+    """
+    truth = [{"probe_id": "renamed", "expected_chunk_ids": ["shared#0000"]}]
+    a = {"p1": ["x#0000", "also#0000", *[f"a-{i}#0000" for i in range(6)]]}
+    b = {"p1": ["x#0000", "also#0000", *[f"b-{i}#0000" for i in range(6)]]}
+    rc, out = run(tmp_path, monkeypatch, truth, a, b)
+    assert rc == 1, out
+    assert "disagree about which probes exist" in out
+
+
+def test_no_jaccard_floor_constant_survives_anywhere_in_the_module():
     """Guards against a floor creeping back in without a spec edit.
 
     Mirrors test_reindex_parity.py's source-reading guard. Blunt, but the
     property — the gate compares margins, never a similarity threshold — is not
     otherwise expressible, and ADR-0009 Ruling 2 rejected two specific fitted
     floors (c=5, and minimum→mean) that a later reader might find tempting.
+
+    Scoped to the WHOLE module, not just main(): an earlier version inspected
+    `src.split("def main(")[1]` only, so a threshold added inside `jaccard()` or
+    as a differently-named module constant slipped through.
     """
     src = PARITY.read_text(encoding="utf-8")
     assert "JACCARD_FLOOR" not in src
-    body = src.split("def main(")[1]
-    assert "< 0.6" not in body and "<0.6" not in body
-    assert "MIN_MARGIN_BEYOND_EXPECTED" in body
+    assert "MIN_MARGIN_BEYOND_EXPECTED" in src
+    # Strip comments — the rationale text legitimately mentions 0.60 and c=5.
+    code = "\n".join(ln.split("#")[0] for ln in src.splitlines())
+    for forbidden in ("< 0.6", "<0.6", "< 0.45", "<0.45", "0.4545",
+                      "statistics.mean", "sum(js) / len(js)"):
+        assert forbidden not in code, f"a similarity floor reappeared: {forbidden}"
 
 
 def test_the_recorded_e596166_pair_reproduces_the_adr_0009_verdict():

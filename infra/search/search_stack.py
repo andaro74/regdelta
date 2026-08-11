@@ -12,6 +12,7 @@ ENABLED + VPC network policy + never destroyed.
 """
 import json
 import os
+import re
 from pathlib import Path
 
 import aws_cdk as cdk
@@ -28,6 +29,13 @@ from constructs import Construct
 
 COLLECTION_NAME = "regdelta"
 SSM_ENDPOINT_PARAM = "/regdelta/search/endpoint"
+
+# An AOSS data-access policy principal must be an IAM user or role ARN. The
+# assumed-role form `aws sts get-caller-identity` returns is deliberately NOT
+# accepted — AOSS does not match on it, and the failure mode is a bare 403 that
+# reads like policy propagation.
+_DEV_PRINCIPAL_RE = re.compile(
+    r"arn:aws[a-z-]*:iam::(?P<account>\d{12}):(?:user|role)/[\w+=,.@/-]+")
 
 # Resolved from this file, not from the process CWD. `Code.from_asset("../src")`
 # only works when cdk is invoked from infra/, which is what the Makefile does
@@ -81,6 +89,7 @@ class RegDeltaSearchStack(cdk.Stack):
         # names or cross-tier Jaccard measures the disagreement instead of the
         # retrieval; one importable module makes that unrepresentable.
         # SPEC/02's Files list is amended in the same PR.
+
         # SPEC/02 Done-when (B) needs a REAL failed deploy, and reindex.py's
         # FAULT_DROP hook reads REINDEX_FAULT_DROP from the Lambda environment —
         # which nothing was passing, so the hook was unit-tested and unreachable
@@ -99,14 +108,35 @@ class RegDeltaSearchStack(cdk.Stack):
             "COLLECTION_ENDPOINT": collection.attr_collection_endpoint,
         }
         fault_drop = self.node.try_get_context("faultDrop")
-        if fault_drop:
-            reindex_env["REINDEX_FAULT_DROP"] = str(int(fault_drop))
+        if fault_drop is not None:
+            # int() rejects non-numeric loudly at synth. Sign and zero need
+            # rejecting too: `-c faultDrop=0` or `=-3` produces a normal,
+            # PASSING deploy while the operator believes the fault fired, which
+            # is the wrong direction for evidence-gathering — (B) needs a deploy
+            # that failed, and silence about why it didn't is worse than an
+            # error.
+            drop = int(fault_drop)
+            if drop < 1:
+                raise ValueError(
+                    f"faultDrop must be >= 1, got {drop}. It exists to FAIL a "
+                    "deploy for SPEC/02 Done-when (B); a value below 1 drops "
+                    "nothing and deploys normally, which looks like the fault "
+                    "hook not working.")
+            reindex_env["REINDEX_FAULT_DROP"] = str(drop)
 
         reindex = _lambda.Function(
             self, "ReindexFn",
             runtime=_lambda.Runtime.PYTHON_3_14,
             handler="retrieval.reindex.handler",
-            code=_lambda.Code.from_asset(SRC),
+            # The asset root is the whole of src/ (see the note above on why the
+            # index mapping is not duplicated into infra/lambdas/). Exclusions
+            # are a standing guard rather than a fix for anything present today:
+            # without them, anything later dropped into src/ — a scratch .env, a
+            # downloaded credential — ships to Lambda with no gate.
+            code=_lambda.Code.from_asset(SRC, exclude=[
+                "**/__pycache__", "**/.pytest_cache", "**/*.pyc",
+                "**/.env", "**/.env.*", "**/*.pem", "**/*.key",
+            ]),
             timeout=Duration.minutes(15), memory_size=1024,
             environment=reindex_env)
         corpus_bucket.grant_read(reindex)
@@ -134,6 +164,32 @@ class RegDeltaSearchStack(cdk.Stack):
         dev_principal = (self.node.try_get_context("devPrincipalArn")
                          or os.environ.get("REGDELTA_DEV_PRINCIPAL_ARN"))
         if dev_principal:
+            # Validate before it reaches a policy granting aoss:* on a
+            # collection whose network policy is AllowFromPublic. Unvalidated, a
+            # cross-account role ARN — one mistyped account id — grants read AND
+            # write on the index built from the corpus, i.e. corpus data leaving
+            # the account, reachable by a one-token mistake.
+            m = _DEV_PRINCIPAL_RE.fullmatch(dev_principal)
+            if not m:
+                raise ValueError(
+                    f"devPrincipalArn {dev_principal!r} is not an IAM user or "
+                    "role ARN. Expected arn:aws:iam::<account>:user/NAME or "
+                    ":role/NAME.\n"
+                    "Note an assumed-role ARN "
+                    "(arn:aws:sts::…:assumed-role/Role/session) is what `aws "
+                    "sts get-caller-identity` returns under SSO or any assumed "
+                    "role, and AOSS data-access policies do NOT match on it — "
+                    "pass the underlying role ARN instead. A bare 403 with a "
+                    "propagation-shaped message is the symptom otherwise.")
+            # Only enforceable when the account is concrete: with no
+            # CDK_DEFAULT_ACCOUNT, self.account is an unresolved token and
+            # comparing against it would reject every valid ARN.
+            if not cdk.Token.is_unresolved(self.account) \
+                    and m.group("account") != self.account:
+                raise ValueError(
+                    f"devPrincipalArn names account {m.group('account')}, not "
+                    f"this account ({self.account}) — this switch does not "
+                    "grant cross-account access to the corpus index")
             principals.append(dev_principal)
 
         access = aoss.CfnAccessPolicy(
