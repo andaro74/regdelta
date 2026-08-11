@@ -296,8 +296,19 @@ non-zero on 2 and 3. **All three steps must run for (A) to be satisfied.**
    This is not a similarity threshold and is not derived from any observed
    value; it asserts only that the tiers have not become effectively
    disjoint. **The margin — `|I| − |expected_chunk_ids|`, the number of
-   further shared slots — is recorded per probe in the scorecard**, so
-   distance-to-firing is observable rather than asserted. It is deliberately
+   further shared slots — is printed per probe by `make retrieval-parity`**, so
+   distance-to-firing is observable rather than asserted.
+
+   > **Corrected.** This said "recorded per probe in the scorecard", and
+   > engineering review found no scorecard carries it. It cannot: the margin is
+   > a property of a *pair* of runs, and a scorecard is one tier's run, so
+   > `run_retrieval.py` has nothing to compute it from. The same error applies to
+   > the Jaccard claim in (b) below. Both are computed and printed by
+   > `run_parity.py`. **Persisting them needs a parity artifact rather than a
+   > scorecard field, and that is owed** — until it exists the numbers quoted in
+   > `milestones/M02/` are transcribed from a console session, which is weaker
+   > than "observable" and is exactly the gap this sentence claimed to have
+   > closed. It is deliberately
    weak, and **the honest reading is that cross-tier protection is weaker
    than the original criterion promised**: it catches collapse, not drift.
    Restoring real similarity gating needs a probe set large enough to
@@ -333,7 +344,8 @@ non-zero on 2 and 3. **All three steps must run for (A) to be satisfied.**
 
    **(b) Reported, not gating: per-probe Jaccard of the full top-8**
    chunk_id sets across the two tiers, on **every** probe including filtered
-   ones, printed by `make retrieval-parity` and recorded in every scorecard.
+   ones, printed by `make retrieval-parity` (not recorded in a scorecard — see
+   the correction under (a)).
    It may **never** be cited as a criterion, the same bar criterion 4 sets
    for MRR.
 

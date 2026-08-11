@@ -129,14 +129,20 @@ class RegDeltaSearchStack(cdk.Stack):
             runtime=_lambda.Runtime.PYTHON_3_14,
             handler="retrieval.reindex.handler",
             # The asset root is the whole of src/ (see the note above on why the
-            # index mapping is not duplicated into infra/lambdas/). Exclusions
-            # are a standing guard rather than a fix for anything present today:
-            # without them, anything later dropped into src/ — a scratch .env, a
-            # downloaded credential — ships to Lambda with no gate.
-            code=_lambda.Code.from_asset(SRC, exclude=[
-                "**/__pycache__", "**/.pytest_cache", "**/*.pyc",
-                "**/.env", "**/.env.*", "**/*.pem", "**/*.key",
-            ]),
+            # index mapping is not duplicated into infra/lambdas/). This is an
+            # ALLOWLIST, not a denylist, and that distinction is the whole point:
+            # the guard is meant to hold against anything later dropped into src/
+            # — a scratch .env, a downloaded credential — and a denylist only
+            # holds against the shapes someone thought to name. The previous list
+            # missed `dev.env` (it matched `**/.env.*`, not `**/*.env`),
+            # `credentials`, `*.p12`, `*.pfx`, `*.crt` and any JSON key file.
+            # Security review of this branch, finding L4.
+            #
+            # The reindex Lambda needs nothing but Python source: verified that
+            # src/ contains no non-.py runtime file. Adding a data file to the
+            # Lambda later means adding it here deliberately, which is the
+            # intended cost.
+            code=_lambda.Code.from_asset(SRC, exclude=["*", "!**/*.py"]),
             timeout=Duration.minutes(15), memory_size=1024,
             environment=reindex_env)
         corpus_bucket.grant_read(reindex)
@@ -157,10 +163,17 @@ class RegDeltaSearchStack(cdk.Stack):
         # Opt-in and empty by default, so a deploy that does not ask for it
         # grants nothing: `cdk deploy -c devPrincipalArn=arn:...:user/you`, or
         # REGDELTA_DEV_PRINCIPAL_ARN in the environment. `make up` passes the
-        # caller's own STS identity. Read/write is still aoss:* pending the
-        # SPEC/05 split below; narrow this to read-only when that happens,
-        # since the eval harness only ever queries.
-        principals = [reindex.role.role_arn, query_lambda_role_arn]
+        # caller's own STS identity.
+        #
+        # The operator's principal gets its OWN read-only statement below and is
+        # deliberately NOT added to the aoss:* list. An earlier version appended
+        # it here, which handed a human principal DeleteIndex and WriteDocument
+        # on the corpus index to run a read-only eval harness, and deferred the
+        # narrowing to the SPEC/05 write/read split. Security review of this
+        # branch (M1) was right that a *new* widening must not ride out on an
+        # existing TODO — and read-only for this one principal does not need the
+        # SPEC/05 split, only a second statement with a different principal list.
+        lambda_principals = [reindex.role.role_arn, query_lambda_role_arn]
         dev_principal = (self.node.try_get_context("devPrincipalArn")
                          or os.environ.get("REGDELTA_DEV_PRINCIPAL_ARN"))
         if dev_principal:
@@ -181,31 +194,63 @@ class RegDeltaSearchStack(cdk.Stack):
                     "role, and AOSS data-access policies do NOT match on it — "
                     "pass the underlying role ARN instead. A bare 403 with a "
                     "propagation-shaped message is the symptom otherwise.")
-            # Only enforceable when the account is concrete: with no
-            # CDK_DEFAULT_ACCOUNT, self.account is an unresolved token and
-            # comparing against it would reject every valid ARN.
-            if not cdk.Token.is_unresolved(self.account) \
-                    and m.group("account") != self.account:
+            # The cross-account check is only enforceable when the account is
+            # concrete. With no CDK_DEFAULT_ACCOUNT, self.account is an
+            # unresolved token, and an unchecked ARN would then be baked into the
+            # cloud assembly for a later `cdk deploy --app cdk.out` to apply
+            # against a collection whose network policy is AllowFromPublic. So
+            # refuse rather than skip: this switch is only ever used from an
+            # authenticated laptop, where the account resolves. Security review
+            # of this branch, finding L2.
+            if cdk.Token.is_unresolved(self.account):
+                raise ValueError(
+                    "devPrincipalArn requires a resolved account so the "
+                    "cross-account check can run. Set CDK_DEFAULT_ACCOUNT or "
+                    "synth with credentials. Refusing rather than skipping the "
+                    "check: an unvalidated principal baked into cdk.out grants "
+                    "access to the corpus index on a later deploy.")
+            if m.group("account") != self.account:
                 raise ValueError(
                     f"devPrincipalArn names account {m.group('account')}, not "
                     f"this account ({self.account}) — this switch does not "
                     "grant cross-account access to the corpus index")
-            principals.append(dev_principal)
+            # Visible in the synth log. Unlike `-c devPrincipalArn=…`, the
+            # REGDELTA_DEV_PRINCIPAL_ARN path leaves no trace in the deploy
+            # command, and infra/cdk.context.json is gitignored — so a leftover
+            # `export` would silently widen every `make up` with no artifact.
+            # Security review of this branch, finding L3.
+            cdk.Annotations.of(self).add_info(
+                f"AOSS data access: granting READ-ONLY index access to "
+                f"{dev_principal}")
+
+        statements: list[dict] = [{
+            "Rules": [
+                {"ResourceType": "collection",
+                 "Resource": [f"collection/{COLLECTION_NAME}"],
+                 "Permission": ["aoss:*"]},
+                {"ResourceType": "index",
+                 "Resource": [f"index/{COLLECTION_NAME}/*"],
+                 "Permission": ["aoss:*"]},  # TODO SPEC/05: split write/read
+            ],
+            "Principal": lambda_principals,
+        }]
+        if dev_principal:
+            # Read-only, and separate. The eval harness only ever issues
+            # _search / _msearch / _count (src/retrieval/aoss_tier.py), all of
+            # which are index-level reads — it never creates, writes or deletes.
+            statements.append({
+                "Rules": [
+                    {"ResourceType": "index",
+                     "Resource": [f"index/{COLLECTION_NAME}/*"],
+                     "Permission": ["aoss:DescribeIndex", "aoss:ReadDocument"]},
+                ],
+                "Principal": [dev_principal],
+            })
 
         access = aoss.CfnAccessPolicy(
             self, "DataAccessPolicy",
             name=f"{COLLECTION_NAME}-access", type="data",
-            policy=json.dumps([{
-                "Rules": [
-                    {"ResourceType": "collection",
-                     "Resource": [f"collection/{COLLECTION_NAME}"],
-                     "Permission": ["aoss:*"]},
-                    {"ResourceType": "index",
-                     "Resource": [f"index/{COLLECTION_NAME}/*"],
-                     "Permission": ["aoss:*"]},  # TODO SPEC/05: split write/read
-                ],
-                "Principal": principals,
-            }]))
+            policy=json.dumps(statements))
         access.add_dependency(collection)
 
         triggers.Trigger(

@@ -36,12 +36,15 @@ def synth(context: dict | None = None) -> dict:
     return app.synth().get_stack_by_name("regdelta-search").template
 
 
-def access_principals(template: dict) -> list[str]:
-    """The reindex role's ARN is a CFN token, so the policy synthesises as an
+def access_statements(template: dict) -> list[dict]:
+    """Every statement in the data-access policy.
+
+    The reindex role's ARN is a CFN token, so the policy synthesises as an
     Fn::Join of literals and Fn::GetAtt fragments rather than a plain string.
     Tokens are rendered as a placeholder — what matters here is the LITERAL
     principals, since those are the ones a reader of the template can widen
-    without noticing."""
+    without noticing.
+    """
     for res in template["Resources"].values():
         if res["Type"] != "AWS::OpenSearchServerless::AccessPolicy":
             continue
@@ -49,8 +52,26 @@ def access_principals(template: dict) -> list[str]:
         if not isinstance(policy, str):
             policy = "".join(p if isinstance(p, str) else "<cfn-token>"
                              for p in policy["Fn::Join"][1])
-        return json.loads(policy)[0]["Principal"]
+        return json.loads(policy)
     raise AssertionError("no data access policy in the template")
+
+
+def access_principals(template: dict) -> list[str]:
+    """Every principal named anywhere in the policy, across all statements.
+
+    Was `statements[0]["Principal"]` until the dev principal moved to its own
+    read-only statement (security review M1). Reading only the first statement
+    would now report the operator as ungranted — a test that passes because it
+    stopped looking.
+    """
+    return [p for s in access_statements(template) for p in s["Principal"]]
+
+
+def permissions_for(template: dict, principal: str) -> set[str]:
+    """The union of permissions any statement grants to `principal`."""
+    return {perm
+            for s in access_statements(template) if principal in s["Principal"]
+            for rule in s["Rules"] for perm in rule["Permission"]}
 
 
 def test_the_dev_principal_is_opt_in(monkeypatch):
@@ -76,14 +97,47 @@ def test_the_dev_principal_is_granted_when_asked_for(monkeypatch):
 
 
 def test_it_grants_exactly_the_one_principal_asked_for(monkeypatch):
-    """No account root, no wildcard. The policy grants aoss:* today (the
-    read/write split is SPEC/05), so an over-broad principal list here is
+    """No account root, no wildcard. The Lambda statement still grants aoss:*
+    (the read/write split is SPEC/05), so an over-broad principal list there is
     write access to the index."""
     monkeypatch.delenv("REGDELTA_DEV_PRINCIPAL_ARN", raising=False)
     principals = access_principals(synth({"devPrincipalArn": DEV_ARN}))
     assert len(principals) == 3
     assert "*" not in principals
     assert not any(p.endswith(":root") for p in principals)
+
+
+def test_the_operator_gets_read_only_and_never_aoss_star(monkeypatch):
+    """Security review M1. The eval harness only ever queries.
+
+    An earlier version appended the operator to the same Principal list that
+    carries the collection-wide and index-wide `aoss:*` rules, so running a
+    read-only harness required handing a human principal DeleteIndex and
+    WriteDocument on the index built from the corpus — and deferred narrowing it
+    to the SPEC/05 write/read split. A *new* widening must not ride out on an
+    existing TODO, and read-only here needed no split, only its own statement.
+
+    Asserted as an exact permission set, not a `"aoss:*" not in ...` check: a
+    later edit that granted `aoss:CreateIndex` alongside the reads would pass
+    the negative form while re-opening most of what this closes.
+    """
+    monkeypatch.delenv("REGDELTA_DEV_PRINCIPAL_ARN", raising=False)
+    template = synth({"devPrincipalArn": DEV_ARN})
+    assert permissions_for(template, DEV_ARN) == {
+        "aoss:DescribeIndex", "aoss:ReadDocument"}
+    # And the Lambda roles keep theirs — this narrowed one principal, not all.
+    assert "aoss:*" in permissions_for(template, QUERY_ROLE)
+
+
+def test_the_operators_statement_grants_no_collection_level_access(monkeypatch):
+    """Index-level reads only. A collection-level rule would carry
+    CreateCollectionItems / DeleteCollectionItems, which is how a read-only
+    intent turns back into index deletion by a different route."""
+    monkeypatch.delenv("REGDELTA_DEV_PRINCIPAL_ARN", raising=False)
+    stmts = [s for s in access_statements(synth({"devPrincipalArn": DEV_ARN}))
+             if DEV_ARN in s["Principal"]]
+    assert len(stmts) == 1, "the operator should appear in exactly one statement"
+    assert {r["ResourceType"] for r in stmts[0]["Rules"]} == {"index"}
 
 
 def test_the_reindex_lambda_ships_the_shared_source_tree():

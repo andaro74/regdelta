@@ -94,12 +94,21 @@ def test_on_sends_both_queries_in_one_round_trip(wire, monkeypatch):
     assert len([s for s in wire if s["path"] == "_msearch"]) == 1
 
 
-def test_off_the_page_is_the_knn_order_not_a_refused_ranking(wire, monkeypatch):
-    """Off, `relevance` is the raw kNN list.
+def test_off_the_knn_order_reaches_the_page(wire, monkeypatch):
+    """Off, only the kNN response feeds the page, in its own order.
 
-    Asserted on ORDER, not on membership: `rrf([knn])` would return the same
-    chunks, so a membership check would pass on the implementation this test
-    exists to rule out. The kNN lane's own order must survive to the page.
+    An earlier version of this test claimed to rule out implementing the
+    flag-off path as `rrf([knn])` rather than `hits[0][:k]`. **That claim was
+    false and the test proved nothing**: single-lane RRF assigns
+    weight/(c+rank+1), strictly decreasing in rank, then truncates at k, so it is
+    identical to slicing in membership AND order — engineering review mutated the
+    line to the unconditional `rrf(hits, k=k)` and all six tests here stayed
+    green. `aoss_tier.py` now has one code path and makes no such claim.
+
+    What remains is still worth pinning, and it is what this now asserts: the kNN
+    lane's order survives to the page, and nothing from a lane that was never
+    queried appears in it. That would fail if the response index were wrong, the
+    order reversed, or the tail truncated from the front.
     """
     monkeypatch.setattr(aoss_tier.config, "RETRIEVAL_LEXICAL_LANE", False)
     out = aoss_tier.retrieve_aoss("https://x", "q", Filters(), 6)

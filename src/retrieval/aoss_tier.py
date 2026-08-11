@@ -158,9 +158,22 @@ def retrieve_aoss(endpoint: str, query: str, filters: Filters, k: int) -> list[C
             f"{len(bodies)}")
     hits = [_hits(r) for r in responses]
 
-    # With the lexical lane on, BM25 and kNN fuse into ONE relevance lane, so
-    # this tier presents the same two-lane shape as Tier A: [relevance,
-    # structural].
+    # BM25 (when on) and kNN fuse into ONE relevance lane, so this tier presents
+    # the same two-lane shape as Tier A: [relevance, structural]. With the
+    # lexical lane off `hits` has a single member and this is a rank-preserving
+    # truncation to k.
+    #
+    # An earlier version branched here — `rrf(hits)` on, `hits[0][:k]` off — with
+    # a comment claiming the branch mattered because `rrf([knn])` "re-scores by
+    # rank" and would differ from Tier A's shape. That claim was FALSE and the
+    # branch was a distinction without a difference: rrf assigns
+    # weight/(c+rank+1), strictly decreasing in rank, and truncates at k, so
+    # single-lane rrf is identical to slicing in both membership and order. The
+    # only difference was Chunk.score, which the terminal rrf at the end of this
+    # function overwrites for every chunk that survives. Engineering review of
+    # this branch caught it by mutating the line and observing all 386 tests stay
+    # green — a test claiming to rule out an implementation it did not rule out.
+    # One path now, and no claim about a difference that does not exist.
     #
     # Three flat lanes was tried and measured strictly worse — 6/9 -> 4/9. The
     # argument for flattening was that pre-fusing halves each relevance signal
@@ -171,11 +184,7 @@ def retrieve_aoss(endpoint: str, query: str, filters: Filters, k: int) -> list[C
     # third opinion on the same one. Flattening buried the DATES paragraphs
     # again, which is the failure the lane exists to fix.
     #
-    # With it off, `relevance` is the raw kNN list — NOT rrf([knn]), which would
-    # re-score by rank and differ from Tier A's shape for no reason. Tier A's
-    # relevance lane is its raw vector result (s3vectors_tier.py), and the point
-    # of (a) is that the two tiers now run the same algorithm.
-    relevance = rrf(hits, k=k) if lexical else hits[0][:k]
+    relevance = rrf(hits, k=k)
 
     # The structural lane is NOT a Tier A workaround for weak vector search.
     # Measured on the live hot tier: Tier B scored 3/9 without it and missed

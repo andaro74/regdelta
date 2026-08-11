@@ -51,32 +51,67 @@ TIERS = ("s3vectors", "aoss")
 MIN_MARGIN_BEYOND_EXPECTED = 1
 
 
-def card_path(sha: str, tier: str, rerank: int) -> Path:
+def card_path(sha: str, tier: str, rerank: int, lex: int = 0) -> Path:
     """Where run_retrieval.py --record wrote that card.
 
-    The RERANK=0 card carries NO suffix, matching run_retrieval.py: RERANK=0 is
-    the default, so the base name is the un-reranked card and every scorecard
-    recorded before the flag existed stays readable. Base + `-rerank1` is four
-    cards at one sha, which is what SPEC/02 condition 4 requires — the point of
-    the suffix is that the second pair must not overwrite the first, and one
-    suffix achieves that. SPEC/02 writes the pair as `-rerank{0,1}`; the
-    RERANK=0 half of that literal is not what the harness emits.
+    Suffixes are emitted ONLY for the non-default value of each flag, matching
+    run_retrieval.py: both flags default off, so the base name is the default
+    configuration and every scorecard recorded before either flag existed stays
+    readable. Order is `-rerank1` then `-lex1`, which is the order
+    run_retrieval.py appends them in — the two must agree or a card written by
+    one is unreadable by the other.
+
+    SPEC/02 writes the rerank pair as `-rerank{0,1}`; the `0` half of that
+    literal is not what the harness emits.
     """
-    suffix = "-rerank1" if rerank else ""
+    suffix = ("-rerank1" if rerank else "") + ("-lex1" if lex else "")
     return HISTORY / f"{sha}-retrieval-{tier}{suffix}.json"
 
 
-def load(sha: str, rerank: int = 0) -> dict:
+def load(sha: str, rerank: int = 0, lex: int = 0) -> dict:
     out = {}
     for tier in TIERS:
-        path = card_path(sha, tier, rerank)
+        path = card_path(sha, tier, rerank, lex)
         if not path.exists():
-            env = "RERANK=1 " if rerank else ""
+            env = " ".join(filter(None, [
+                "RERANK=1" if rerank else "",
+                "RETRIEVAL_LEXICAL_LANE=1" if lex else ""]))
             sys.exit(f"missing scorecard {path.name} — run "
-                     f"`{env}python evals/run_retrieval.py --tier {tier} "
-                     "--record` on this commit first")
+                     f"`{env + ' ' if env else ''}python "
+                     f"evals/run_retrieval.py --tier {tier} --record` on this "
+                     "commit first")
         out[tier] = json.loads(path.read_text(encoding="utf-8"))
     return out
+
+
+def unselected_configurations(sha: str, rerank: int, lex: int) -> list[str]:
+    """Cards at this sha that this invocation is NOT gating.
+
+    The hazard engineering review found: after `make retrieval-evals
+    LEXICAL_LANE=1`, a bare `make retrieval-parity` loaded the DEFAULT pair and
+    printed "parity holds" over a header that never mentioned the lane. The
+    operator's most recent measurement sat unread in evals/history/ while the
+    gate reported success about a different configuration.
+
+    Naming the unread cards is the fix rather than guessing which pair was meant
+    — guessing is how the wrong pair got gated in the first place.
+    """
+    others = []
+    for r, x in ((0, 0), (1, 0), (0, 1), (1, 1)):
+        if (r, x) == (rerank, lex):
+            continue
+        # ANY card, not only complete pairs. Requiring a complete pair was the
+        # first version of this guard and it stayed silent on the case that
+        # actually happened: `make retrieval-evals LEXICAL_LANE=1` with the hot
+        # tier up records ONE card (aoss-lex1), so the half-recorded
+        # configuration is the normal state mid-measurement and is precisely when
+        # the wrong pair gets gated.
+        present = [t for t in TIERS if card_path(sha, t, r, x).exists()]
+        if present:
+            missing = [t for t in TIERS if t not in present]
+            note = f" (only {', '.join(present)} recorded)" if missing else ""
+            others.append(f"--rerank {r} --lex {x}{note}")
+    return others
 
 
 def jaccard(a: list[str], b: list[str]) -> float:
@@ -92,10 +127,13 @@ def main() -> int:
     ap.add_argument("--rerank", type=int, default=0, choices=[0, 1],
                     help="which pair to gate: the RERANK=0 cards or the "
                          "RERANK=1 cards (SPEC/02 adoption bar, condition 3)")
+    ap.add_argument("--lex", type=int, default=0, choices=[0, 1],
+                    help="which pair to gate: lexical lane off (the default, "
+                         "ADR-0009 Ruling 3(a)) or on")
     args = ap.parse_args()
     sha = args.sha or git_sha()
 
-    cards = load(sha, args.rerank)
+    cards = load(sha, args.rerank, args.lex)
     truth_doc = json.loads(TRUTH.read_text(encoding="utf-8"))
     truth = {p["probe_id"]: p for p in truth_doc["probes"]}
     truth_snapshot = truth_doc.get("corpus_snapshot")
@@ -116,18 +154,22 @@ def main() -> int:
            for card in cards.values()):
         failures.append("the two runs used different corpus snapshots")
 
-    # A pair is ONE retrieval configuration measured on two tiers. Tier A has no
-    # lexical lane, so the flag cannot change its result — but a pair whose halves
-    # disagree about it was not recorded as one configuration, and ADR-0009
-    # Ruling 3's confirming measurement is precisely a comparison between two
-    # configurations. `.get` rather than indexing: cards predating the flag carry
-    # no field, and None == None keeps those pairs readable.
-    lanes = {tier: card.get("lexical_lane") for tier, card in cards.items()}
-    if len(set(lanes.values())) > 1:
-        failures.append(
-            f"the two cards disagree about the lexical lane: {lanes}. A pair is "
-            "one configuration measured on two tiers, so these are two "
-            "measurements and not a pair")
+    # A pair is ONE retrieval configuration measured on two tiers, and the
+    # filename is not evidence of which. Each card must match the REQUESTED flag,
+    # not merely agree with its partner — an earlier version compared the two
+    # cards only to each other, which engineering review showed was unreachable:
+    # without a `--lex` selector both loaded cards could only be default-named,
+    # so the disagreement it tested for could not occur. `.get` rather than
+    # indexing, because cards predating the flag carry no field: absent is read as
+    # off, which is what those runs actually were.
+    for tier, card in cards.items():
+        if bool(card.get("lexical_lane")) != bool(args.lex):
+            failures.append(
+                f"the {tier} card at "
+                f"{card_path(sha, tier, args.rerank, args.lex).name} records "
+                f"lexical_lane={card.get('lexical_lane')}, but this gate was "
+                f"asked for the lane={args.lex} pair — the filename and the run "
+                "disagree about what was measured")
     for tier, card in cards.items():
         if card.get("dirty"):
             failures.append(
@@ -257,7 +299,16 @@ def main() -> int:
         note = "" if not probe.get("filters") else "filtered"
         rows.append((pid, j, margin, absent, note))
 
-    print(f"sha {sha} · {TIERS[0]} vs {TIERS[1]} · RERANK={args.rerank}\n"
+    if others := unselected_configurations(sha, args.rerank, args.lex):
+        print("⚠  other configurations were measured at this sha and are NOT "
+              "gated by this run:")
+        for o in others:
+            print(f"     {o}")
+        print("   This run's verdict says nothing about them. Gate each "
+              "configuration you measured.\n")
+
+    print(f"sha {sha} · {TIERS[0]} vs {TIERS[1]} · RERANK={args.rerank} · "
+          f"LEXICAL_LANE={args.lex}\n"
           "gate: anti-collapse floor (criterion 3a) · Jaccard: reported only "
           "(criterion 3b)\n")
     print("      probe  margin  jaccard")

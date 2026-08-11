@@ -76,7 +76,10 @@ SSM_SEARCH_ENDPOINT = "/regdelta/search/endpoint"
 # former. Off, Tier B's relevance lane is pure kNN, which makes it the same
 # algorithm as Tier A on different infrastructure — that is the honest reading
 # and the reason Tier B's remaining claim is latency and concurrent load, not
-# relevance.
+# relevance. (An earlier version of this comment claimed the flag-off path had to
+# avoid single-lane RRF because it "re-scores by rank". That was false — RRF over
+# one lane is rank-preserving and truncating, so it equals slicing — and
+# aoss_tier.py now has one code path. Engineering review caught the claim.)
 RETRIEVAL_LEXICAL_LANE = os.environ.get("RETRIEVAL_LEXICAL_LANE", "0") == "1"
 RETRIEVAL_STRUCTURAL_KINDS = tuple(
     k for k in os.environ.get("RETRIEVAL_STRUCTURAL_KINDS",

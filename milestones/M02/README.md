@@ -5,12 +5,22 @@
   `ebf8a7e` (both tiers, harness, parity gate) · `7d65a07` (index `kind`;
   the structural lane becomes a query) · `11489e5` (AOSS index-visibility
   propagation)
-- Spec: SPEC/02 (amended, 2 deviations)   ADRs: **ADR-0008** (new)
-- Status: **Both tiers measured live at one sha, and the cross-run gate has
-  run. Tier A meets criterion 1; Tier B does not, and criterion 3's Jaccard
-  floor fails on the tail divergence the criterion itself calls legitimate.
-  Both are findings about the criteria rather than unfinished tasks, and both
-  want one PM ruling.**
+- Spec: SPEC/02 (amended, 4 deviations)   ADRs: **ADR-0008**, **ADR-0009** (new)
+- Status: **All gating criteria pass at `b16f596`.** Both tiers 9/9, recall
+  1.000, and `make retrieval-parity` holds. Getting there took three PM-seat
+  rulings (ADR-0009) and two rejected remedies, both rejected against
+  pre-registered bars: reranking was measured and did not clear SPEC/02's
+  adoption bar, and Tier B's lexical lane was retired under Ruling 3(a) because
+  hybrid measured **worse** than vector-only (7/9 against 9/9). Consequence
+  worth reading before the table: the two tiers now run the same algorithm, so
+  **criterion 3 passes but means much less than it did** — see the caveat under
+  the table.
+  > **Earlier status, superseded:** "Tier A meets criterion 1; Tier B does not,
+  > and criterion 3's Jaccard floor fails on the tail divergence the criterion
+  > itself calls legitimate." True when written, and it contradicted the table
+  > below it for one commit after the confirming measurement landed — caught by
+  > engineering review, not by a reader. Kept because the arc from there to here
+  > is the substance of this milestone.
 
 ## Done-when status (SPEC/02)
 
