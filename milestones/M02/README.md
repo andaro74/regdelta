@@ -93,10 +93,19 @@ is a mechanism rather than a threshold:
 4. **Deterministic tie-breaking**, so cross-tier Jaccard measures retrieval
    and not dict iteration order.
 
-## Tier B does not meet criterion 1, and M02 is therefore not done
+## Tier B did not meet criterion 1 — how that was resolved
 
-**Tier A: 9/9, recall 1.0, MRR 0.796. Tier B: 7/9, recall 0.833, MRR 0.648.**
-SPEC/02 requires 1.0 on both. It is not met and this milestone does not close.
+> **Resolved at close.** Tier B now measures **9/9, recall 1.0** with the lexical
+> lane off (`b16f596`), and `make retrieval-parity` holds. This section is the
+> record of the failure and the reasoning it forced, kept in the past tense
+> rather than deleted: the route from here to green is the substance of M02, and
+> two of the three remedies considered were **rejected against pre-registered
+> bars**. See "The RERANK bar was measured and not cleared" and "Ruling 3
+> resolved as (a)" below.
+
+**As first measured — Tier A: 9/9, recall 1.0, MRR 0.796. Tier B (hybrid): 7/9,
+recall 0.833, MRR 0.648.** SPEC/02 requires 1.0 on both. It was not met, and this
+milestone did not close on that measurement.
 
 Tier B's first live measurement was **3/9** — and it missed the same DATES and
 amendatory-instruction chunks Tier A had. That falsified the assumption behind
@@ -739,3 +748,141 @@ on top of a retrieval path tuned to substitute for the graph.
 - **`_resolve_fr_citation` uses FR *term* search**, which cannot resolve a
   citation to its document (`2026-15671` is permanently DLQ'd on this).
   Recorded at M01c, still open, not M02's.
+
+## Demo script for this stage
+
+M02 has no API and no UI — those are SPEC/04. So this is a terminal demo, and
+what it demonstrates is the **contract**, not an answer. Three steps, ~4 minutes,
+about $0.02 of hot tier.
+
+**1. The always-on tier answers, with nothing running.**
+
+```bash
+make status                 # → "Hot tier: DOWN → retrieval on S3 Vectors"
+make retrieval-evals        # → 9/9 probes, recall@8=1.0, MRR=0.796
+```
+
+Idle cost of the thing that just answered: under $2/month. No cluster.
+
+**2. Bring the hot tier up and ask the same nine questions.**
+
+```bash
+make up                     # ~3-4 min: collection, index, hydration
+make retrieval-evals        # → "→ hot tier aoss" · 9/9, recall@8=1.0, MRR=0.796
+```
+
+Nothing in the command changed. The router picked the other backend from an SSM
+parameter, and **the numbers are identical to the last digit** — 0.7962962962962963
+both times.
+
+**3. Prove it is the same answer, not just the same score.**
+
+```bash
+make retrieval-parity       # → ✅ parity holds · minimum margin 6
+make down                   # → OCU billing stopped
+```
+
+Eight of the nine probes return **byte-identical top-8 chunk sets** across two
+different search engines.
+
+### What to say while it runs, and what not to
+
+**Say:** the retrieval contract is one seam (`router.retrieve`), the tier is chosen
+by infrastructure state rather than by the caller, and a deployed-but-broken hot
+tier falls back to the always-on one rather than taking the API down — with the
+reason carried out on the response, so a fallback can never be silently reported
+as two-tier coverage. That last property is what SPEC/02 criterion 2 gates.
+
+**Do not say "hybrid".** Tier B was specified as BM25+kNN hybrid. Measured, hybrid
+scored 7/9 against vector-only's 9/9, so the lexical lane is off (ADR-0009 Ruling
+3(a)). **Do not say "faster" either** — that is unmeasured, and the only proxy in
+the repo has AOSS slower. Say "same algorithm, different infrastructure".
+
+**The honest headline is better than the one it replaced:** *the answer does not
+change when the infrastructure does.* That is the contract, it is demonstrable in
+four minutes, and it is a stronger claim than a relevance story the scorecards
+contradict.
+
+### If you have another two minutes, show the failure
+
+```bash
+cdk deploy regdelta-search -c faultDrop=3   # → UPDATE_FAILED, stack rolls back
+```
+
+982 of 985 chunks indexed — 0.3% missing — and the deploy refuses. Every probe
+would still have returned eight results with real citations; a smoke test would
+pass. That is the point: see `faultdrop-deploy.md`.
+
+## `make evals` is not applicable at M02, and that is pre-registered
+
+`close-milestone` step 1 calls for the full golden set. It **cannot run here**:
+`run_evals.py:124` resolves an API URL unconditionally, before subset filtering,
+and the API is SPEC/04. Attempted at close: `No API URL. Use --api-url,
+$REGDELTA_API_URL, or deploy regdelta-core.`
+
+This is not a waiver written to get past a red gate. SPEC/02's "Why not the golden
+set here" recorded it **before** any measurement, on two grounds: executing it at
+M02 would invert the milestone order, and it is the wrong instrument — those
+questions assert on answer prose, so a failure could not distinguish "the chunk
+never came back" from "the model fumbled a chunk it had". The coverage is
+**relocated, not dropped**: SPEC/04's "Done when" requires
+`run_evals.py --subset retrieval` against the deployed API on both tiers, and
+SPEC/02 states that its own deferral "is only honest if this clause holds".
+
+**M02's evidence is the retrieval scorecards**, and the delta-vs-M00b that
+`close-milestone` step 3 asks for is deliberately not computed: recall@8 is not
+answer quality, every card carries `"comparable_to_baseline": false`, and SPEC/02's
+"No trap score" rule bars it until the q03 tightening closes. A recall number
+presented as a delta against the naive baseline would be the most flattering
+available misreading of this milestone.
+
+## What broke
+
+> **These are the failures the record can prove** — git history, scorecards,
+> reviewer output. **The operator's own notes are still owed and are NOT written
+> here**, because `close-milestone` step 3 says to ask rather than invent, and the
+> subjective half — what actually cost hours — is not mine to put in someone
+> else's voice. Add them under "Operator notes" below before the tag is trusted as
+> complete.
+
+**Found by running it, not by reading it** (detail in "Defects found by running
+it"): the AOSS 403 that was a data-access-policy gap rather than propagation
+delay; `MSYS_NO_PATHCONV` — Git Bash rewriting `--name /regdelta/search/endpoint`
+into a Windows path, so the tier probe returned ParameterNotFound while the hot
+tier was **up**, and the harness then measured AOSS under the S3 Vectors label;
+the first scorecard filed under the previous commit's sha, since `git_sha()`
+reports HEAD whether or not the tree matches.
+
+**Four ranking experiments that could not be adjudicated.** Three flat lanes 6/9 →
+4/9. Interleaving the assist lane traded r05 for r09. `minimum_should_match: 70%`
+scored *best* (6/9 → 8/9) and was **rejected** because its mechanism ran backwards
+to its purpose — it suppresses preamble noise by killing the short structural
+chunks the lane exists to surface. Then reranking recovered the target chunk and
+broke Tier A. Two of four traded one probe for another, which is the signal that
+**nine probes cannot distinguish ranking policies**.
+
+**Defects in this milestone's own work, caught by the role gates and not by me.**
+The parity gate could not load a `-lex1` card at all, so `make retrieval-parity`
+silently gated the *default* pair and printed "parity holds" over a header that
+never mentioned the lane — while the operator's most recent measurement sat unread
+in `evals/history/`; and the `lexical_lane` check written to prevent exactly that
+was **unreachable**. A branch claiming `rrf([knn])` differed from slicing, written
+into three places including a test docstring that said it existed to rule out the
+other implementation — the reviewer disproved it by mutating the line and watching
+all 386 tests stay green. The `kind` pushdown, the drift this milestone existed to
+close, had **no test**: skipping it in either tier left the suite green. SPEC/04's
+answer-comparability criterion was **green by construction** via the response
+cache — the same tautology class as ADR-0009 fact 4, reproduced in a criterion
+written after that finding was recorded. A dev principal granted `aoss:*` —
+DeleteIndex and WriteDocument — to run a read-only harness. And a latency claim
+committed to `CLAUDE.md` as an architecture rule, with a "say that" instruction,
+that no measurement supported and whose only available proxy contradicted.
+
+**A ruling that was factually wrong twice.** ADR-0009's first draft asserted the
+in-filter carve-out "protected the wrong probes"; `pm-spec-reviewer` refuted it
+from the ADR's own cited evidence, and the proposed fix was itself a no-op because
+`router._finish` already applies that predicate. Both corrections are marked inline
+rather than edited away.
+
+### Operator notes
+_(owed — see the note at the top of this section)_
