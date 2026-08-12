@@ -24,7 +24,14 @@ jobs:
       # happens to default to, so identical code passes or fails depending on
       # the day of the pip resolve. Rule selection lives in ruff.toml, also
       # explicit, for the same reason.
-      - run: pip install ruff==0.16.2 pytest==9.1.1 boto3==1.43.67
+      #
+      # Moved from inline pins to requirements-dev.txt at M03. The pins were
+      # inline and the laptop's were not pinned at all, so they had already
+      # drifted — CI ran ruff 0.16.2 against a local 0.16.1 — which defeats the
+      # reason for pinning stated above. One file is now the source of truth for
+      # both. M03 also adds langgraph, which this step did not install, so the
+      # first test importing the graph would have failed the gate here.
+      - run: pip install -r requirements-dev.txt
       # `tests` added at M02. It was outside this target, so test code was the
       # one unlinted directory in the repo — and B023 late-binding closures,
       # the rule ruff.toml exists for, are most common in test fixtures.
@@ -52,7 +59,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.14" }
-      - run: pip install boto3
+      # The runtime manifest, not a bare `pip install boto3` — this job talks to
+      # the deployed API and must not drift from what that API was built against.
+      - run: pip install -r requirements.txt
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_EVAL_ROLE_ARN }}   # OIDC role, read-only + invoke

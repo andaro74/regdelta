@@ -99,6 +99,29 @@ QUEUE_URL = os.environ.get("QUEUE_URL", "")
 SEMANTIC_CACHE = os.environ.get("SEMANTIC_CACHE", "0") == "1"
 RERANK = os.environ.get("RERANK", "0") == "1"
 
+# ------------------------------------------------------------- graph (03)
+# LangSmith tracing is FORCED OFF, and this is a data-egress control rather
+# than a preference. `langgraph` pulls `langsmith` transitively (M03), and
+# langsmith uploads prompts, inputs and outputs to a third-party SaaS endpoint
+# when LANGSMITH_TRACING or LANGCHAIN_TRACING_V2 is truthy. For this product
+# those payloads are the worst possible thing to leak by accident: the company
+# profile a user submits (revenue tier, product lines) plus the regulatory
+# analysis derived from it.
+#
+# It is off by default upstream, so this changes nothing today. It exists
+# because the failure mode is a single environment variable — one `export
+# LANGSMITH_TRACING=1` in a shell, one leftover value in a Lambda config — and
+# nothing in the code would report it. Same reasoning as pinning versions:
+# defaults are not decisions until they are written down. Setting the variables
+# rather than reading them means an inherited value is overridden, not detected.
+#
+# Deliberately NOT configurable. If tracing is ever wanted, that is a decision
+# about sending customer data to a third party, and it belongs in an ADR and a
+# spec — not in an env var that already exists.
+os.environ["LANGSMITH_TRACING"] = "false"
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
+os.environ["LANGSMITH_OTEL_ENABLED"] = "false"
+
 # ---------------------------------------------------------------- ingestion
 FR_API = "https://www.federalregister.gov/api/v1"
 ECFR_API = "https://www.ecfr.gov/api/versioner/v1"
