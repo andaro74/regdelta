@@ -838,12 +838,12 @@ available misreading of this milestone.
 
 ## What broke
 
-> **These are the failures the record can prove** — git history, scorecards,
-> reviewer output. **The operator's own notes are still owed and are NOT written
-> here**, because `close-milestone` step 3 says to ask rather than invent, and the
-> subjective half — what actually cost hours — is not mine to put in someone
-> else's voice. Add them under "Operator notes" below before the tag is trusted as
-> complete.
+> Two halves, kept separate on purpose. Everything down to "Operator notes" is
+> **what the record can prove** — git history, scorecards, reviewer output.
+> "Operator notes" is the operator's own account, collected by asking rather than
+> inferred, per `close-milestone` step 3. The split matters because the two are
+> not equally reliable: the first half is falsifiable from the repo, the second is
+> testimony.
 
 **Found by running it, not by reading it** (detail in "Defects found by running
 it"): the AOSS 403 that was a data-access-policy gap rather than propagation
@@ -885,4 +885,44 @@ from the ADR's own cited evidence, and the proposed fix was itself a no-op becau
 rather than edited away.
 
 ### Operator notes
-_(owed — see the note at the top of this section)_
+
+The two that actually cost time at the keyboard. Mechanisms are documented above;
+these are the operator-facing versions — what the terminal showed, what it looked
+like it meant, and what to do differently next time.
+
+**1. The AOSS 403 — three plausible wrong answers before the right one.**
+`make up` failed with `PUT chunks -> 403` and an OpenSearch-shaped body, and the
+signal pointed away from the cause at every step. The `DELETE` succeeding while the
+`PUT` was denied looked like it ruled out a blanket authorization failure (it does
+not — DELETE on a nonexistent index is answered before the body-bearing path that
+needs the header). "403 on a freshly created data-access policy" reads as
+eventual consistency, so the first fix shipped was a propagation retry. It took
+CloudTrail plus a 37-attempt/183-second retry log to rule that out, and the actual
+cause was the signer: aoss requires `x-amz-content-sha256`, which botocore's
+generic `SigV4Auth` folds into the canonical request without emitting as a header.
+
+*What to do differently:* on an AOSS 403, check the **signed headers** before the
+policy and before timing. The policy and the principal are visible in CloudTrail in
+under a minute; the header is not visible anywhere except by reading the signer. The
+retry that was shipped first was not wasted — its diagnostic is what made the second
+failure decisive — but it was built on a diagnosis nothing had yet distinguished
+from the alternatives. That is the same shape as the mistake ADR-0005 records.
+
+**2. A deliberate failure is indistinguishable from a real one at the terminal.**
+`cdk deploy regdelta-search -c faultDrop=3` is *supposed* to fail — that failing
+deploy is the evidence Done-when (B) requires. It still arrives as
+`UPDATE_FAILED · Received response status [FAILED] from custom resource`, in the
+middle of a CloudFormation rollback, indistinguishable from a broken deploy until
+you read the message body. The first reaction was to treat it as something to fix.
+
+*What to do differently:* say out loud which command is expected to fail before
+running it, and check `git status` first. The scorecards recorded before that
+deploy were still uncommitted at the time; had the rollback not re-hydrated the
+index to 985 (it did, verified by count), the next measurement would have run
+against a 982-chunk index that — by this pack's own argument — would have looked
+entirely healthy. The fault injection being non-sticky was luck of the mechanism,
+not a designed safeguard.
+
+*Also worth knowing:* `make up` is ~3–4 minutes end to end, and hydration alone
+took 100 seconds in the captured events. That is too slow to do live in front of an
+audience — see the demo script's note about pre-warming.
