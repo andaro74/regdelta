@@ -74,9 +74,13 @@ SSM_SEARCH_ENDPOINT = "/regdelta/search/endpoint"
 # not — and this default flips back. Nine probes can witness a counterexample;
 # they cannot establish that BM25 never helps, and the ruling claims only the
 # former. Off, Tier B's relevance lane is pure kNN, which makes it the same
-# algorithm as Tier A on different infrastructure — that is the honest reading
-# and the reason Tier B's remaining claim is latency and concurrent load, not
-# relevance. (An earlier version of this comment claimed the flag-off path had to
+# algorithm as Tier A on different infrastructure — that is the honest reading.
+# Tier B's remaining CANDIDATE justification is latency, and it is UNMEASURED:
+# the only proxy in the repo (whole-run `wall_s`) has AOSS slower in every
+# recorded pair, 11.6 vs 6.7 at b16f596. SPEC/04 homes the criterion. Do not
+# narrate "faster" before it passes, and do not say "concurrent load" at all —
+# that is M06's and was struck from the spec (pm-spec-reviewer B1, B3).
+# (An earlier version of this comment claimed the flag-off path had to
 # avoid single-lane RRF because it "re-scores by rank". That was false — RRF over
 # one lane is rank-preserving and truncating, so it equals slicing — and
 # aoss_tier.py now has one code path. Engineering review caught the claim.)

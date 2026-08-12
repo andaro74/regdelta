@@ -57,19 +57,69 @@ query's terms without answering it. The only BM25 weight satisfying criterion 1
 is 0.05, at which the lane has stopped affecting the outcome.
 
 **Consequently the two tiers now run the same algorithm on different
-infrastructure**, and their scorecards agree to sixteen digits of MRR. Tier B's
-justification is therefore **latency and concurrent load, not relevance** —
-say that rather than "hybrid". That claim is not gated here: SPEC/04 specifies
-the retrieval-latency readout in the UI, and **the acceptance criterion for it
-is owed to SPEC/04's "Done when"**, not invented in this milestone after the
-fact. Recorded as owed rather than left for the demo to discover.
+infrastructure**, and their scorecards agree to sixteen digits of MRR.
+
+Tier B's remaining **candidate** justification is **latency**, and it is
+**unmeasured**. Say "same algorithm, different infrastructure"; do not say
+"hybrid" and do not say "faster". The criterion is owed to SPEC/04's "Done when",
+not invented here after the fact.
+
+> **The only proxy currently in the repo runs the other way.** `wall_s` has AOSS
+> slower in every recorded pair — 11.6 vs 6.7 at `b16f596`, 13.3 vs 6.5 at
+> `9e47ce7`, 7.9 vs 5.8 at `e596166`. That is whole-run wall clock over nine
+> sequential probes including embedding calls, **not** per-query
+> `router.retrieve()` latency, so it does not establish that Tier B is slower
+> either. It establishes only that nothing here supports the claim, which is why
+> the claim is hedged rather than asserted. An earlier draft of this section, and
+> of `CLAUDE.md`, stated it as settled architecture with a "say that" instruction
+> attached — committing in the repo's highest-traffic document the exact defect
+> ADR-0009 named as "the same defect in new clothes". `pm-spec-reviewer` caught
+> it (B1).
+>
+> **"Concurrent load" is struck**, not hedged. It was asserted alongside latency
+> and is homed in no milestone: SPEC/04's criterion times nine sequential probes
+> in a single stream, which cannot become concurrency evidence. Throughput and
+> load are M06's (SPEC/00 "load test & observability"). Claiming half a
+> justification that no criterion anywhere will ever check is worse than claiming
+> none (B3).
+>
+> **ADR-0001 already asked for this number at THIS milestone.** Its Evidence line
+> requires "retrieval p50 per tier" recorded in `milestones/M02/`. That is
+> **deliberately deferred to SPEC/04's criterion and recorded as deferred, not
+> met** — M02 closes with Tier B's rationale unverified, and saying so is the
+> point. Deferring silently, which an earlier draft did by presenting latency as
+> newly owed, is how an obligation disappears (B4).
 
 **Reversal condition.** A probe the lexical lane *wins* — an
 `expected_chunk_ids` member BM25 places in the top-8 and the vector lane does
-not — flips the default back and voids the ruling. Nine probes can witness a
-counterexample; they cannot establish that BM25 never helps, and (a) claims only
-the former. Re-enabling the lane to make a failing probe pass is the move
-CLAUDE.md routes to a stop, in code rather than in JSON.
+not. Nine probes can witness a counterexample; they cannot establish that BM25
+never helps, and (a) claims only the former. Re-enabling the lane to make a
+failing probe pass is the move CLAUDE.md routes to a stop, in code rather than in
+JSON.
+
+- **Executed by** `make retrieval-evals LEXICAL_LANE={0,1}` on Tier B at one sha,
+  then `make retrieval-parity ARGS="--lex {0,1}"`. Cards:
+  `<sha>-retrieval-aoss[-lex1].json`.
+- **Checked** whenever a probe is added to `evals/retrieval_truth.json`, and at
+  any milestone that already runs `make up` — it costs a hot-tier cycle, so it is
+  attached to one rather than scheduling its own.
+- **A candidate probe goes through the SME carve-out below before admission.** It
+  encodes a retrieval-quality judgement, not a corpus fact, and it is authored
+  *because* the current default fails it — which is the shape CLAUDE.md routes to
+  a stop.
+- **If one is admitted, criterion 1 goes RED on Tier A.** By construction: a
+  probe whose expected chunk the vector lane does not return is a probe the
+  vector-only tier fails, and Tier A has no lexical lane to restore. So
+  satisfying this condition is **a PM-seat finding about both tiers, not a licence
+  to flip Tier B's flag** — flipping it would leave criterion 1 failing on Tier A,
+  and Ruling 1 forbids moving criterion 1. The verdict that follows is a fresh
+  ruling, not an automatic reversal.
+
+> An earlier draft said only that such a probe "flips the default back and voids
+> the ruling", with no command, no trigger, no owner, and no verdict — and the
+> criterion-1 collision above means the stated consequence was not even coherent.
+> `pm-spec-reviewer` (B8): the risk was never accidental satisfaction, it was that
+> nobody would ever evaluate it, "which makes 3(a) a deletion wearing a flag".
 - Hydration: reindex Lambda streams corpus/chunks/*.jsonl, bulk 500/batch;
   asserts index count == source count (raise → deploy fails).
 
@@ -199,6 +249,17 @@ tree** so the measurement is reproducible — a deleted experiment is an
 unfalsifiable claim about an experiment. Adoption would need a fresh run clearing
 all four conditions, not a re-reading of these cards.
 
+> **These cards measure a Tier B that no longer exists.** They predate the
+> `lexical_lane` field entirely, and their `RERANK=0` Tier B column — 7/9 —
+> **is the hybrid tier**, which Ruling 3(a) then retired. So condition 2's "no
+> probe regresses" was evaluated against a 7/9 baseline that is now 9/9, and the
+> reachability argument's "fused rank 13 on r01 and 12 on r03" describes a fused
+> ordering that no longer exists — the lexical lane was half of that fusion. This
+> is the same stale-row defect ADR-0009 caught in the Tier A cap sweep, and
+> `pm-spec-reviewer` (N4) caught it here. **Any adoption run must re-derive the
+> reachability argument and re-baseline conditions 1–3 against a lane-off Tier
+> B.** The bar's text stands; its recorded result is historical.
+
 Commands: `make retrieval-evals` per tier per flag value, then
 `make retrieval-parity --rerank {0,1}` on the matching pair. Producing four
 cards at one sha costs **two `make up`/`make down` cycles**, because the router
@@ -314,33 +375,72 @@ non-zero on 2 and 3. **All three steps must run for (A) to be satisfied.**
    Restoring real similarity gating needs a probe set large enough to
    calibrate a threshold, which is not this milestone's.
 
-   > **This criterion changed job when the lexical lane went off, and the
-   > wording above is now about the wrong thing.** With both tiers running the
-   > same algorithm over the same embeddings, cross-tier agreement is close to
-   > tautological: at `b16f596` the minimum margin is **6** (it was 2 with
-   > hybrid), eight of nine probes score Jaccard **1.00**, and the minimum is
-   > 0.78 — so the 0.60 floor this criterion removed as unmeetable would now
-   > pass comfortably. **That is not the floor being vindicated.** It is the
-   > two tiers no longer differing enough for a *ranking-drift* gate to
-   > measure anything, because Ruling 3(a) removed the drift by removing the
-   > difference.
+   > **Ruling 3(a) drained most of the remaining information out of this
+   > criterion.** At `b16f596` the two tiers return **identical** top-8 sets on
+   > eight of nine probes and differ by exactly one slot on r05; minimum margin
+   > is **6**, minimum Jaccard 0.78. So the 0.60 floor Ruling 2 removed as
+   > unmeetable would now pass comfortably — which is **not** the floor being
+   > vindicated, but the two tiers no longer differing enough for any cross-tier
+   > comparison to carry signal. Clause (ii) can now only fire if Tier B
+   > disagrees on roughly seven of eight slots.
    >
-   > **The criterion is kept, and what it protects is restated.** It is no
-   > longer a ranking-drift gate; it is a **tier-health** gate. The remaining
-   > way for two runs of one algorithm to disagree is that a tier has diverged
-   > *operationally* — a partially hydrated index, a filter dialect that
-   > silently matches everything or nothing, a stale reindex against a moved
-   > corpus. Those are real, and they are the same failure class Done-when (B)
-   > catches from the deploy side, so this is defence in depth from the query
-   > side. A margin of 6 should be read as "both tiers are healthy", **not** as
-   > "ranking is six slots from trouble".
+   > **Attribution, corrected.** An earlier draft said this criterion "is no
+   > longer a ranking-drift gate", implying it was one until Ruling 3(a). It was
+   > not: **Ruling 2 already stopped it gating drift**, and this criterion's own
+   > text says so twenty lines above — "it catches collapse, not drift". Crediting
+   > Ruling 3(a) with a cost Ruling 2 had already paid overstates what removing
+   > the lane did (`pm-spec-reviewer` B7). What 3(a) changes is narrower: even the
+   > *reported* Jaccard now carries almost no information.
    >
-   > Two consequences follow, and neither is hidden. Its **sensitivity is now
-   > low**: it fires only on gross divergence, so a subtly wrong Tier B index
-   > can still pass. And if the lexical lane is ever restored under the
-   > reversal condition, this criterion **reverts to its original job** and the
-   > margin-2 reading returns with it — the threshold does not need changing in
-   > either direction, only the reading.
+   > **The criterion is KEPT and its threshold untouched. Its claimed protective
+   > value is stated as claimed, because it has never once fired.** The
+   > hypothesis is that it catches *operational* divergence — a partially
+   > hydrated index, a filter dialect matching everything or nothing, a stale
+   > reindex against a moved corpus. **No divergence observed in this repo, of
+   > any class, has failed this gate:**
+   >
+   > - r07 at `e596166` — Tier B filling with `cfr-21-101.65` version variants
+   >   where Tier A filled with preamble, full top-8 Jaccard **0.23**, which is
+   >   exactly the "stale reindex against a moved corpus" shape — **passed**, at
+   >   margin 2.
+   > - `milestones/M02/faultdrop-deploy.md` records that the Tier B cards were
+   >   taken *before* the fault-drop deploy, and that a 982-of-985 index "would
+   >   have looked entirely healthy" — a partially hydrated index is the *first*
+   >   failure this hypothesis names, and our own artifact says the query-side
+   >   cards do not see it.
+   >
+   > So an earlier draft's "this is defence in depth from the query side" was
+   > unearned, and stood one paragraph above the concession that contradicts it
+   > (B5). **Cheap way to settle it:** `REINDEX_FAULT_DROP` already exists. One
+   > lane-off Tier B run against a fault-dropped index through
+   > `make retrieval-parity` either fires clause (ii) or does not, and that answer
+   > belongs here *before* the protective claim is made. **Owed, and until it
+   > exists the sensitivity is claimed, not demonstrated.**
+   >
+   > **A margin of 6 licenses no health claim.** It should be read as "the two
+   > tiers are not grossly divergent" and nothing more — an earlier draft said
+   > "both tiers are healthy" four lines above conceding that a subtly wrong Tier
+   > B index still passes, which cannot both be true (B6).
+   >
+   > **The narrower alternative, considered and why it is not taken.** ADR-0009's
+   > anti-fitting corollary requires this of any change to a gate, and a
+   > purpose-swap is a change to a gate. The alternative is to make criterion 3
+   > **non-gating** — reported, like MRR and Jaccard — leaving criterion 1 and
+   > Done-when (B) to carry the gating. It is genuinely close. It is not taken
+   > because (B) fires only at deploy time, so nothing would gate a Tier B index
+   > that degraded *after* a successful hydration, and clause (ii) at margin ≥1
+   > costs nothing to keep. **But this reasoning is only as good as the
+   > fault-drop measurement above**, and if that measurement shows clause (ii)
+   > cannot see a partial index either, then non-gating is the correct answer and
+   > this paragraph is the record of what would change it.
+   >
+   > If the lexical lane is ever restored under the reversal condition, this
+   > criterion regains independent content, and its margins **must be re-derived
+   > from the new pair** rather than assumed. Under hybrid at `e596166` the
+   > minimum was 2 — the order of magnitude to expect, not a value to predict
+   > (an earlier draft stated "the margin-2 reading returns with it" flatly,
+   > which is a prediction about an unrun measurement at a different sha, cap and
+   > corpus).
 
    **(b) Reported, not gating: per-probe Jaccard of the full top-8**
    chunk_id sets across the two tiers, on **every** probe including filtered
@@ -419,6 +519,18 @@ exists on one tier and is a deploy-time property, so it is not part of the
 Lambda must **fail the deploy** (index count != source count → raise).
 Evidence: the failing CloudFormation event / Lambda error captured in
 `milestones/M02/`. Test lives in `tests/test_reindex_parity.py`.
+
+**(D) The lexical lane is off by default, and the recorded Tier B card is the
+lane-off one.** ADR-0009 Ruling 3(a) is a *default*, so a default silently
+flipped is the ruling silently reversed — and flipping it is the cheapest way to
+make a failing probe pass, which is why the reversal condition above requires an
+SME carve-out and a fresh ruling instead. Evidence: `config.RETRIEVAL_LEXICAL_LANE
+is False` asserted directly in
+`tests/test_lexical_lane.py::test_the_default_is_off_in_config_not_only_in_this_test`,
+and the gating card's `"lexical_lane": false` checked by
+`make retrieval-parity` against `--lex 0`. Named here at `pm-spec-reviewer`'s
+request (N2): the check existed, the spec did not point at it, while (B) named its
+test.
 
 **(C) `.github/CODEOWNERS` gains `/evals/ @regdelta-eng @regdelta-sme`**
 before M02 closes — M00b finding 5, still open. Today only
@@ -549,6 +661,17 @@ Retrieval scorecards write to `evals/history/` with a distinct prefix
 (`<sha>-retrieval-<tier>.json`, or
 `<sha>-retrieval-<tier>-rerank{0,1}.json` when the RERANK adoption bar is
 being measured — see "Optional") and an explicit
+
+**Suffixes, in the order the harness appends them:** `-rerank1` then `-lex1`,
+each emitted only for the flag's non-default value, so the base name is the
+default configuration and cards predating either flag stay readable. Every card
+records `rerank_enabled` and `lexical_lane`, and `make retrieval-parity` gates on
+each matching the requested `--rerank` / `--lex` — the filename is not evidence
+of what was measured. `-lex1` was omitted from this section when it was added
+(`pm-spec-reviewer` N1), which is the exact gap RERANK condition 4 exists to
+close for `-rerank{0,1}`.
+
+Continuing the prefix rule: cards also carry an explicit
 `"comparable_to_baseline": false` field. The M00b control
 (`7f012b8-naive-full.json`) measures answer quality; a recall number is
 not a delta against it and must not be read as one.

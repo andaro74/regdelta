@@ -57,7 +57,9 @@ Low-confidence verdicts pause for human review.
   EventBridge ingestion · API GW + Lambda (LangGraph) · nightly evals.
 - **Ephemeral search stack**: AOSS vector search collection (dev mode,
   ~$0.24/hr), hydrated from S3 on deploy, destroyed after each session.
-- **Routing seam**: SSM `/regdelta/search/endpoint` present → AOSS hybrid;
+- **Routing seam**: SSM `/regdelta/search/endpoint` present → AOSS
+  (vector-only by default; ADR-0009 Ruling 3(a) retired the lexical lane after
+  hybrid measured 7/9 against vector-only's 9/9);
   absent → S3 Vectors. Same golden set must pass on both paths.
 
 ## Milestones

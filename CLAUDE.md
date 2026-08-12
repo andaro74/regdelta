@@ -28,8 +28,12 @@ Python 3.14 · LangGraph · Bedrock (Claude + Titan v2 embeddings, 1024-dim)
   by default. Do not re-enable it to "fix" a probe — the reversal condition is
   a probe the lexical lane *wins*, and it is written beside the flag.
   Consequently both tiers now run the same algorithm on different
-  infrastructure: AOSS earns its place on latency and concurrent load, not on
-  relevance. Say that, not "hybrid".
+  infrastructure. Tier B's remaining *candidate* justification is latency —
+  **unmeasured, and the only proxy in the repo points the other way** (`wall_s`
+  has AOSS slower in every recorded pair: 11.6 vs 6.7 at `b16f596`; that is
+  whole-run wall clock, not per-query latency, so it settles nothing either
+  way). SPEC/04 homes the criterion. Until it passes, say "same algorithm,
+  different infrastructure" — do **not** say "hybrid", and do not say "faster".
 - Embeddings are computed once at ingest and persisted with chunks. Never
   re-embed during index hydration.
 - Every answer must cite FR doc number and/or CFR section for each claim.
