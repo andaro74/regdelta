@@ -562,6 +562,14 @@ substitute for it. Nor does it rule on ADR-0001, which is lead-seat owned
 amending ADR-0001 and the demo's "production-standard hybrid" wording is the
 lead seat's to do, and this ruling only scopes what that seat would face.
 
+> **Discharged.** (a) was chosen, and ADR-0001 carries an "Amendment (M02)" that
+> keeps the decision, restates its justification, corrects three false claims —
+> including one this document did not spot, that eval parity was "enforced by CI
+> matrix" when no tier matrix exists — and attaches a reversal condition: if
+> SPEC/04's latency measurement shows no material advantage for Tier B, reopen
+> ADR-0001 to consider dropping it. Its Evidence line's request for retrieval p50
+> per tier at M02 is recorded there as deferred, not met.
+
 ### Ruling 3, resolved — the deferral's condition came due
 
 The deferral above is left standing rather than rewritten: it is the record of why
