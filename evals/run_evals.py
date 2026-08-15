@@ -245,6 +245,7 @@ def main() -> int:
     provenance: dict = {}
     t0 = time.monotonic()
     for q in questions:
+        resp = {}
         try:
             resp = ask(api_url, q["question"], args.mode)
             fails = check(q, resp)
@@ -252,7 +253,27 @@ def main() -> int:
             provenance = resp.get("provenance") or provenance
         except Exception as e:  # noqa: BLE001 — an error IS a failure
             fails = [f"request error: {e}"]
-        per_q.append({"id": q["id"], "pass": not fails, "fails": fails})
+        # THE ANSWER IS RECORDED, not just the verdict. Cards used to carry
+        # {id, pass, fails} and nothing else, which makes a PASS unauditable:
+        # the 2026-08-15 discrimination sweep found 14 wrong answers that the
+        # live questions score as passes, and there was then no way to ask
+        # whether any recorded pass had actually been earned or merely given
+        # away by a loose token. A failure was always legible — `fails` says
+        # what was missing — so only the passes were dark, which is the wrong
+        # way round for evidence. Everything check() scored is kept verbatim
+        # and untruncated; a truncated answer would reintroduce the same gap
+        # more quietly.
+        per_q.append({
+            "id": q["id"],
+            "pass": not fails,
+            "fails": fails,
+            "response": {
+                "answer": resp.get("answer"),
+                "answer_rows": resp.get("answer_rows"),
+                "citations": resp.get("citations"),
+                "status": resp.get("status"),
+            },
+        })
         if fails:
             print(f"❌ {q['id']}: {q['question'][:70]}")
             for f in fails:
