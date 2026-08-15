@@ -1,0 +1,139 @@
+{
+  "_proposal": {
+    "status": "DRAFT — not ground truth. Requires an SME-seat ruling before merge (CLAUDE.md role gates; ADR-0005).",
+    "drafted": "2026-08-12",
+    "target": "evals/golden_questions.json — MERGE these ten alongside the existing q01-q10, which are NOT modified by this proposal. Result: a twenty-question golden set.",
+    "why": "The set is ten questions, so one question is worth 10 points and SPEC/03's '>=80%' bar is 'miss no more than two'. Coverage is also lopsided: ONE timeline question (q08) for a product whose entire thesis is date semantics, and zero questions touching the administrative stay that ADR-0007 was written for. These ten close that.",
+    "corpus": "STALE — SEE corpus_premise_invalidated. Authored against four FR documents + three CFR sections: 2024-29957 (89 FR 106064), 2025-03118 (90 FR 10592), 2025-00830 (90 FR 4628) per config.BACKFILL_FR_DOCS; 2026-15920 (91 FR 50475) via the daily poller (ADR-0007). CFR: 21 CFR 101.65, 101.13, 74.303 per config.TRACKED_CFR_SECTIONS.",
+    "corpus_premise_invalidated": "2026-08-12, before any SME ruling. The live corpus holds THIRTY-FOUR FR documents, not four: the daily poller ingested 30 more between 2026-07-30 and 2026-08-12, unattended, including a GRAS proposed rule (91 FR 51834, 134 chunks) and — outside this product's subject matter entirely — a radiology device reclassification (91 FR 51406). Every question below was written against the four-document reading and each must be re-verified before it is ruled on. Three specific re-checks are owed. (1) q16 assumes front-of-package labeling is absent from the corpus; the phrase now appears, in the healthy rule's own preamble (2024-29957), though the FOP proposed rule 90 FR 5426 still does not — so the question may no longer be measuring what it says. (2) The distractor pressure every question faces is ~8x what it was, which is a retrieval condition, not a ground-truth one, but it changes what a failure means. (3) What did NOT change: '$10 million' and 'annual food sales' were re-scanned across all 990 chunks and remain at ZERO hits, so the q07 ruling holds at the current corpus. Recorded here rather than fixed because fixing it is re-verification work, and a draft carrying a premise its author knows to be false is worse than one carrying a dated banner.",
+    "scorer_notes": "run_evals.py check() is substring-only, case-insensitive, over answer_rows + answer + citations flattened together. Consequences honoured throughout this draft: (1) it cannot express 'asserts X' vs 'mentions X', so every must_not_contain here is assertion-shaped, never a token ban — the q07 defect; (2) must_cite_any is an OR and also falls back to the full answer text, so where a question genuinely requires TWO documents the citation is pinned with must_contain / must_contain_any groups instead; (3) must_contain_any takes a LIST OF GROUPS and each group is checked independently (run_evals.py:86-89), so multiple groups are used rather than the must_contain_any_2 key that q05 uses — both work, one is less surprising.",
+    "verification_owed": "q14 is grounded in tests/fixtures/ecfr_21_101.65.xml — a repo FIXTURE, not the live corpus. It must be confirmed against the live index before merge (does a 101.13 chunk exist; does the current 101.65(a)(2) still carry the (h) carve-out). Every other assertion below is sourced to a document or an ADR already in the repo. See evals/proposed/README.md for the per-question falsification handle."
+  },
+  "questions": [
+    {
+      "id": "q11",
+      "subset": ["timeline", "trap"],
+      "question": "A colleague says our Red No. 3 deadline moved because the order was suspended for about a year and a half. What date do we work to, and did the suspension change it?",
+      "must_contain": ["January 15, 2027"],
+      "must_contain_any": [
+        ["did not change", "unchanged", "not change", "no change", "stands", "confirmed"],
+        ["stay", "suspend"],
+        ["91 FR 50475", "2026-15920"]
+      ],
+      "must_not_contain": ["deadline was extended", "extended the deadline", "deadline moved to", "new deadline of"],
+      "must_cite_any": ["90 FR 4628", "2025-00830", "21 CFR 74.303"],
+      "note": "Tests the single most load-bearing stay semantic: 21 U.S.C. 371(e)(2) SUSPENDS, it does not toll. There is no day-for-day extension, so a ~17.5-month stay (2025-02-18 to 2026-08-05) left 2027-01-15 at 2027-01-15. Source: 2026-15920 / 91 FR 50475 lifts the stay and CONFIRMS both dates — recorded as scope=dates_confirmed, predicate CONFIRMS, never SUPERSEDES (ADR-0007; .claude/skills/regulatory-domain 'Administrative stays'). The bait is in the STEM and the premise is TRUE — the order really was suspended for about that long — so passing requires contradicting the inference, not the fact. Same construction as the corrected q07. TWO DOCUMENTS ARE REQUIRED, deliberately: the third must_contain_any group forces the LIFT document to be named in some form, because an answer that gets 2027-01-15 right without knowing a stay ever existed is right by luck, while must_cite_any separately requires the ORDER that actually sets the date. An answer citing only the lift notice fails, and should — CLAUDE.md requires a citation for each claim, and the deadline is not the lift notice's claim to make. DELIBERATELY NOT FORBIDDEN: 'tolled'. A correct answer may well say 'the stay did not toll the deadline', and banning the word would punish the right answer for its vocabulary — the exact defect the q07 ruling removed."
+    },
+    {
+      "id": "q12",
+      "subset": ["timeline"],
+      "question": "In mid-2025 we were told the Red No. 3 removal was not final and might never take effect. Was that a fair reading then, and what is the position now?",
+      "must_contain": ["February 18, 2025", "August 5, 2026", "January 15, 2027"],
+      "must_contain_any": [
+        ["stay", "suspend"],
+        ["lifted", "no longer stayed", "in force", "operative", "final agency action"]
+      ],
+      "must_not_contain": ["the order was withdrawn", "never took effect", "the removal was cancelled", "is still stayed", "remains stayed"],
+      "must_cite_any": ["91 FR 50475", "2026-15920"],
+      "note": "The point-in-time question the retrieval probe set explicitly REFUSED to assert. evals/retrieval_truth.json r05: 'the point-in-time reasoning (what was the deadline on 2025-06-01) is M03's, from the STAY_PERIOD interval, and is explicitly not asserted by this probe.' This is that question, and it is the reason ADR-0007 stored the stay as a first-class interval (pk=DOC#2025-00830, sk=STAY_PERIOD#2025-02-18) rather than an edge pair. The 2025 reading WAS fair at the time: during a 371(e)(2) stay the provision has no legal effect at all, and the outcome was pending final agency action. It is no longer fair, because the stay was lifted 2026-08-05 with dates confirmed. A correct answer therefore has to hold two time-indexed states at once, which is what distinguishes interval reasoning from retrieving the latest document. STRICTNESS FLAG FOR THE SME SEAT: requiring the exact string 'February 18, 2025' is the tightest assertion in this draft. It is deliberate — that value is stored as the STAY_PERIOD start and an answer that cannot produce it is not reading the graph — but it is also the first thing to relax (to a ['February 18, 2025','February 2025'] group) if it proves to fail answers that are substantively correct."
+    },
+    {
+      "id": "q13",
+      "subset": ["timeline", "retrieval"],
+      "question": "Which CFR provisions does the Red No. 3 order change, what does it do to each, and do they all change on the same day?",
+      "must_contain": ["74.303", "74.1303", "January 15, 2027", "January 18, 2028"],
+      "must_contain_any": [
+        ["remove", "removal", "revoke", "delist", "strike"],
+        ["different", "not the same", "separate", "later", "two"]
+      ],
+      "must_not_contain": ["both effective January 15, 2027", "same effective date", "all on the same day", "74.1303 applies to food"],
+      "must_cite_any": ["90 FR 4628", "2025-00830", "21 CFR 74.303"],
+      "note": "Tests amendatory-instruction parsing end to end — the {action, target} extraction from src/ingestion/metadata.py surfaced as an answer. Source: chunk 2025-00830#0002, the amdpar chunk, quoted in evals/retrieval_truth.json r09 as carrying 'Remove 74.303' and 'Effective January 18, 2028 remove 74.1303'. Falsify by reading that chunk. This question is the COMPLEMENT of q02, not a duplicate: q02 forbids 'January 18, 2028 for food' and so tests avoiding the drug date, while this one REQUIRES both dates and tests knowing which provision each belongs to. Avoidance and discrimination are different skills and the set currently only measures the first. Substring safety checked: '74.303' is not a substring of '74.1303', so the two required needles are independent."
+    },
+    {
+      "id": "q14",
+      "subset": ["crossref", "retrieval"],
+      "question": "Beyond the criteria in the 'healthy' rule itself, which other CFR section's general requirements must a 'healthy' claim satisfy, and is any part of that section carved out?",
+      "must_contain": ["101.13(h)"],
+      "must_contain_any": [
+        ["except", "exception", "carve", "does not apply", "excluded"],
+        ["101.65", "healthy"]
+      ],
+      "must_not_contain": ["101.13 applies in full", "no exception", "without exception"],
+      "must_cite_any": ["21 CFR 101.65", "21 CFR 101.13", "89 FR 106064"],
+      "note": "The only genuine incorporation-by-reference test in the set — SPEC/03 gives crossref_agent the job of resolving 'as defined in §', and q03 (the sole crossref-tagged question) tests the opposite behaviour, declining to assert an UNsourced cross-agency obligation. Nothing currently tests resolving one that IS in the corpus. Source: 21 CFR 101.65(a)(2) — 'The claim is made in accordance with the general requirements for nutrient content claims in § 101.13, with the exception of § 101.13(h) when the nutrient content claim is made in accordance with paragraph (d) of this section'. Paragraph (d) is the 'healthy' paragraph, so the carve-out is exactly on the claim at issue. 101.13 is a tracked section (config.TRACKED_CFR_SECTIONS), so the target of the reference is in the corpus and citable. VERIFICATION OWED — the ONE assertion in this draft not confirmed against the live index: the quoted text was read from tests/fixtures/ecfr_21_101.65.xml, a repo fixture. Before merge, confirm against the live corpus that (a) a 21 CFR 101.13 chunk exists and (b) current 101.65(a)(2) still carries the (h) carve-out. If either fails, this question must be withdrawn rather than adjusted — the failure mode it would otherwise create is the q03 false pass. Deliberately does NOT require a '101.65(d)(2)' citation: evals/retrieval_truth.json r07 records that the chunker emits citation_path '21 CFR 101.65(d)' and '(d)(4)' and there is no '(d)(2)' chunk, so a question expecting it would fail on a chunk that does not exist."
+    },
+    {
+      "id": "q15",
+      "subset": ["applicability", "verdict"],
+      "question": "We make a strawberry-frosted granola bar that is labeled 'healthy' and coloured with FD&C Red No. 3. List every change we have to make and the date for each.",
+      "must_contain": ["January 15, 2027", "February 25, 2028", "89 FR 106064", "90 FR 4628"],
+      "must_contain_any": [
+        ["Red No. 3", "Red 3", "74.303"],
+        ["healthy", "101.65"]
+      ],
+      "must_not_contain": ["same deadline for both", "a single deadline", "both by February 25, 2028", "both by January 15, 2027"],
+      "note": "The first question in the set that requires MORE THAN ONE verdict row. SPEC/03 defines verdict output as rows {product, trigger, required_change, real_deadline, confidence, citations[]}, and every existing question can be answered with one row — so the row structure itself has never been measured. One product here triggers two unrelated rules with two different deadlines, and the earlier one (2027-01-15, colour) is NOT the one attached to the more prominent claim (2028-02-25, 'healthy'), so collapsing to a single deadline is a plausible and wrong answer. Both dates are established elsewhere in the set, so this question adds no new ground truth — only the requirement that both survive in one answer. SCORER WORKAROUND, deliberate and worth knowing: the two FR citations are pinned in must_contain rather than must_cite_any, because must_cite_any is an OR and cannot express 'cites BOTH documents'. This works because check() flattens the citations array into the same searched text (run_evals.py:69-73). If the scorer ever gains a must_cite_all, move them."
+    },
+    {
+      "id": "q16",
+      "subset": ["honesty"],
+      "question": "Do we have to put a nutrition summary on the front of our package, and by when?",
+      "must_contain_any": [
+        ["cannot confirm", "no source", "not covered", "unable to", "do not have", "not among", "outside", "no document"]
+      ],
+      "must_not_contain": ["you must add", "front-of-package is required", "must comply by", "the compliance date for front-of-package"],
+      "note": "Honesty against a real, well-publicised FDA labeling initiative that is NOT in this corpus — front-of-package nutrition labeling, proposed at 90 FR 5426. That document is named in the q07 SME ruling as one of the rules the $10M tier actually belongs to, which confirms it is both real and absent here. Two ways to fail: invent a requirement, or answer from model priors about a proposed rule as though it were binding and retrieved. q09 tests the same instinct on an out-of-SCOPE product (dog treats, not human food); this tests it on an out-of-CORPUS rule for an in-scope product, which is the harder case because the honest answer is 'I have no source' rather than 'that is not covered by this rule'. DELIBERATELY NOT FORBIDDEN: the token '90 FR 5426'. Naming the initiative as something the answer cannot speak to is CORRECT behaviour; only asserting its requirements is wrong. This is the same distinction the q03 ruling drew for TTB, and it is the reason must_not_contain here is assertion-shaped."
+    },
+    {
+      "id": "q17",
+      "subset": ["timeline"],
+      "question": "Give the publication, effective, and compliance dates for the 'healthy' rule, including any change made to them after publication.",
+      "must_contain": ["December 27, 2024", "April 28, 2025", "February 25, 2028"],
+      "must_contain_any": [
+        ["delay", "postpon", "moved", "extended"],
+        ["unchanged", "remains", "did not change", "not change", "still"],
+        ["89 FR 106064", "2024-29957"],
+        ["90 FR 10592", "2025-03118"]
+      ],
+      "must_not_contain": ["compliance date was delayed", "compliance date moved", "compliance date is April 28, 2025", "effective date is February 25, 2028"],
+      "note": "The 'healthy' counterpart to q08, which does this for Red No. 3. The two rules fail in OPPOSITE directions and that is why both are needed: the Red No. 3 order sets no compliance date at all (ADR-0006), while the 'healthy' rule sets all three AND has one of them moved by a second document. Sources: pub 2024-12-27 and compliance 2028-02-25 from 2024-29957 (chunk #0000, 'The compliance date of this final rule is February 25, 2028'); effective delayed to 2025-04-28 by 2025-03118 (chunk #0000, 'the effective date for the final rule published December 27, 2024 (89 FR 106064), is delayed until April 28, 2025'); 'the compliance date remains unchanged at this time' from chunk 2025-03118#0003. All four strings were verified by reading the chunks per evals/retrieval_truth.json r01/r06. This question is the assembly q01 tests obliquely: q01 asks the yes/no trap, this asks for all three dates correctly ATTRIBUTED, which is the failure mode ADR-0006 exists to prevent. The last two must_contain_any groups force BOTH documents to be named while allowing either the FR citation or the doc number, since the delay is unknowable from the final rule alone."
+    },
+    {
+      "id": "q18",
+      "subset": ["hitl", "applicability"],
+      "question": "We sell a shelf-stable lentil soup labeled 'healthy'. Are we affected by the healthy-claim changes?",
+      "expect_status_any": ["ok"],
+      "must_contain": ["February 25, 2028"],
+      "must_contain_any": [["affected", "it applies", "does apply", "applies to"]],
+      "must_not_contain": ["2029", "pending_review", "cannot determine"],
+      "must_cite_any": ["89 FR 106064", "2024-29957", "21 CFR 101.65"],
+      "note": "The companion q10 has needed since it was written. q10 is the same question with NO profile and expects pending_review; this one supplies exactly the profile that matters and expects the gate NOT to fire. A HITL gate is only meaningful if it is measured in both directions — one that pauses on everything passes q10 perfectly and is useless, and nothing in the set currently catches that. The profile given is deliberately minimal: a product type and the fact that it bears a 'healthy' claim, no revenue figure, because applicability under this rule turns on CONDUCT (does the label bear the claim) and never on company size — 2024-29957#0303 Response 135, per the q07 ruling. If the gate demands a revenue figure before answering, it has learned the wrong applicability model and this question fails on status. LIMITATION, STATED NOT PAPERED OVER: this does NOT test resume, which SPEC/03's Done-when also requires ('ends pending_review, then resumes correctly'). run_evals.py only ever POSTs /query (run_evals.py:57-66) and has no way to POST /resume/{id}, so resume cannot be expressed as a golden question at all today. It needs either a runner change or a separate harness, and that is a SPEC/04 API-surface decision, not something to fake here with a question that appears to cover it."
+    },
+    {
+      "id": "q19",
+      "subset": ["timeline", "trap"],
+      "question": "Our supplier says the Red No. 3 order sets no compliance date, so there is no hard deadline for using up our coloured inventory. Are they right?",
+      "must_contain": ["January 15, 2027"],
+      "must_contain_any": [
+        ["effective"],
+        ["adulterated", "unlawful", "no longer listed", "not permitted", "not lawful", "cannot be used"]
+      ],
+      "must_not_contain": ["there is no deadline", "no hard deadline", "you may continue using Red No. 3 after", "no date applies"],
+      "must_cite_any": ["21 CFR 74.303", "90 FR 4628", "2025-00830"],
+      "note": "The hardest trap in this draft, because the premise is TRUE and only the conclusion is wrong. The order genuinely sets no compliance date — ADR-0006 and .claude/skills/regulatory-domain both say a repeal states only an effective date and compliance_date stays null, which is why a compliance-date range filter returns nothing for this document (probe r02). The operative deadline is DERIVED: after 2027-01-15 the listing is gone and the product is adulterated. Deriving and explaining that is named in the skill as the timeline agent's job, and the verdict must say which kind of date it is reasoning from. Nothing in the set tests it — q08 asks for the dates and accepts 'no compliance date' as an observation, but never makes the model act on it. CRITICAL AND EASY TO GET WRONG: 'they are right' is NOT in must_not_contain, and must not be added. The best possible answer opens by conceding the true half — 'they are right that the order sets no compliance date, but the effective date is the operative deadline' — and forbidding that phrase would punish precisely the answer this question is designed to reward. That is the q07 defect in a new costume. The forbidden strings are the false CONCLUSION only."
+    },
+    {
+      "id": "q20",
+      "subset": ["timeline", "trap"],
+      "question": "What date was the Red No. 3 revocation published in the Federal Register? Our compliance memo records it as January 15, 2025.",
+      "must_contain": ["January 16, 2025"],
+      "must_contain_any": [
+        ["announce", "press", "not the publication", "memo is", "incorrect", "not correct", "does not appear"]
+      ],
+      "must_not_contain": ["published January 15, 2025", "publication date is January 15, 2025", "published on January 15, 2025"],
+      "must_cite_any": ["90 FR 4628", "2025-00830"],
+      "note": "Tests resistance to a wrong date the USER asserts — anchoring, not retrieval. Every other question in the set presents a neutral or self-serving premise; this one puts a specific false fact in the stem and rewards contradicting the person asking. Source: 90 FR 4628 published 2025-01-16. FDA ANNOUNCED the revocation on the 15th, and per .claude/skills/regulatory-domain the string 'January 15, 2025' appears nowhere in the document and must not be cited. Falsify by full-text searching the document for it. This is not a duplicate of q08 but its other half: q08 carries 'January 15, 2025' in must_not_contain and so tests not VOLUNTEERING the announcement date, while this tests not ACCEPTING it when handed over with apparent authority. The SME correction of 2026-08-08 identifies this exact confusion as the likeliest cause of q08 being the only question that flapped in the M00b baseline (1/3), which makes it the one known-unstable behaviour in the set with no question dedicated to it. must_not_contain is assertion-shaped: the answer must be free to SAY 'January 15, 2025' while explaining what that date actually is."
+    }
+  ]
+}
