@@ -156,6 +156,26 @@ if __name__ == "__main__":
 
     # Loopback only, deliberately. Never add a --host/--bind flag: this
     # shim has no authentication.
+    #
+    # BIND FIRST, THEN ANNOUNCE, AND REFUSE TO SHARE THE PORT. Both halves of
+    # that are corrections, and together they cost a mislabelled scorecard.
+    #
+    # http.server.HTTPServer sets `allow_reuse_address = 1`. On Linux that
+    # only relaxes TIME_WAIT; on WINDOWS it lets a second process bind an
+    # address another process is actively LISTENING on, and the two then split
+    # incoming connections. The banner also printed BEFORE the bind, so a
+    # second instance announced success either way.
+    #
+    # What that produced: a stale shim survived its kill, the replacement
+    # printed the new banner and bound alongside it, and the golden run was
+    # served by the OLD code — so the recorded card carried the previous
+    # commit's provenance under the new commit's sha. That is the same class
+    # of defect as recording from a dirty tree, arriving through the port
+    # instead of through git, and it is exactly what a scorecard must not do.
+    class _ExclusiveHTTPServer(HTTPServer):
+        allow_reuse_address = False
+
+    server = _ExclusiveHTTPServer(("127.0.0.1", args.port), Handler)
     print(f"serving POST /query?mode=naive|agent on http://127.0.0.1:{args.port}",
           flush=True)
-    HTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+    server.serve_forever()
