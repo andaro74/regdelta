@@ -21,7 +21,8 @@ Drafted 2026-08-12, on `m03-agent-graph`, against the corpus as it stands at
 > 1.0. `$10 million` and `annual food sales` remain at zero hits, so the q07
 > ruling holds. Details in `corpus_premise_rechecked` in the JSON.
 >
-> **What this draft still needs is a ruling, not a verification.**
+> **The scoring was ruled on 2026-08-15 and all ten questions were repaired —
+> see "Scoring ruling" below. What still needs a ruling is the questions.**
 
 ## Why twenty
 
@@ -86,17 +87,78 @@ The 2026-08-12 SME ruling found three defect classes. Each is guarded here:
 The ruling also found a fourth defect that neither the author nor the first
 review caught: q07 **could not distinguish a true answer from a false one in
 either direction**, and scored a stable 0/3 while measuring nothing. That is
-invisible to inspection, so it was checked mechanically instead. A harness
-replays the real scorer (`run_evals.py check()`) against a hand-written correct
-answer and a hand-written plausible-wrong answer for each question, and requires
-correct→PASS and wrong→FAIL. All ten pass; it is worth landing as
-`evals/check_discrimination.py` and extending over `q01`–`q10`, which have never
-been checked this way.
+invisible to inspection, so it was checked mechanically instead — and the check,
+as originally run, was worthless. See below.
 
-It has already earned itself once: q11's first draft rejected a correct answer
-that cited only the lift notice. That turned out to be the question behaving
-correctly — the deadline is set by 90 FR 4628, not by the notice confirming it —
-but the requirement was unstated, so the note now says so explicitly.
+## Scoring ruling — 2026-08-15
+
+Routed through `sme-eval-triage`, then **every finding replayed through
+`run_evals.check()`** rather than accepted on the subagent's reading. 13 of 14
+specimens broke as predicted. **All ten questions needed token edits. None was
+withdrawn**, and no question's subject, required dates or expected answer
+changed.
+
+Two failure shapes, one root cause — a substring scorer being asked to express
+something substrings cannot say:
+
+**A. Bans that a correct refutation reproduces** → false **fails** (q11, q12,
+q13, q19, q20). These questions hand the model a false premise to rebut, and
+rebutting it means restating it. q20 banned `"published on January 15, 2025"`,
+so the single most likely correct answer — *"it was **not** published on January
+15, 2025"* — scored FAIL. q19 was worse: it banned `"no hard deadline"`, which
+is the phrase in *its own note's* model answer. Fixed by direction-binding each
+ban (`extended the deadline **to**`, `**so** there is no deadline`, `**was**
+published on`), or deleting bans a positive requirement already made redundant.
+
+**B. Accept tokens that match their own negation, or echo the stem** → false
+**passes** (q12, q14, q15, q16, q17, q18):
+
+- **q18** — `"affected"` is a substring of `"not affected"`. *"You are not
+  affected"* scored PASS. This is the q02 defect verbatim, reintroduced three
+  days after that ruling.
+- **q14** — the exact negation of the correct answer passed: *"…including
+  101.13(h); nothing is **carved** out"* satisfied the carve-out group via the
+  word "carved", and the stem echo `"healthy"` satisfied the other.
+- **q16** — broken in both directions at once, in the question written to guard
+  against exactly that. `"do not have"` admitted the fabrication *"you do not
+  have to"*, while the best grounded answer — *"discussed only in passing,
+  establishes no requirement"* — matched none of the eight accept tokens.
+- **q15** — the two deadlines **swapped between the two rules** scored PASS.
+- **q17** — *"the compliance date **delayed to** February 25, 2028"*, the
+  ADR-0006 conflation stated outright, evaded all four bans because each
+  required "was", "moved" or "is".
+- **q12** — asks two things and scored one; *"that was **never** a fair
+  reading"* passed.
+
+**Two triage recommendations were not adopted**, both because they traded a
+false pass for a false fail: narrowing q14's second group to `["101.65"]` (a
+correct answer need never name 101.65) and q15's groups to
+`[["74.303"],["101.65"]]` (a correct answer may name the rules without their
+section numbers). Reasons are recorded in those questions' notes.
+
+**Why the original discrimination check missed all of it** — this matters more
+than the defects. The same seat wrote the questions *and* the wrong-answer
+specimens, and phrased the wrong answers the way its own bans anticipated. **A
+discrimination test authored by whoever wrote the bans tests the bans against
+themselves and always passes.** The harness was sound; the specimens were not
+adversarial. It is now landed as `evals/check_discrimination.py` (`make
+discrimination`) with the specimens as data and that lesson written into its
+module docstring, because the harness is worse than useless if the next person
+writes specimens the same way.
+
+Fifty specimens now run: `make discrimination ARGS="--file
+evals/proposed/golden_questions_q11_q20.json"`. Forty-eight must score
+right-way-round; two are **declared limitations** that assert today's *wrong*
+behaviour and fail the run if it ever changes — q15's swap phrased without the
+banned adjacency (still passes), and q19's answer that quotes the supplier's
+full inference in order to reject it (still fails). A limitation that quietly
+heals leaves a note behind that overstates the defect, which is its own kind of
+lie.
+
+**`q01`–`q10` have no specimens and have never been checked this way.** The
+harness exits non-zero on the live set for that reason rather than reporting a
+green on zero coverage. q02 and q08 were both this defect class, each found by
+one expensive failure at the keyboard.
 
 ## Verification — discharged 2026-08-15
 
@@ -188,3 +250,10 @@ fields across unchanged** — they are the record, and per the q03 ruling a ruli
 recorded somewhere else is a ruling the next reader will not find. Whatever the
 SME seat decides, that decision belongs in the `note` beside the assertion it
 governs, including a decision to withdraw q14.
+
+Then move the ten `SPECIMENS` entries in `evals/check_discrimination.py` across
+with them — nothing carries them automatically — and re-run `make
+discrimination` against the merged file, which must go green on twenty
+questions rather than ten. If a question is amended or withdrawn during the
+ruling, **its specimens change with it**: a specimen set that no longer matches
+its question is the false assurance this whole ruling was about.

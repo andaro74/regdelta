@@ -17,7 +17,7 @@ RERANK       ?= 0
 LEXICAL_LANE ?= 0
 CDK          := cd infra && npx cdk
 
-.PHONY: help bootstrap core up down status smoke evals agent-evals lint test demo ingest-backfill synth diff \
+.PHONY: help bootstrap core up down status smoke evals agent-evals discrimination lint test demo ingest-backfill synth diff \
         retrieval-evals retrieval-parity preflight rebuild-vectors
 
 help:
@@ -26,6 +26,7 @@ help:
 	@echo "make status          - tier state"
 	@echo "make smoke / evals   - golden-set checks (definition of done)"
 	@echo "make agent-evals     - golden set vs the LOCAL agent graph (SPEC/03)"
+	@echo "make discrimination  - can each question tell right from wrong? (no API)"
 	@echo "make retrieval-evals - probe set vs the CURRENT tier (SPEC/02 A)"
 	@echo "make retrieval-parity- cross-tier gate; needs both runs recorded"
 	@echo "                       (ARGS=\"--rerank 1\" gates the RERANK=1 pair)"
@@ -77,6 +78,14 @@ smoke:
 
 evals:
 	python evals/run_evals.py
+
+# Measures the INSTRUMENT, not the system: replays run_evals.check() against
+# hand-written right and wrong answers and requires it to tell them apart. No
+# API, no corpus, no cost. Run it whenever a question is added or its scoring
+# tokens change — the defects it finds are invisible to reading (ADR-0005; the
+# 2026-08-12 q07 ruling, defect 4).
+discrimination:
+	python evals/check_discrimination.py $(ARGS)
 
 # SPEC/02 Done-when (A). Measured at the retrieval contract, in-process —
 # not through an answering endpoint, which is M04's.
