@@ -17,7 +17,7 @@ RERANK       ?= 0
 LEXICAL_LANE ?= 0
 CDK          := cd infra && npx cdk
 
-.PHONY: help bootstrap core up down status smoke evals lint test demo ingest-backfill synth diff \
+.PHONY: help bootstrap core up down status smoke evals agent-evals lint test demo ingest-backfill synth diff \
         retrieval-evals retrieval-parity preflight rebuild-vectors
 
 help:
@@ -25,6 +25,7 @@ help:
 	@echo "make up / make down  - create/destroy AOSS hot tier"
 	@echo "make status          - tier state"
 	@echo "make smoke / evals   - golden-set checks (definition of done)"
+	@echo "make agent-evals     - golden set vs the LOCAL agent graph (SPEC/03)"
 	@echo "make retrieval-evals - probe set vs the CURRENT tier (SPEC/02 A)"
 	@echo "make retrieval-parity- cross-tier gate; needs both runs recorded"
 	@echo "                       (ARGS=\"--rerank 1\" gates the RERANK=1 pair)"
@@ -134,6 +135,25 @@ baseline:
 	  sleep 2; \
 	  python evals/run_evals.py --mode naive --api-url http://127.0.0.1:8000 --record; \
 	  status=$$?; kill $$(cat .baseline.pid); rm -f .baseline.pid; exit $$status
+
+# SPEC/03's Done-when, runnable. `make evals` resolves the API URL from the
+# deployed stack, and that endpoint is src/api/api.py — SPEC/04's, still
+# NotImplementedError — so the milestone whose exit criterion IS the golden set
+# had no command that could run it. Same loopback shim as `baseline`, mode=agent
+# instead of naive.
+#
+# The shim now refuses to share its port (evals/serve_local.py), so a stale
+# instance fails this target loudly instead of quietly answering the run with
+# the previous commit's code, which is how one scorecard already got filed
+# under the wrong sha.
+#
+# ARGS="--record" to file the scorecard; omitted by default because recording
+# is a milestone-close act, not something a routine check should do.
+agent-evals:
+	@python evals/serve_local.py --port 8000 & echo $$! > .agent.pid; \
+	  sleep 3; \
+	  python evals/run_evals.py --mode agent --api-url http://127.0.0.1:8000 $(ARGS); \
+	  status=$$?; kill $$(cat .agent.pid) 2>/dev/null; rm -f .agent.pid; exit $$status
 
 # Same scope as the eval-gate `unit` job, so a green local run means a green
 # gate. Keep the two in step.
