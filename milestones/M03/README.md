@@ -17,6 +17,8 @@
 | `f3f00d6` | s3vectors | agent | 10 | 10 | 123.1 | 49 |
 | `585a95f` | s3vectors | agent | 10 | 10 | 129.8 | 49 |
 | `7f012b8` | — | naive (frozen M00b) | 3 | 10 | 81.0 | *not recorded* |
+| `74822d4` | s3vectors | **agent, tightened set** | **10** | 10 | 128.5 | 49 |
+| `74822d4` | s3vectors | naive (control, tightened set) | 3 | 10 | 74.2 | 49 |
 
 Six agent runs are listed and a seventh happened: a 9/10 at `fd98d64`, which
 scored q02 as the single failure. Its card is **not in `history/`** — it was
@@ -45,18 +47,31 @@ wider than it was written, not narrower.</sup>
 >
 > What that does and does not do to the numbers above. It does **not** show the
 > system answered anything wrongly — a question that *can* pass a wrong answer
-> did not necessarily do so. But it cannot be checked either way: cards of this
-> vintage record `{id, pass, fails}` and no answer text, so the passes are
-> unauditable and not backfillable (fixed at `aa79ec5`, going forward only).
+> did not necessarily do so. But it could not be checked either way from the
+> cards of this vintage: they record `{id, pass, fails}` and no answer text, so
+> their passes are unauditable and not backfillable (fixed at `aa79ec5`, going
+> forward only).
 >
-> So **10/10 here means "10/10 against the golden set as it stood at this
-> commit"** and may be cited as that. It may **not** be cited as evidence that
-> the system answers the trap questions correctly, which is the specific claim
-> the false passes destroy. Re-running against the tightened set would settle
-> it — and per ADR-0002 that means re-running the **naive control too**, or the
-> delta spans two different instruments. Tightening cannot flatter the control:
-> its 3/10 and 4/10 were not produced by false passes, so the delta would widen,
-> not narrow.
+> **RESOLVED THE SAME DAY, by re-running rather than by argument.** At `74822d4`
+> the full set was re-run against the tightened questions, and per ADR-0002 the
+> naive control was re-run at the same commit on the same instrument:
+>
+> - **agent 10/10, traps 5/5** — the claim survives the tightening intact;
+> - **control 3/10, traps 1/5** — down from 4/10, so the tightening did cost the
+>   control a question, exactly as predicted, and the delta **widened** to
+>   **30% → 100% overall, traps 1/5 → 5/5**;
+> - both cards carry answer text, so the passes are auditable. Spot-checked: q01
+>   quotes *"the compliance date remains unchanged at this time"* from
+>   2025-03118; q07 names Response 135 and FDA's rejection of the small-business
+>   extension; q04 distinguishes the HHS request from the binding order and gets
+>   the stay right unprompted. **Earned, not token-matched.**
+>
+> So the caveat on the runs above stands for those runs — cite `ac839ca` as
+> "10/10 against the golden set as it stood then", nothing stronger. The claim
+> that **this system answers the trap questions correctly** now rests on
+> `74822d4`, where the instrument has been shown to discriminate (48 specimens,
+> none scoring the wrong way, 7 declared limitations) and the answers are on
+> file to read.
 
 Measured the honest way: the control was **re-run at this same commit, against
 these same questions, over this same 49-document corpus** (`ac839ca-naive-full.json`).
