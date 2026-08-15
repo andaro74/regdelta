@@ -771,6 +771,15 @@ def test_poller_and_processor_share_one_version_date_policy():
 # --------------------------------------------------------------------------
 
 def _poller_stub(monkeypatch, results, sent):
+    # The poll now requests `cfr_references` and filters on it (SPEC/01 subject
+    # scope), and raises if the key is absent from every record — that guard
+    # exists so a renamed field cannot stop ingestion silently. A real response
+    # to the poller's query always carries the key, so the stub supplies an
+    # in-scope value for any record that does not set one. Tests about SCOPE
+    # pass their own; these ones are about validation and would otherwise be
+    # testing the schema guard by accident.
+    results = [{"cfr_references": [{"title": 21, "part": "101"}], **r}
+               for r in results]
     monkeypatch.setattr(poller, "get_json", lambda url: {"results": results})
     monkeypatch.setattr(poller, "_registry_has", lambda pk, sk: False)
     monkeypatch.setattr(poller, "_new_cfr_versions", lambda: [])

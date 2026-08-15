@@ -31,6 +31,21 @@ _rejected: list[str] = []
 # alarm stops being believed. Caught by security re-review.
 _accepted: list[str] = []
 
+# Records dropped by the SUBJECT filter rather than by validation. Kept apart
+# from `_rejected` because they mean opposite things: a rejection is the
+# upstream shape breaking, a skip is the scope filter doing its job. Merging
+# them would make a normal week of device reclassifications trip the
+# total-rejection alarm, which is how an alarm stops being believed.
+_skipped: list[str] = []
+
+# Records whose response object had no `cfr_references` KEY at all — as
+# distinct from having it empty. The scope filter reads that field, so if the
+# API renames or drops it every document looks out of scope and ingestion
+# stops silently, which is the failure mode the total-rejection raise below
+# exists to prevent. Absence of the key is the signal; an empty list is
+# ordinary and common (38 of 49 documents on 2026-08-15).
+_missing_scope_field: list[str] = []
+
 
 def _client(name):
     if name not in _clients:
@@ -47,12 +62,56 @@ def _registry_has(pk: str, sk: str) -> bool:
     return bool(_client("registry").get_item(Key={"pk": pk, "sk": sk}).get("Item"))
 
 
+def in_scope(refs: object) -> tuple[bool, str]:
+    """Is this document about food, judged by the CFR parts it cites?
+
+    Returns (keep, reason) — the reason is carried out rather than logged and
+    dropped, so the poller's result can say what it skipped and why. A scope
+    filter that silently discards documents is indistinguishable from an
+    ingestion outage, and this one runs unattended on a schedule.
+
+    "Agency = FDA" is not a subject filter: the same agency publishes device
+    reclassifications and drug user-fee notices, and unfiltered they landed in a
+    food-labeling corpus and competed for retrieval slots. Title 21 splits at
+    part 200 — food below, drugs/veterinary/devices/tobacco above.
+
+    Deliberately NOT a topic filter. The Red No. 3 order carries topics
+    ['Color additives', 'Cosmetics', 'Drugs'] and no food topic at all, so a
+    topic allowlist would drop the document half the golden set turns on.
+    """
+    if not isinstance(refs, list) or not refs:
+        # No CFR reference at all. 38 of 49 documents in the corpus on
+        # 2026-08-15, and they carry no topics either, so nothing structured
+        # separates a food notice from a drug user-fee notice.
+        return (not config.POLL_REQUIRE_CFR), "no cfr_references"
+
+    parts = []
+    for ref in refs:
+        if not isinstance(ref, dict):
+            continue
+        # `title` and `part` come from a response body. A part that is not a
+        # plain integer is not compared numerically and not guessed at.
+        if str(ref.get("title")) != str(config.FR_FOOD_CFR_TITLE):
+            continue
+        part = str(ref.get("part") or "")
+        if part.isdigit():
+            parts.append(int(part))
+
+    if not parts:
+        return False, f"no {config.FR_FOOD_CFR_TITLE} CFR reference"
+    keep = any(p <= config.FR_FOOD_CFR_MAX_PART for p in parts)
+    return keep, f"21 CFR parts {sorted(parts)}"
+
+
 def _new_fr_docs(since: str) -> list[str]:
     params = {
         "conditions[agencies][]": config.FR_AGENCY_SLUG,
         "conditions[type][]": list(config.FR_DOC_TYPES),
         "conditions[publication_date][gte]": since,
-        "fields[]": ["document_number"],
+        # cfr_references is the subject filter — see in_scope(). Requested from
+        # the API rather than derived after ingest, so an out-of-scope document
+        # is never fetched, never chunked, never embedded and never paid for.
+        "fields[]": ["document_number", "cfr_references"],
         "per_page": 100,
     }
     url = f"{config.FR_API}/documents.json?{urllib.parse.urlencode(params, doseq=True)}"
@@ -74,6 +133,15 @@ def _new_fr_docs(since: str) -> list[str]:
             except validate.ValidationError as e:
                 _rejected.append(str(e))
             else:
+                if "cfr_references" not in r:
+                    _missing_scope_field.append(doc)
+                keep, why = in_scope(r.get("cfr_references"))
+                if not keep:
+                    # Out of subject scope, not malformed. Kept separate from
+                    # `_rejected` so a scope skip is never read as a validation
+                    # failure — one is the filter working, the other is a bug.
+                    _skipped.append(f"{doc}: {why}")
+                    continue
                 docs.append(doc)
                 _accepted.append(doc)
         # `next_page_url` is response-controlled; get_json re-checks the
@@ -134,6 +202,8 @@ def handler(event, context):
     mode = (event or {}).get("mode", "daily")
     _rejected.clear()  # warm invocations reuse the module
     _accepted.clear()
+    _skipped.clear()
+    _missing_scope_field.clear()
     if mode == "backfill":
         messages = _backfill_messages()
     else:
@@ -161,6 +231,21 @@ def handler(event, context):
             f"rejected, 0 accepted) — the upstream response shape has probably "
             f"changed: {_rejected[:3]}")
 
+    # The same contract break, one field down. The scope filter reads
+    # `cfr_references`; if the API renames or stops returning it, every record
+    # looks reference-less, everything is skipped as out of scope, and the
+    # handler returns `enqueued: 0` — a silent halt that looks exactly like a
+    # quiet week. Keyed on the KEY BEING ABSENT rather than on skips being
+    # high: a week of drug and device notices legitimately skips everything
+    # (38 of 49 documents carry no CFR reference), and raising on that would
+    # be a daily false alarm.
+    if _missing_scope_field:
+        raise ValueError(
+            f"{len(_missing_scope_field)} record(s) came back with no "
+            "'cfr_references' key at all — the subject filter reads that field, "
+            "so ingestion would silently stop. The FR API response shape has "
+            f"probably changed: {_missing_scope_field[:3]}")
+
     # Checked after the raise above, so a total-rejection poll enqueues
     # nothing. `enqueued` in the result below counts what was actually sent.
     sqs = _client("sqs")
@@ -173,5 +258,11 @@ def handler(event, context):
     if _rejected:
         result["rejected"] = list(_rejected)
         result["rejected_count"] = len(_rejected)
+    # Out-of-scope skips are reported too. A subject filter running unattended
+    # on a schedule must be able to show what it dropped, or the next person to
+    # wonder where a document went has nothing to read.
+    if _skipped:
+        result["skipped_out_of_scope"] = list(_skipped)
+        result["skipped_count"] = len(_skipped)
     print(json.dumps(result))
     return result

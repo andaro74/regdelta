@@ -141,6 +141,44 @@ FR_API = "https://www.federalregister.gov/api/v1"
 ECFR_API = "https://www.ecfr.gov/api/versioner/v1"
 FR_AGENCY_SLUG = "food-and-drug-administration"
 FR_DOC_TYPES = ("RULE", "PRORULE", "NOTICE")
+
+# ------------------------------------------------------- poller scope (SPEC/01)
+# FDA is one agency publishing for food, drugs, devices, veterinary medicine and
+# tobacco, so "agency = FDA" is not a subject filter. Unfiltered, the poller
+# ingested a digital breast tomosynthesis reclassification, three more device
+# reclassifications and a run of drug user-fee notices into a food-labeling
+# corpus — 30 documents in two weeks, competing for the eight retrieval slots
+# every answer gets.
+#
+# THE DISCRIMINATOR IS THE CFR REFERENCE, and it was chosen by measurement
+# rather than taste. Against the 49 documents in the corpus on 2026-08-15:
+#
+#   21 CFR part <= 199   ->  the 6 documents this product is actually about
+#                            (101 healthy rule + its delay, 74 Red No. 3 + the
+#                            stay lift, 170/570 GRAS, 117 RTE food guide)
+#   21 CFR part >= 200   ->  the 5 device documents, all of them
+#
+# TOPICS WERE TRIED AND ARE WRONG. The Red No. 3 order's topics are
+# ['Color additives', 'Cosmetics', 'Drugs'] — no "Food labeling" anywhere — so
+# a topic allowlist would drop the document half the golden set is about.
+FR_FOOD_CFR_TITLE = 21
+# Title 21 splits cleanly at 200: parts 1-199 are food (70-82 colour additives,
+# 100-169 labelling and standards, 170-199 food additives); 200+ are drugs,
+# 500s veterinary, 800s devices, 1100+ tobacco.
+FR_FOOD_CFR_MAX_PART = int(os.environ.get("FR_FOOD_CFR_MAX_PART", "199"))
+
+# What to do with a document that cites NO CFR part at all — 38 of the 49, and
+# unfilterable by any other structured field: they carry no topics either (all
+# 26 sampled were empty), so only the title distinguishes "Food Safety
+# Modernization Act Third-Party Certification" from "Prescription Drug User Fee
+# Rates", and title matching is not a scope rule.
+#
+# Default EXCLUDE. A document citing no CFR part amends no regulation, so it
+# cannot be the subject of "what changed and what is the deadline" — this
+# product's whole question. That is a scope judgement, which is why it is a
+# flag and not an assumption: POLL_REQUIRE_CFR=0 restores the old behaviour and
+# takes the drug and device fee notices back with it.
+POLL_REQUIRE_CFR = os.environ.get("POLL_REQUIRE_CFR", "1") == "1"
 POLL_LOOKBACK_DAYS = int(os.environ.get("POLL_LOOKBACK_DAYS", "7"))
 
 # ------------------------------------------------- ingestion input hardening
