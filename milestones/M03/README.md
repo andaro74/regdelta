@@ -24,7 +24,14 @@ withdrawn at `585a95f` because a stale loopback shim had answered that run, so
 the card described code its own sha did not contain. The commit message at
 `c68b4a3` remains the record that the run happened.
 
-**Delta vs baseline: 40% → 100% overall, traps 2/4 → 4/4.**
+**Delta vs baseline: 40% → 100% overall, traps 2/5 → 5/5.**
+
+<sup>Trap counts amended 2026-08-15 from `2/4 → 4/4`. Not a re-run — a re-read
+of the cards already on file. The gate is selected by TAG, and the `trap` tag
+covers five questions (q01–q04 **and q07**), not the four the criterion named
+by ID. `ac839ca-naive-full.json` shows the control failing q01, q03 and q07;
+`ac839ca-s3vectors-full.json` shows the agent passing all five. The delta is
+wider than it was written, not narrower.</sup>
 
 > ⚠️ **Read this before citing the trap numbers.** Later on 2026-08-15, after
 > this milestone closed, the golden questions were checked for the first time
@@ -74,6 +81,20 @@ profile ends pending_review, then resumes correctly.
 - ≥ 80% overall — **10/10**, six consecutive full runs.
 - 100% on q01–q04 — **4/4**, every run since `a082219`.
 - HITL demonstrated — **both halves**, live, on q10 (see the demo below).
+
+**Criterion amended after close, 2026-08-15 — no re-measurement.** The quote
+above is left exactly as it read at close, because an evidence pack records
+what was true then and rewriting it would make the pack agree with a spec it
+was never measured against. SPEC/03's Done-when has since been reworded
+(pm-spec-reviewer) to name the **trap tag** rather than the IDs `q01–q04`,
+because `run_evals.py` selects subsets by tag and the tag reaches q07 — so the
+two readings were materially different gates. Nothing was re-run and nothing
+needed to be: the recorded evidence is 10/10, which entails 100% on every
+subset, so the reworded and stricter criterion is already satisfied by cards on
+file. The trap line in the scorecard summary above is restated as 5/5 for the
+same reason. The false-pass caveat below the scorecard **stands unchanged** —
+5/5 is a wider count on the same weak instrument, and the count moving does not
+move the evidentiary point.
 
 One wording divergence, flagged not smoothed: SPEC says the underspecified
 question "ends pending_review"; the implementation reports `needs_input` and
