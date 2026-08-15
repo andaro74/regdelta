@@ -17,8 +17,8 @@
 | `f3f00d6` | s3vectors | agent | 10 | 10 | 123.1 | 49 |
 | `585a95f` | s3vectors | agent | 10 | 10 | 129.8 | 49 |
 | `7f012b8` | — | naive (frozen M00b) | 3 | 10 | 81.0 | *not recorded* |
-| `74822d4` | s3vectors | **agent, tightened set** | **10** | 10 | 128.5 | 49 |
-| `74822d4` | s3vectors | naive (control, tightened set) | 3 | 10 | 74.2 | 49 |
+| `74822d4` | s3vectors | **agent, tightened set** | **10** | 10 | 129.2 | 49 |
+| `74822d4` | s3vectors | naive (control, tightened set) | 3 | 10 | 70.4 | 49 |
 
 Six agent runs are listed and a seventh happened: a 9/10 at `fd98d64`, which
 scored q02 as the single failure. Its card is **not in `history/`** — it was
