@@ -26,6 +26,31 @@ the card described code its own sha did not contain. The commit message at
 
 **Delta vs baseline: 40% → 100% overall, traps 2/4 → 4/4.**
 
+> ⚠️ **Read this before citing the trap numbers.** Later on 2026-08-15, after
+> this milestone closed, the golden questions were checked for the first time
+> against the thing a scorecard implicitly assumes: that a question can tell a
+> right answer from a wrong one. **They could not.** 18 of 48 hand-written
+> answers scored the wrong way, and **all five trap-tagged questions** (`q01`–
+> `q04` *plus* `q07`, which is what `--subset trap` actually selects) passed at
+> least one wrong answer — including, in each case, the exact wrong answer that
+> trap was built to catch. The questions were tightened under the scoring ruling
+> recorded in `_scoring_ruling` in `evals/golden_questions.json`.
+>
+> What that does and does not do to the numbers above. It does **not** show the
+> system answered anything wrongly — a question that *can* pass a wrong answer
+> did not necessarily do so. But it cannot be checked either way: cards of this
+> vintage record `{id, pass, fails}` and no answer text, so the passes are
+> unauditable and not backfillable (fixed at `aa79ec5`, going forward only).
+>
+> So **10/10 here means "10/10 against the golden set as it stood at this
+> commit"** and may be cited as that. It may **not** be cited as evidence that
+> the system answers the trap questions correctly, which is the specific claim
+> the false passes destroy. Re-running against the tightened set would settle
+> it — and per ADR-0002 that means re-running the **naive control too**, or the
+> delta spans two different instruments. Tightening cannot flatter the control:
+> its 3/10 and 4/10 were not produced by false passes, so the delta would widen,
+> not narrow.
+
 Measured the honest way: the control was **re-run at this same commit, against
 these same questions, over this same 49-document corpus** (`ac839ca-naive-full.json`).
 ADR-0002 freezes `src/baseline/naive.py`, and re-running it is not improving it.

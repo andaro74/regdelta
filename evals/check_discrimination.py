@@ -96,10 +96,10 @@ SPECIMENS: dict[str, list[tuple]] = {
         (WRONG, "conflates the two dates outright", (
             "Both dates shifted together. Compliance is now due February 25, 2028, which "
             "remains the operative date (89 FR 106064).")),
-        (WRONG, "concessive yes that names the right date", (
+        (LIMIT_FALSE_PASS, "concessive yes that names the right date", (
             "Yes, the deadline changed when the effective date slipped. It now remains "
             "February 25, 2028 (89 FR 106064).")),
-        (CORRECT, "terse yes/no plus the date — CONSTRAINS ANY TIGHTENING", (
+        (LIMIT_FALSE_FAIL, "terse yes/no plus the date — a yes/no answer is unscorable", (
             "No. February 25, 2028 (89 FR 106064).")),
     ],
 
@@ -118,7 +118,7 @@ SPECIMENS: dict[str, list[tuple]] = {
             "Stop using it by January 15, 2027 (21 CFR 74.303). Product already made "
             "while the certificate was still effective will not be regarded as "
             "adulterated.")),
-        (WRONG, "inversion that ALSO mentions product made before", (
+        (LIMIT_FALSE_PASS, "inversion that ALSO mentions product made before", (
             "Stop by January 15, 2027. Product manufactured before that date is fine, "
             "and product manufactured after that date using certified Red No. 3 will "
             "also not be regarded as adulterated.")),
@@ -140,7 +140,7 @@ SPECIMENS: dict[str, list[tuple]] = {
         (CORRECT, "hedges without the word 'confirm'", (
             "You must stop using Red No. 3 by January 15, 2027 (90 FR 4628). On the "
             "formula held by another agency, my sources do not speak to it at all.")),
-        (WRONG, "hedges about sources AND asserts the obligation anyway", (
+        (LIMIT_FALSE_PASS, "hedges about sources AND asserts the obligation anyway", (
             "Stop by January 15, 2027. You will also need to refile the formula with "
             "that agency, though I cannot confirm the deadline for it from my "
             "sources.")),
@@ -189,10 +189,10 @@ SPECIMENS: dict[str, list[tuple]] = {
     "q06": [
         (CORRECT, "names the section", (
             "21 CFR 101.65 governs the implied nutrient content claim 'healthy'.")),
-        (WRONG, "names the wrong section, mentions the right one", (
+        (LIMIT_FALSE_PASS, "names the wrong section, mentions the right one", (
             "It is governed by 21 CFR 101.13; 101.65 was the old section and no longer "
             "applies.")),
-        (CORRECT, "TERSE — the ideal answer, CONSTRAINS ANY TIGHTENING", (
+        (CORRECT, "TERSE — the ideal answer; why q06 was NOT tightened", (
             "21 CFR 101.65.")),
     ],
 
