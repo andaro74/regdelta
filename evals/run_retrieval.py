@@ -41,7 +41,11 @@ sys.path.insert(0, str(HERE.parent / "src"))
 # reporting layer rather than the thing being reported.
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-from run_evals import git_dirty, git_sha  # noqa: E402  (path set above)
+from run_evals import (  # noqa: E402  (path set above)
+    corpus_fingerprint,
+    git_dirty,
+    git_sha,
+)
 
 from shared import config  # noqa: E402
 from shared.models import Filters  # noqa: E402
@@ -357,7 +361,17 @@ def run(tier_requested: str, record: bool, allow_dirty: bool = False) -> int:
             # Tier A has no lexical lane; the field records the flag as the run
             # saw it, which is what makes a pair one configuration.
             "lexical_lane": config.RETRIEVAL_LEXICAL_LANE,
+            # The probe set's own claim about when it was authored — a
+            # HAND-WRITTEN string, and therefore a claim about the past that
+            # nothing updates.
             "corpus_snapshot": truth.get("corpus_snapshot"),
+            # What actually answered this run. The same argument that put a
+            # fingerprint on golden-set cards applies here and applies harder:
+            # this card asserts recall, and recall against WHICH corpus is the
+            # whole content of the claim. The poller moved the corpus from 4
+            # documents to 49 while the snapshot string above still said
+            # 2026-08-08 (ADR-0011).
+            "corpus": corpus_fingerprint(),
             # Recall is not answer quality. The M00b control measures answer
             # quality, so a recall number is not a delta against it and must
             # not be read as one (SPEC/02 "Scorecard namespace").
