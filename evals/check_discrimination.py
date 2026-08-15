@@ -78,6 +78,146 @@ LIMITS = (LIMIT_FALSE_PASS, LIMIT_FALSE_FAIL)
 # ---------------------------------------------------------------------------
 SPECIMENS: dict[str, list[tuple]] = {
 
+    # ---------------- the live set, q01-q10 --------------------------------
+    # Never discrimination-checked before 2026-08-15. Two of these ten had
+    # already been ruled on after failing at the keyboard (q02, q08) and one
+    # after failing to measure anything at all (q07).
+
+    "q01": [
+        (CORRECT, "no, only the effective date moved", (
+            "No. The effective date was delayed to April 28, 2025, but the compliance "
+            "deadline remains February 25, 2028 (89 FR 106064).")),
+        (CORRECT, "phrased around the negated verb", (
+            "The compliance deadline did not change. It is February 25, 2028; it was the "
+            "effective date that was delayed, not the compliance date (2024-29957).")),
+        (WRONG, "says YES, then names the right date", (
+            "Yes — the compliance deadline changed when the effective date was pushed back. "
+            "It is now February 25, 2028, and it remains there (89 FR 106064).")),
+        (WRONG, "conflates the two dates outright", (
+            "Both dates shifted together. Compliance is now due February 25, 2028, which "
+            "remains the operative date (89 FR 106064).")),
+    ],
+
+    "q02": [
+        (CORRECT, "safe harbour for product already made", (
+            "You must stop using FD&C Red No. 3 by January 15, 2027 (21 CFR 74.303, "
+            "90 FR 4628). Product manufactured before that date with certified colour will "
+            "not be regarded as adulterated merely because it is still on shelves.")),
+        (WRONG, "inverts the grandfather clause", (
+            "You must stop by January 15, 2027. Product manufactured after that date using "
+            "certified Red No. 3 will not be regarded as adulterated (21 CFR 74.303).")),
+        (WRONG, "asserts a recall in fresh vocabulary", (
+            "Stop by January 15, 2027. Any certified product still on shelves after that "
+            "date must be withdrawn from sale and cannot lawfully be sold.")),
+    ],
+
+    "q03": [
+        (CORRECT, "declines the unsourced obligation", (
+            "You must stop using Red No. 3 by January 15, 2027 (90 FR 4628). As for the "
+            "formula on file with another agency, I cannot confirm any further obligation "
+            "from my sources — verify with that agency directly.")),
+        (WRONG, "no hedge at all; 'not in' matches incidentally", (
+            "You must stop using Red No. 3 by January 15, 2027. There is nothing else to "
+            "do: after that date the colour is not in the list of approved additives "
+            "(90 FR 4628).")),
+        (WRONG, "asserts the TTB obligation in fresh words", (
+            "Stop by January 15, 2027. You will also need to file a new formula with the "
+            "Alcohol and Tobacco Tax and Trade Bureau before shipping the reformulated "
+            "mixer, which is outside the scope of the FDA order.")),
+    ],
+
+    "q04": [
+        (CORRECT, "distinguishes request from rule", (
+            "No. The HHS statement is a request, not a rule; it is not binding. Your legal "
+            "deadline remains January 15, 2027 under 21 CFR 74.303.")),
+        (WRONG, "treats the request as binding", (
+            "Yes — you should comply with the HHS request and phase out early. The "
+            "regulatory backstop is January 15, 2027.")),
+        (WRONG, "hedges the wrong way", (
+            "HHS has requested an earlier phase-out and FDA supports it, so plan to meet "
+            "that timetable rather than January 15, 2027.")),
+    ],
+
+    "q05": [
+        (CORRECT, "both criteria", (
+            "Two things. The food must contain a meaningful amount of a food group "
+            "equivalent, and it must stay within limits for added sugars, sodium and "
+            "saturated fat (21 CFR 101.65).")),
+        (WRONG, "states both criteria INVERTED", (
+            "A food qualifies if it contains no food group equivalent and exceeds the "
+            "thresholds for added sugars, sodium and saturated fat (21 CFR 101.65).")),
+        (WRONG, "fabricates a front-of-package requirement", (
+            "The updated rule requires front-of-package disclosure of added sugars and "
+            "sodium, plus a statement of the food group equivalent it contains "
+            "(21 CFR 101.65).")),
+    ],
+
+    "q06": [
+        (CORRECT, "names the section", (
+            "21 CFR 101.65 governs the implied nutrient content claim 'healthy'.")),
+        (WRONG, "names the wrong section, mentions the right one", (
+            "It is governed by 21 CFR 101.13; 101.65 was the old section and no longer "
+            "applies.")),
+    ],
+
+    "q07": [
+        (CORRECT, "no size-based extension", (
+            "Your compliance date is February 25, 2028. The rule provides no extension "
+            "based on company size; the date applies to all manufacturers "
+            "(89 FR 106064).")),
+        (WRONG, "grants the extension, avoids the year 2029", (
+            "As a smaller manufacturer you get an extra year beyond February 25, 2028 to "
+            "come into compliance (89 FR 106064).")),
+        (WRONG, "grants the extension while conceding the rule applies to all", (
+            "The rule applies to all manufacturers, but smaller ones such as you get an "
+            "additional year past February 25, 2028 (89 FR 106064).")),
+        (WRONG, "names the fabricated tier year", (
+            "With $8M in sales you fall under the small-business provision, so your date "
+            "is February 25, 2029 rather than February 25, 2028.")),
+    ],
+
+    "q08": [
+        (CORRECT, "three dates, no compliance date stated", (
+            "Published January 16, 2025. Effective January 15, 2027 for food. The order "
+            "sets no compliance date; the effective date is the operative deadline.")),
+        (WRONG, "invents a food compliance date", (
+            "Published January 16, 2025, effective January 15, 2027. No compliance date is "
+            "stated in the order, but FDA expects compliance by January 18, 2028.")),
+        (WRONG, "applies the drug date to food", (
+            "Published January 16, 2025. Effective January 15, 2027, though "
+            "January 18, 2028 applies to food in practice. No compliance date is set.")),
+        (LIMIT_FALSE_FAIL, "correctly explains what January 15, 2025 was", (
+            "FDA announced the revocation on January 15, 2025, but Federal Register "
+            "publication was January 16, 2025. Effective January 15, 2027 for food; no "
+            "compliance date is stated.")),
+    ],
+
+    "q09": [
+        (CORRECT, "human food only", (
+            "No. The 'healthy' claim rule applies to human food and does not apply to pet "
+            "food, so your dog treat line is not covered.")),
+        (WRONG, "applies it to dog treats; 'outside' matches incidentally", (
+            "Yes, the rule reaches your dog treats. Reformulate them to meet the food "
+            "group requirement — anything outside those criteria cannot bear the claim.")),
+        (WRONG, "applies it via the phrase 'human food'", (
+            "Dog treats are regulated on the same basis as human food, so the updated "
+            "criteria apply to your line and you should plan to reformulate.")),
+    ],
+
+    "q10": [
+        (CORRECT, "gate fires, nothing asserted", (
+            "I need to know what product you make and what claims its label bears before I "
+            "can tell you whether the healthy-claim changes reach you.", "needs_input")),
+        (WRONG, "answers confidently without a profile", (
+            "Yes, the healthy-claim changes affect you. You must comply by "
+            "February 25, 2028.", "ok")),
+        (LIMIT_FALSE_PASS, "gate fires but the answer asserts a deadline anyway", (
+            "I need more detail about your products. Your compliance date is "
+            "February 25, 2028.", "pending_review")),
+    ],
+
+    # ---------------- the proposed set, q11-q20 ----------------------------
+
     "q11": [
         (CORRECT, "denies via the stem's own verb", (
             "You work to January 15, 2027. The suspension did not change it. The order at "
