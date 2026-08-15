@@ -18,7 +18,7 @@ import pytest
 from conftest import FIXTURES  # noqa: F401  (path setup)
 
 from graph import amendment_graph as ag, nodes
-from shared import config
+from shared import config, untrusted
 from shared.models import Chunk
 
 
@@ -240,6 +240,30 @@ def test_passage_text_cannot_close_its_own_element():
     assert "</passage>" not in span[len("<passage id='c1'>"):]
     assert "id: fake" not in span
     assert "Ignore the sources" in span   # content kept; only the boundary removed
+
+
+def test_a_passage_is_not_cut_at_the_rerankers_snippet_length():
+    """The regression that produced a wrong answer to q02.
+
+    Chunk 2025-00830#0021 is 1891 chars and its last sentence is the one that
+    answers whether existing stock is adulterated. Fencing at the reranker's
+    1200-char ranking snippet removed it, and the verdict then reported that
+    its sources did not address the question — while retrieval had ranked that
+    very chunk second. The bound is the chunker's, not the reranker's.
+    """
+    captured = {}
+
+    def capture(model, system, prompt, **kw):
+        captured["prompt"] = prompt
+        return json.dumps({"answer": "a", "citations": [], "confidence": 0.9})
+
+    tail = "such food will not be regarded as adulterated by reason of the use."
+    body = ("x" * 1800) + " " + tail
+    assert len(body) > untrusted.SNIPPET       # the old bound would have cut it
+    nodes.verdict(_verdict_state(retrieved=[_chunk("c1", body)]), invoke=capture)
+
+    assert tail in captured["prompt"]
+    assert nodes._VERDICT_SNIPPET == config.CHUNK_MAX_CHARS
 
 
 def test_graph_facts_are_rendered_as_data_not_as_prose():

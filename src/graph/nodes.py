@@ -41,6 +41,29 @@ _CONFIDENCE_UNKNOWN = 0.0
 
 _PASSAGE = "<passage id={pid!r}>\n{body}\n</passage>"
 
+# A PASSAGE THE VERDICT READS MUST NOT BE CUT AT RANKING LENGTH.
+#
+# untrusted.SNIPPET is 1200 chars and correct where it came from: the reranker
+# only has to see what a paragraph ASSERTS to place it in an order. Answering
+# is a different job — the sentence that settles a question is often the last
+# one in a chunk, because FR preambles put the operative consequence at the end
+# of a section.
+#
+# Reusing 1200 here cost a wrong answer to q02, in the direction that matters.
+# Chunk 2025-00830#0021 (90 FR 4628, "VI. Conclusion") is 1891 chars and ends:
+# "When FD&C Red No. 3 has been used in food or ingested drugs while its
+# certificate is still effective, such food or ingested drugs will not be
+# regarded as adulterated by reason of the use of such color additive."
+# That sentence starts at character 1811. Retrieval ranked the chunk SECOND —
+# it did its job — and the answer layer then sliced the answer off and reported
+# that its sources did not address the question.
+#
+# CHUNK_MAX_CHARS is the honest bound: the chunker already caps a chunk at
+# ingest, so the passage is bounded by construction and a second, smaller cap
+# here only removes evidence. Eight chunks at that size is a few thousand
+# tokens of prompt, which is not the constraint.
+_VERDICT_SNIPPET = config.CHUNK_MAX_CHARS
+
 
 def _client():
     if "bedrock-runtime" not in _clients:
@@ -118,7 +141,8 @@ def _passages(items: list[tuple[str, str]]) -> str:
     """Fence and wrap (id, text) pairs. The id is an ATTRIBUTE, outside the
     untrusted span, so a body cannot forge a boundary and claim an id."""
     return "\n\n".join(
-        _PASSAGE.format(pid=pid, body=untrusted.fence(body)) for pid, body in items)
+        _PASSAGE.format(pid=pid, body=untrusted.fence(body, _VERDICT_SNIPPET))
+        for pid, body in items)
 
 
 # --------------------------------------------------------------- supervisor

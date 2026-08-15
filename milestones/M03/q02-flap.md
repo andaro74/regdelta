@@ -1,76 +1,90 @@
-# q02 flaps, and its passing mode asserts the opposite of its ground truth
+# q02: a flap, a bug in the answer layer, and a wrong finding of my own
 
-Measured 2026-08-15 on `585a95f`, S3 Vectors tier, agent mode, against the
-live corpus (49 FR documents). This sits beside
-`evals/history/585a95f-s3vectors-full.json`, which records **10/10**, because
-that card on its own is misleading and this file is the reason.
+Superseded record, kept because the correction is the useful part. Written
+2026-08-15 during M03; **the central claim in its first version was wrong** and
+is corrected below rather than deleted.
 
-## The measurement
+## What was first reported, and why it was wrong
 
-Ten consecutive runs of q02 alone through `POST /query?mode=agent`, scored
-with the real `run_evals.check()`:
+The first version of this file said q02 required an answer **the corpus cannot
+support**, on the strength of a scan showing zero hits across all 990 chunks
+for `not adulterated`, `may remain`, `manufactured before`, `manufactured
+prior`, `existing stocks` and `sell-through`. It put q02 in the same class as
+the q07 fabricated exemption and the q03 uncitable TTB proposition.
 
-| runs | q02 passed |
-|---|---|
-| first batch of 4 | **1 / 4** |
-| second batch of 6 (probing for the passing text) | 1 hit on attempt 1 |
+**That was a methodological error.** The scan searched for the QUESTION's
+phrasings, not for the SOURCE's. The proposition is squarely citable and always
+was — 90 FR 4628 (doc 2025-00830), section VI. Conclusion, chunk `#0021`:
 
-**q02 passes roughly one run in four.** The recorded 10/10 is a lucky draw
-from that distribution, not a reproducible result. The immediately preceding
-card at `fd98d64` scored 9/10 with q02 as the single failure, and the run
-before that — against a 34-document corpus — did the same.
+> "In accordance with 21 CFR 80.32(h), all certificates for existing batches
+> and portions of batches of FD&C Red No. 3 will cease to be effective for use
+> in food on the effective date for the removal of § 74.303 … Use of FD&C Red
+> No. 3 after its certificate ceases to be effective will result in such food
+> or ingested drugs being adulterated. **When FD&C Red No. 3 has been used in
+> food or ingested drugs while its certificate is still effective, such food or
+> ingested drugs will not be regarded as adulterated by reason of the use of
+> such color additive.**"
 
-## Why it passes when it passes
+"will **not be regarded as** adulterated" does not contain the substring "not
+adulterated", which is the entire reason the scan came back empty. Falsifiable
+by reading that chunk, or by FR full-text search for "will not be regarded as
+adulterated by reason of the use".
 
-q02's accept group is `["not adulterated", "may remain", "manufactured
-before"]`. The passing runs match on **`manufactured before`**, in this
-sentence:
+The lesson is cheap to state and was not: **searching a corpus for the words an
+answer would use does not tell you whether the corpus supports the answer.**
+Search for the source's language, or read the document.
+
+## What was actually wrong: the answer layer truncated the answer away
+
+`nodes._passages` fenced retrieved passages at `untrusted.SNIPPET` — 1200
+characters, a constant inherited from the reranker, where it is correct because
+ranking only needs to see what a paragraph asserts.
+
+Chunk `2025-00830#0021` is **1891 characters** and the decisive sentence starts
+at character **1811**. Retrieval ranked that chunk **second** — it did its job
+— and the verdict node then cut the last 700 characters off and reported that
+its sources did not address the question. Every chunk over 1200 characters was
+losing its tail, on every question; q02 is only where it showed.
+
+Fixed by bounding verdict passages at `config.CHUNK_MAX_CHARS`, the chunker's
+own ingest cap, so the passage is bounded by construction and no second,
+smaller cap removes evidence. `test_a_passage_is_not_cut_at_the_rerankers_snippet_length`
+pins it. After the fix q02 answers correctly and quotes the sentence above.
+
+## The defect in the question that was real
+
+Independent of both of the above, and the reason q02 was rewritten rather than
+left alone: **the accept token `manufactured before` matched the negation of
+the intended answer.**
+
+Measured over ten live runs before the fix, q02 passed about 1 in 4, and every
+passing run matched inside this sentence:
 
 > "The sources do not provide an explicit FDA enforcement-discretion statement
 > or transition period for products **manufactured before** the effective date
 > but still in commerce after it."
 
-That is the answer stating it **cannot confirm** a sell-through allowance. The
-question's ground truth is the opposite: that inventory manufactured before the
-effective date **is not** adulterated. The substring scorer cannot tell the two
-apart, so the question's only passing mode is an answer that contradicts what
-it exists to verify.
+That is an answer stating it *cannot confirm* the allowance, scoring as though
+it had confirmed it. The failing runs said the same thing as "regardless of
+when it was manufactured" and scored zero. The check was tracking phrasing in
+both directions — the fourth defect the q07 ruling named, reproduced.
 
-In the failing runs the model says the same thing in different words —
-"regardless of when it was manufactured" — and scores zero. The score is
-tracking phrasing, not correctness, in **both** directions.
+## What was done
 
-## This is the q07 defect, not a new one
+q02 was **rewritten, not patched**, under an SME-seat ruling recorded in its
+`note` field in `evals/golden_questions.json`. The accept tokens now match the
+source's own language and additionally require the certification mechanism the
+order turns on (21 CFR 80.32(h)); `manufactured before` is removed and must not
+return. `must_not_contain` now bans the wrong CONCLUSION — "adulterated
+regardless of when" — rather than any vocabulary. Five hand-written answers
+were replayed through the real scorer to confirm it discriminates, including
+the pre-fix answer that used to pass, which now fails.
 
-The SME ruling of 2026-08-12 found exactly this shape in q07 and named it as a
-defect neither the author nor the first review caught: the question "could not
-distinguish true from false answers in EITHER direction ... It scored a stable
-0/3 while being unable to measure the thing it existed to test." q02 is the
-same failure with a flap on top.
+## What still stands from the first version
 
-There is a second, independent defect, found first: q02 requires an answer the
-corpus cannot support. All three accept tokens return **zero hits** across the
-live corpus, as do `manufactured prior`, `existing stocks` and `sell-through`.
-The domain skill does state the inventory rule — but a rule the corpus cannot
-cite is not a rule this system may assert, which is the whole holding of the
-q03 ruling.
+Nothing about the corpus scan. These two do:
 
-## What was deliberately not done
-
-The question was not edited and the verdict prompt was not tuned to emit the
-phrase. Tuning would be worse than the failure: it would make the model assert
-a sell-through exemption it cannot cite, which is the q03 false pass rebuilt
-with a milestone deadline as the motive.
-
-## What this needs
-
-An `sme-eval-triage` pass and a human ruling from the SME seat, with two
-questions to answer and one consequence to accept:
-
-1. Is the inventory rule citable from any document in the corpus? If not, the
-   requirement is uncitable and the accept group cannot stand as written.
-2. If it is retained in some form, `manufactured before` must go — it matches
-   the negation of the intended answer, so it cannot discriminate.
-3. Either way **SPEC/03's "Done when" is not met.** The bar is `>=80% overall
-   AND 100% on q01-q04`. Overall passes; the trap set does not, and a 10/10
-   card that turns on a false pass does not change that.
+- q02 is a genuine trap and belongs in the trap set.
+- The verdict prompt was never tuned to emit the accept phrase, and must not
+  be. That would be the q03 false pass rebuilt with a milestone deadline as the
+  motive — and it is now unnecessary, because the answer is in the document.
