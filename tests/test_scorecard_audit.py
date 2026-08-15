@@ -59,6 +59,53 @@ def one_question(monkeypatch, tmp_path):
     return run
 
 
+@pytest.fixture
+def two_questions(monkeypatch, tmp_path):
+    """Run main() over two questions, so a run can be partially answered.
+
+    A single-question fixture cannot express the distinction the recording
+    guard turns on — "some questions reached the API" versus "none did" — and
+    that distinction is the whole point of the guard.
+    """
+    golden = tmp_path / "golden.json"
+    golden.write_text(json.dumps({"questions": [
+        {"id": "qAA", "subset": ["smoke"], "question": "one?",
+         "must_contain": ["February 25, 2028"]},
+        {"id": "qBB", "subset": ["smoke"], "question": "two?",
+         "must_contain": ["February 25, 2028"]},
+    ]}), encoding="utf-8")
+
+    monkeypatch.setattr(run_evals, "GOLDEN", golden)
+    monkeypatch.setattr(run_evals, "HISTORY", tmp_path / "history")
+    monkeypatch.setattr(run_evals, "resolve_api_url", lambda _: "http://x")
+    monkeypatch.setattr(run_evals, "git_sha", lambda: "deadbee")
+    monkeypatch.setattr(run_evals, "git_dirty", lambda: False)
+    monkeypatch.setattr(run_evals, "corpus_fingerprint", lambda: {"documents": 1})
+
+    def run(responses, expect_card=True, want_status=None):
+        seq = iter(responses)
+
+        def ask(*a, **k):
+            r = next(seq)
+            if r == "boom":
+                raise RuntimeError("connection refused")
+            return r
+
+        monkeypatch.setattr(run_evals, "ask", ask)
+        monkeypatch.setattr(sys, "argv", ["run_evals.py", "--record"])
+        status = run_evals.main()
+        if want_status is not None:
+            assert status == want_status, f"exit {status}, wanted {want_status}"
+        cards = list((tmp_path / "history").glob("*.json"))
+        if not expect_card:
+            assert not cards, f"expected no scorecard, got {cards}"
+            return None
+        assert len(cards) == 1, cards
+        return json.loads(cards[0].read_text(encoding="utf-8"))
+
+    return run
+
+
 def test_a_passing_answer_is_recorded(one_question):
     """The point of the change: a PASS carries the text that earned it."""
     card = one_question({
@@ -94,18 +141,38 @@ def test_answer_rows_survive(one_question):
     assert card["response"]["answer_rows"] == rows
 
 
-def test_a_transport_error_still_produces_a_record(one_question, monkeypatch):
-    """An error IS a failure, and the card must not lose the question to it."""
-    def boom(*a, **k):
-        raise RuntimeError("connection refused")
+def test_a_partial_transport_error_still_produces_a_record(two_questions):
+    """An error IS a failure, and the card must not lose the question to it.
 
-    monkeypatch.setattr(run_evals, "ask", boom)
-    monkeypatch.setattr(sys, "argv", ["run_evals.py", "--record"])
-    run_evals.main()
-    cards = list((run_evals.HISTORY).glob("*.json"))
-    card = json.loads(cards[0].read_text(encoding="utf-8"))["questions"][0]
-    assert card["pass"] is False
-    assert "connection refused" in card["fails"][0]
+    One question reaches the API and one does not, so the run measured
+    something and is recorded — with the dead question's error preserved.
+    """
+    cards = two_questions(["boom", {"answer": "February 25, 2028",
+                                    "citations": [], "status": "ok"}])
+    dead, live = cards["questions"]
+    assert dead["pass"] is False
+    assert "connection refused" in dead["fails"][0]
     # `resp` is unbound on this path; the record must still be well-formed
     # rather than raising NameError and taking the whole run down with it.
-    assert card["response"]["answer"] is None
+    assert dead["response"]["answer"] is None
+    assert live["pass"] is True
+    assert live["response"]["answer"] == "February 25, 2028"
+
+
+def test_a_run_that_measured_nothing_is_not_recorded(two_questions):
+    """The 2026-08-15 defect: a shim that never started scored 0/10 and filed it.
+
+    Nothing measured is not a score of zero. A card of pure connection errors
+    is false evidence — it looks like a measurement and sits under a real sha.
+    """
+    cards = two_questions(["boom", "boom"], expect_card=False)
+    assert cards is None
+
+
+def test_refusing_to_record_is_distinguishable_from_recording_a_failure(two_questions):
+    """Exit 2, so a caller can tell 'refused' from 'ran and failed' (which is 1)."""
+    assert two_questions(["boom", "boom"], expect_card=False, want_status=2) is None
+    # A real, measured failure still exits 1 and still records.
+    assert two_questions([{"answer": "wrong", "citations": [], "status": "ok"},
+                          {"answer": "wrong", "citations": [], "status": "ok"}],
+                         want_status=1) is not None
