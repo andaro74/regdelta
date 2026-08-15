@@ -75,8 +75,12 @@ def answer_agent(question: str, profile: dict) -> dict:
             "lexical_lane": config.RETRIEVAL_LEXICAL_LANE,
             "prompt_cache": config.PROMPT_CACHE and _cache_state.get("supported", True),
             "prompt_cache_note": _cache_state.get("reason"),
-            "timeline_facts": len(state.get("timeline_facts") or []),
-            "crossrefs": len(state.get("crossrefs") or []),
+            # NOTHING PER-QUESTION BELONGS HERE. run_evals.py keeps one
+            # `provenance` for the whole card and overwrites it on every
+            # question (run_evals.py:136), so a per-question count recorded
+            # here is silently the LAST question's while reading as the run's.
+            # Counts of retrieved chunks, timeline facts and crossrefs are on
+            # each /query response, which is where they are true.
         },
     }
 
@@ -152,6 +156,6 @@ if __name__ == "__main__":
 
     # Loopback only, deliberately. Never add a --host/--bind flag: this
     # shim has no authentication.
-    print(f"serving POST /query?mode=naive on http://127.0.0.1:{args.port}",
+    print(f"serving POST /query?mode=naive|agent on http://127.0.0.1:{args.port}",
           flush=True)
     HTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
