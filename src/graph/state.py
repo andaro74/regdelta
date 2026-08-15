@@ -42,5 +42,13 @@ class RegDeltaState(TypedDict, total=False):
     dropped_citations: list[str]
 
     # --- gate
-    status: str                  # ok | pending_review | needs_input | degraded
+    #: ok | pending_review | needs_input | rejected | resumed | degraded.
+    #: `resumed` is transient — it is what the conditional edge out of
+    #: `hitl_gate` reads to send the run back through retrieval, and it is
+    #: replaced by a terminal status on the second pass.
+    status: str
     review_reason: str
+    #: How many times this run has come back through the gate. Bounds the
+    #: resume cycle: one resume is the demonstrated flow, and a second would
+    #: mean the reviewer's input did not resolve the reason for pausing.
+    hitl_passes: int

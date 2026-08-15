@@ -62,6 +62,26 @@ def build_graph(checkpointer=None):
 
     builder.add_edge("applicability", "verdict")
     builder.add_edge("verdict", "hitl_gate")
-    builder.add_edge("hitl_gate", END)
+
+    # The resume path. `hitl_gate` pauses on `interrupt()`; when a reviewer
+    # supplies what was missing it returns status="resumed", and the run goes
+    # back through retrieval rather than ending — because the thing that was
+    # missing (a company profile) changes what should be retrieved and what the
+    # verdict says, so releasing the draft answer unchanged would be answering
+    # the question the reviewer had already identified as unanswerable.
+    #
+    # Every other outcome ends. `hitl_gate` caps the number of passes, so this
+    # cycle cannot spin: one resume is the demonstrated flow, and a second
+    # would mean the supplied input did not resolve the reason for pausing.
+    builder.add_conditional_edges("hitl_gate", _after_hitl,
+                                  {"retrieval_agent": "retrieval_agent", END: END})
 
     return builder.compile(checkpointer=checkpointer)
+
+
+def _after_hitl(state: RegDeltaState) -> str:
+    from langgraph.graph import END
+
+    if state.get("status") == "resumed":
+        return "retrieval_agent"
+    return END

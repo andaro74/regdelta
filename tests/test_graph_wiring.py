@@ -280,3 +280,176 @@ def test_the_graph_compiles_with_the_saver_attached():
     are compatible."""
     app = build_graph(checkpointer=DynamoDBSaver(table=_FakeTable()))
     assert app.checkpointer is not None
+
+
+# ------------------------------------------------------------ HITL resume
+def _resumable(thread="hitl-1"):
+    return {"configurable": {"thread_id": thread, "resumable": True}}
+
+
+@pytest.fixture
+def hitl_app(monkeypatch, stubbed):
+    """The real graph, real checkpointer, fake table — everything but AWS.
+
+    `verdict` answers from whatever profile reached it, so the test can tell a
+    resumed run's answer from the paused run's draft.
+    """
+    monkeypatch.setattr(nodes, "supervisor", lambda s: {
+        "company_profile": s.get("company_profile") or {},
+        "intent": "applicability",
+        "profile_sufficient": bool(s.get("company_profile")),
+    })
+    monkeypatch.setattr(nodes, "verdict", lambda s: {
+        "answer": f"answered for {sorted((s.get('company_profile') or {}).get('claims', []))}",
+        "verdict_rows": [], "citations": ["90 FR 4628"], "confidence": 0.95,
+        "dropped_citations": [], "status": "ok"})
+    return build_graph(checkpointer=DynamoDBSaver(table=_FakeTable()))
+
+
+def test_an_underspecified_run_pauses_instead_of_answering(hitl_app):
+    """SPEC/03's Done-when, first half. The run stops at the gate and says what
+    it needs rather than answering a question with no asker in it."""
+    out = hitl_app.invoke({"query": "Are we affected?"}, _resumable())
+    paused = (out.get("__interrupt__") or [None])[0]
+    assert paused is not None
+    assert paused.value["status"] == "needs_input"
+    assert paused.value["needs"] == "company_profile"
+
+
+def test_supplying_the_profile_resumes_and_answers_correctly(hitl_app):
+    """The half that had no coverage at all: pause, a human supplies what was
+    missing, and the run CONTINUES to a different and correct answer — not the
+    draft it had already parked."""
+    from langgraph.types import Command
+
+    cfg = _resumable("hitl-resume")
+    first = hitl_app.invoke({"query": "Are we affected?"}, cfg)
+    assert first.get("__interrupt__")
+
+    out = hitl_app.invoke(
+        Command(resume={"company_profile": {"claims": ["healthy"]}}), cfg)
+    assert out["status"] == "ok"
+    assert out["answer"] == "answered for ['healthy']"
+    assert out["company_profile"] == {"claims": ["healthy"]}
+    assert not out.get("__interrupt__")
+
+
+def test_the_resumed_run_goes_back_through_retrieval(hitl_app):
+    """Not a cosmetic release. The missing profile changes what should be
+    retrieved and what the verdict says, so the run re-enters the graph rather
+    than rubber-stamping the draft answer it paused on."""
+    from langgraph.types import Command
+
+    cfg = _resumable("hitl-loop")
+    hitl_app.invoke({"query": "Are we affected?"}, cfg)
+    out = hitl_app.invoke(Command(resume={"company_profile": {"claims": ["x"]}}), cfg)
+    assert out["hitl_passes"] == 1
+    assert out["answer"] == "answered for ['x']"
+
+
+def test_a_reviewer_can_release_a_low_confidence_answer(monkeypatch, stubbed):
+    """The other pause reason. Confidence below the threshold parks the answer;
+    an explicit approval releases exactly that answer, unchanged."""
+    from langgraph.types import Command
+
+    monkeypatch.setattr(nodes, "verdict", lambda s: {
+        "answer": "unsure but drafted", "verdict_rows": [], "citations": [],
+        "confidence": 0.3, "dropped_citations": [], "status": "ok"})
+    app = build_graph(checkpointer=DynamoDBSaver(table=_FakeTable()))
+    cfg = _resumable("hitl-approve")
+
+    first = app.invoke({"query": "When?"}, cfg)
+    assert first["__interrupt__"][0].value["status"] == "pending_review"
+
+    out = app.invoke(Command(resume={"reviewer_decision": "approve"}), cfg)
+    assert out["status"] == "ok"
+    assert out["answer"] == "unsure but drafted"
+
+
+def test_a_reviewer_can_reject(monkeypatch, stubbed):
+    from langgraph.types import Command
+
+    monkeypatch.setattr(nodes, "verdict", lambda s: {
+        "answer": "unsure", "verdict_rows": [], "citations": [],
+        "confidence": 0.3, "dropped_citations": [], "status": "ok"})
+    app = build_graph(checkpointer=DynamoDBSaver(table=_FakeTable()))
+    cfg = _resumable("hitl-reject")
+    app.invoke({"query": "When?"}, cfg)
+    out = app.invoke(Command(resume={"reviewer_decision": "reject",
+                                     "note": "cite the order"}), cfg)
+    assert out["status"] == "rejected"
+    assert out["review_reason"] == "cite the order"
+
+
+def test_an_unusable_resume_payload_leaves_the_answer_parked(monkeypatch, stubbed):
+    """Fail closed. A resume that settles nothing must not release the answer —
+    the whole point of the gate is that something unreviewed does not ship."""
+    from langgraph.types import Command
+
+    monkeypatch.setattr(nodes, "verdict", lambda s: {
+        "answer": "unsure", "verdict_rows": [], "citations": [],
+        "confidence": 0.3, "dropped_citations": [], "status": "ok"})
+    app = build_graph(checkpointer=DynamoDBSaver(table=_FakeTable()))
+    cfg = _resumable("hitl-junk")
+    app.invoke({"query": "When?"}, cfg)
+    out = app.invoke(Command(resume={"something": "else"}), cfg)
+    assert out["status"] == "pending_review"
+    assert "usable decision" in out["review_reason"]
+
+
+def test_the_resume_cycle_cannot_spin(monkeypatch, stubbed):
+    """One resume is the flow; a second would mean the input did not resolve
+    the reason for pausing, and looping on that spends money without
+    converging. The cap is what makes the cycle safe to have in the graph."""
+    from langgraph.types import Command
+
+    # The real spin risk: the reviewer supplies the missing profile, the run
+    # re-enters the graph, and the verdict is STILL not confident enough. The
+    # gate has a fresh reason to pause and nothing about the reviewer's input
+    # would fix it, so a second interrupt would park the same run forever.
+    monkeypatch.setattr(nodes, "supervisor", lambda s: {
+        "company_profile": s.get("company_profile") or {},
+        "intent": "other", "profile_sufficient": bool(s.get("company_profile"))})
+    monkeypatch.setattr(nodes, "verdict", lambda s: {
+        "answer": "still unsure", "verdict_rows": [], "citations": [],
+        "confidence": 0.3, "dropped_citations": [], "status": "ok"})
+    app = build_graph(checkpointer=DynamoDBSaver(table=_FakeTable()))
+    cfg = _resumable("hitl-spin")
+
+    first = app.invoke({"query": "Are we affected?"}, cfg)
+    assert first["__interrupt__"][0].value["status"] == "needs_input"
+
+    out = app.invoke(Command(resume={"company_profile": {"claims": ["x"]}}), cfg)
+    assert not out.get("__interrupt__"), "second pause would be an unbounded loop"
+    assert out["status"] == "pending_review"
+    assert out["hitl_passes"] == nodes._MAX_HITL_PASSES
+    assert out["answer"] == "still unsure"   # parked, not released
+
+
+def test_without_a_checkpointer_the_gate_reports_instead_of_pausing(stubbed, monkeypatch):
+    """`interrupt()` needs somewhere to checkpoint. A graph compiled without
+    one still stops the answer — it just cannot be resumed, which is the honest
+    boundary of the offline path and is why `resumable` is opt-in per run."""
+    monkeypatch.setattr(nodes, "supervisor", lambda s: {
+        "company_profile": {}, "intent": "other", "profile_sufficient": False})
+    out = build_graph().invoke({"query": "Are we affected?"})
+    assert out["status"] == "needs_input"
+    assert not out.get("__interrupt__")
+
+
+def test_a_review_item_is_written_when_the_run_pauses():
+    """SPEC/03's "write review item", and its idempotency. `hitl_gate`
+    re-executes from the top on resume, so the write happens twice — a
+    deterministic key is what makes that harmless."""
+    from graph.checkpoint import write_review_item
+
+    table = _FakeTable()
+    for _ in range(2):
+        write_review_item("t-1", {"status": "needs_input", "reason": "no product",
+                                  "question": "Are we affected?",
+                                  "needs": "company_profile"}, table=table)
+    items = [v for (pk, _sk), v in table.items.items() if pk == "REVIEW#t-1"]
+    assert len(items) == 1
+    assert items[0]["needs"] == "company_profile"
+    assert items[0]["status"] == "needs_input"
+    assert "ttl" in items[0]

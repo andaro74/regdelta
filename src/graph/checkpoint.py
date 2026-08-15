@@ -72,6 +72,44 @@ def _now() -> int:
     return int(dt.datetime.now(dt.timezone.utc).timestamp())
 
 
+def write_review_item(thread_id: str, request: dict, *, table=None,
+                      ttl_days: int = CHECKPOINT_TTL_DAYS) -> None:
+    """Record a paused run so a human can find it without the event stream.
+
+    SPEC/03's "write review item". Separate from the checkpoint on purpose:
+    the checkpoint is machine state and is what makes the run resumable, while
+    this is the queue a reviewer reads — the question, why it stopped, and what
+    it needs from them.
+
+    IDEMPOTENT BY KEY, not by remembering. `hitl_gate` re-executes from the top
+    when the run resumes, so anything before its `interrupt()` runs twice; a
+    deterministic key makes the second write the same write. Relying on a
+    "have I already written this?" check would put the correctness of a
+    side effect inside the replayed region, which is exactly where it cannot be
+    reasoned about.
+
+    Shares STATE_TABLE and its TTL with the checkpoints, which is deliberate:
+    a review item that outlived the checkpoint it refers to would point a
+    reviewer at a run that can no longer be resumed.
+    """
+    if table is None:
+        import boto3
+        table = boto3.resource(
+            "dynamodb", region_name=config.REGION).Table(config.STATE_TABLE)
+
+    table.put_item(Item={
+        "pk": f"REVIEW#{thread_id}",
+        "sk": "ITEM",
+        "thread_id": str(thread_id),
+        "status": str(request.get("status") or ""),
+        "reason": str(request.get("reason") or ""),
+        "question": str(request.get("question") or "")[:2000],
+        "needs": str(request.get("needs") or ""),
+        "opened_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "ttl": _now() + ttl_days * 86400,
+    })
+
+
 class DynamoDBSaver(BaseCheckpointSaver):
     """Sync-only `BaseCheckpointSaver` over the graph-state table.
 

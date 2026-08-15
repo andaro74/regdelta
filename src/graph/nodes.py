@@ -26,6 +26,8 @@ output carries citations a compliance reader will act on.
 """
 import json
 
+from langgraph.types import interrupt
+
 from graph import amendment_graph as ag
 from graph.state import RegDeltaState
 from shared import citations, config, untrusted
@@ -568,21 +570,125 @@ def _confidence(parsed: dict) -> float:
 
 
 # ----------------------------------------------------------------- HITL gate
-def hitl_gate(state: RegDeltaState) -> dict:
-    """Pause when the answer is not confident enough to send unreviewed.
+#: How many times one run may come back through the gate. One resume is the
+#: demonstrated flow (pause, a human supplies what was missing, answer). A
+#: second would mean the supplied input did not resolve the reason for pausing,
+#: and looping on that spends money without converging.
+_MAX_HITL_PASSES = 1
 
-    Two independent triggers, and the second is not a confidence score: a
+
+def _needs_review(state: RegDeltaState) -> tuple[str | None, str]:
+    """Why this answer should not be sent unreviewed, if it should not.
+
+    Two independent triggers, and the first is not a confidence score: a
     question with no product and no claim to apply a rule TO cannot be answered
     for this asker at any confidence, because there is no asker in it yet. q10
     is exactly that question.
     """
     if not state.get("profile_sufficient", True):
-        return {"status": "needs_input",
-                "review_reason": "no product or label claim to apply a rule to"}
+        return "needs_input", "no product or label claim to apply a rule to"
 
     confidence = float(state.get("confidence") or 0.0)
     if confidence < config.CONFIDENCE_HITL_THRESHOLD:
-        return {"status": "pending_review",
-                "review_reason": f"confidence {confidence:.2f} below "
-                                 f"{config.CONFIDENCE_HITL_THRESHOLD:.2f}"}
-    return {"status": "ok"}
+        return "pending_review", (f"confidence {confidence:.2f} below "
+                                  f"{config.CONFIDENCE_HITL_THRESHOLD:.2f}")
+    return None, ""
+
+
+def hitl_gate(state: RegDeltaState, config=None, write_review=None) -> dict:
+    # The parameter MUST be named `config`: LangGraph injects the run-time
+    # configuration by parameter NAME, not by position or annotation, and a
+    # near-miss like `config_` is silently passed nothing — the gate then
+    # never sees `resumable`, never pauses, and every resume test fails with
+    # no error to read. It shadows the `shared.config` module inside this
+    # function only; the threshold it would have been used for lives in
+    # `_needs_review` above, which is why the shadowing is harmless here.
+    """Pause for a human, and be resumable — SPEC/03's second Done-when clause.
+
+    PAUSING IS OPT-IN PER RUN, via `configurable.resumable`, and that is not a
+    knob so much as the caller stating a fact: `interrupt()` requires a
+    checkpointer, and a graph compiled without one has nowhere to pause. When
+    it is off this returns the review status and the run ends, which is the
+    behaviour every caller had before resume existed and is still what the
+    offline tests exercise.
+
+    On resume the node RE-EXECUTES from the top and `interrupt()` returns the
+    reviewer's payload instead of raising. That is why nothing above it may
+    have a side effect that must happen once — the review-item write is keyed
+    on the thread and is therefore idempotent by construction rather than by
+    remembering to check.
+    """
+    passes = int(state.get("hitl_passes") or 0)
+    status, reason = _needs_review(state)
+    if status is None:
+        return {"status": "ok", "hitl_passes": passes}
+
+    cfg = ((config or {}).get("configurable") or {})
+    if not cfg.get("resumable") or passes >= _MAX_HITL_PASSES:
+        # No checkpointer, or one resume already spent. Report and stop —
+        # never silently answer anyway, which is the failure this gate exists
+        # to prevent.
+        return {"status": status, "review_reason": reason, "hitl_passes": passes}
+
+    request = {
+        "status": status,
+        "reason": reason,
+        "question": state.get("query", ""),
+        # What the reviewer has to supply for the resume to be worth anything.
+        "needs": "company_profile" if status == "needs_input" else "reviewer_decision",
+        "draft_answer": state.get("answer", ""),
+        "confidence": state.get("confidence"),
+    }
+    (write_review or _write_review)(cfg.get("thread_id"), request)
+
+    decision = interrupt(request) or {}
+    return _resume_with(decision, passes)
+
+
+def _resume_with(decision: dict, passes: int) -> dict:
+    """Turn a reviewer's payload into a state update.
+
+    `status="resumed"` is what the conditional edge out of this node reads to
+    send the run back through retrieval — see graph.py. Any other outcome ends
+    the run, so an unrecognised payload leaves the answer parked rather than
+    quietly releasing it.
+    """
+    if not isinstance(decision, dict):
+        return {"status": "pending_review", "hitl_passes": passes,
+                "review_reason": "resume payload was not an object"}
+
+    profile = decision.get("company_profile")
+    if isinstance(profile, dict) and profile:
+        # The missing input arrived. Mark the profile sufficient so the second
+        # pass does not stop at the same gate for the same reason.
+        return {"company_profile": profile, "profile_sufficient": True,
+                "status": "resumed", "hitl_passes": passes + 1,
+                "review_reason": ""}
+
+    verdict_call = str(decision.get("reviewer_decision") or "").lower()
+    if verdict_call in ("approve", "approved", "accept"):
+        return {"status": "ok", "hitl_passes": passes + 1,
+                "review_reason": "released by reviewer"}
+    if verdict_call in ("reject", "rejected", "deny"):
+        return {"status": "rejected", "hitl_passes": passes + 1,
+                "review_reason": str(decision.get("note") or "rejected by reviewer")}
+
+    return {"status": "pending_review", "hitl_passes": passes + 1,
+            "review_reason": "resumed without a usable decision"}
+
+
+def _write_review(thread_id: str | None, request: dict) -> None:
+    """Record the pending review so it is findable without the event stream.
+
+    SPEC/03 asks hitl_gate to "write review item"; this is it. Best-effort on
+    purpose — the checkpoint is what makes the run resumable, and failing the
+    whole answer because a convenience record could not be written would trade
+    a working pause for an outage.
+    """
+    if not thread_id:
+        return
+    try:
+        from graph.checkpoint import write_review_item
+        write_review_item(thread_id, request)
+    except Exception:  # noqa: BLE001 — the review queue is not the pause
+        pass

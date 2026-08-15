@@ -27,42 +27,95 @@ MAX_BODY = 64 * 1024
 _graph: dict = {}
 
 
+def _app():
+    """Compile once, with a checkpointer when there is somewhere to checkpoint.
+
+    STATE_TABLE is what decides. With it, a paused run persists and
+    `/resume/{thread_id}` can continue it — SPEC/03's HITL criterion has two
+    halves and this is the second. Without it the graph still runs and still
+    reports `pending_review`; it simply cannot be resumed, and `resumable` is
+    left off so `hitl_gate` reports instead of calling `interrupt()`, which
+    would raise with no checkpointer behind it.
+    """
+    if "app" not in _graph:
+        from graph.checkpoint import DynamoDBSaver
+        from graph.graph import build_graph
+        from shared import config
+
+        saver = DynamoDBSaver() if config.STATE_TABLE else None
+        _graph["app"] = build_graph(checkpointer=saver)
+        _graph["resumable"] = saver is not None
+    return _graph["app"]
+
+
+def _config(thread_id: str) -> dict:
+    return {"configurable": {"thread_id": thread_id,
+                             "resumable": _graph.get("resumable", False)}}
+
+
 def answer_agent(question: str, profile: dict) -> dict:
-    """Run the SPEC/03 graph and shape its state for the eval runner.
+    """Start a run. Returns the answer, or the pause and how to resume it."""
+    import uuid
+
+    thread_id = str(uuid.uuid4())
+    state = _app().invoke({"query": question, "company_profile": profile},
+                          _config(thread_id))
+    return _shape(state, thread_id)
+
+
+def resume_agent(thread_id: str, decision: dict) -> dict:
+    """Continue a paused run from its checkpoint.
+
+    SPEC/04 owns the real `POST /resume/{checkpoint_id}`; this is the same
+    contract on the offline path, so the HITL criterion can be demonstrated
+    before that milestone exists. The thread id IS the checkpoint id here —
+    LangGraph keys checkpoints by thread, and `DynamoDBSaver` stores every
+    superstep under `THREAD#<id>`, so resuming needs nothing else.
+    """
+    from langgraph.types import Command
+
+    if not _graph.get("resumable", False):
+        return {"error": "not resumable: STATE_TABLE is unset, so this run was "
+                         "never checkpointed", "status": "degraded"}
+    state = _app().invoke(Command(resume=decision), _config(thread_id))
+    return _shape(state, thread_id)
+
+
+def _shape(state: dict, thread_id: str) -> dict:
+    """Map graph state onto the response the eval runner reads.
 
     `run_evals.check()` reads `answer_rows`, `answer`, `citations` and `status`
-    (run_evals.py:69-102), so the mapping below is the contract between the
-    graph and the scorecard. Everything else on the response is provenance.
-
-    NO CHECKPOINTER here, deliberately. The local shim has no DynamoDB, and a
-    graph compiled without one still runs to completion and still reports
-    `pending_review` — what it cannot do is be RESUMED. That is the honest
-    boundary of what this shim measures: SPEC/03's HITL criterion has two
-    halves, and the local path covers the pause, not the resume. The resume
-    half needs graph.checkpoint.DynamoDBSaver and a `/resume/{id}` route, which
-    is SPEC/04's surface.
+    (run_evals.py:69-102), so this mapping is the contract between the graph
+    and the scorecard. Everything else is provenance.
     """
     from dataclasses import asdict
 
-    from graph.graph import build_graph
     from graph.nodes import _cache_state
     from retrieval import router
     from shared import config
 
-    if "app" not in _graph:
-        _graph["app"] = build_graph()
-
-    state = _graph["app"].invoke({"query": question, "company_profile": profile})
     rows = [asdict(r) for r in state.get("verdict_rows") or []]
 
+    # A paused run reports the pause and what would release it. The status is
+    # taken from the interrupt payload rather than from state, because state
+    # holds whatever the last completed node wrote — `hitl_gate` has not
+    # returned yet, so its status is not there to read.
+    paused = (state.get("__interrupt__") or [None])[0]
+    request = dict(getattr(paused, "value", None) or {}) if paused else {}
+
     return {
+        "thread_id": thread_id,
         "answer": state.get("answer", ""),
         "answer_rows": rows,
         "citations": state.get("citations") or [],
         "confidence": state.get("confidence"),
-        "status": state.get("status", "degraded"),
+        "status": request.get("status") or state.get("status", "degraded"),
         "mode": "agent",
-        "review_reason": state.get("review_reason"),
+        "review_reason": request.get("reason") or state.get("review_reason"),
+        "paused": bool(paused),
+        # What a reviewer has to send back for the resume to be worth anything.
+        "needs": request.get("needs"),
+        "resume_with": (f"POST /resume/{thread_id}" if paused else None),
         # A model that reached for authority the sources did not carry is a
         # finding about the answer, not noise — q03 is why it is surfaced.
         "dropped_citations": state.get("dropped_citations") or [],
@@ -99,8 +152,40 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"tier": "s3vectors", "surface": "local-shim"})
         self._send(404, {"error": "not found"})
 
+    def _resume(self, thread_id: str):
+        """POST /resume/{thread_id} — SPEC/03's second HITL half.
+
+        The body is the reviewer's decision: `{"company_profile": {...}}` to
+        supply what was missing, or `{"reviewer_decision": "approve"|"reject"}`
+        to release or refuse the draft. SPEC/04 owns the deployed route; this
+        is the same contract offline so the criterion can be demonstrated
+        before that milestone exists.
+        """
+        thread_id = urllib.parse.unquote(thread_id)
+        if not thread_id or "/" in thread_id:
+            return self._send(400, {"error": "resume needs a single thread id"})
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            if not 0 < length <= MAX_BODY:
+                return self._send(400, {"error": "bad Content-Length"})
+            decision = json.loads(self.rfile.read(length))
+            if not isinstance(decision, dict):
+                return self._send(400, {"error": "decision must be an object"})
+        except (ValueError, TypeError, AttributeError):
+            return self._send(400, {"error": "malformed request body"})
+
+        try:
+            self._send(200, resume_agent(thread_id, decision))
+        except Exception as e:  # noqa: BLE001 — surface as a failed resume
+            # Detail to stderr only, same as /query: botocore error strings
+            # embed the account id, role ARN and table name.
+            sys.stderr.write(f"resume failed: {type(e).__name__}: {e}\n")
+            self._send(500, {"error": "internal error", "type": type(e).__name__})
+
     def do_POST(self):
         url = urllib.parse.urlparse(self.path)
+        if url.path.startswith("/resume/"):
+            return self._resume(url.path[len("/resume/"):])
         if url.path != "/query":
             return self._send(404, {"error": "not found"})
 
