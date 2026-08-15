@@ -96,6 +96,11 @@ SPECIMENS: dict[str, list[tuple]] = {
         (WRONG, "conflates the two dates outright", (
             "Both dates shifted together. Compliance is now due February 25, 2028, which "
             "remains the operative date (89 FR 106064).")),
+        (WRONG, "concessive yes that names the right date", (
+            "Yes, the deadline changed when the effective date slipped. It now remains "
+            "February 25, 2028 (89 FR 106064).")),
+        (CORRECT, "terse yes/no plus the date — CONSTRAINS ANY TIGHTENING", (
+            "No. February 25, 2028 (89 FR 106064).")),
     ],
 
     "q02": [
@@ -109,6 +114,14 @@ SPECIMENS: dict[str, list[tuple]] = {
         (WRONG, "asserts a recall in fresh vocabulary", (
             "Stop by January 15, 2027. Any certified product still on shelves after that "
             "date must be withdrawn from sale and cannot lawfully be sold.")),
+        (CORRECT, "safe harbour via the certificate mechanism", (
+            "Stop using it by January 15, 2027 (21 CFR 74.303). Product already made "
+            "while the certificate was still effective will not be regarded as "
+            "adulterated.")),
+        (WRONG, "inversion that ALSO mentions product made before", (
+            "Stop by January 15, 2027. Product manufactured before that date is fine, "
+            "and product manufactured after that date using certified Red No. 3 will "
+            "also not be regarded as adulterated.")),
     ],
 
     "q03": [
@@ -124,6 +137,13 @@ SPECIMENS: dict[str, list[tuple]] = {
             "Stop by January 15, 2027. You will also need to file a new formula with the "
             "Alcohol and Tobacco Tax and Trade Bureau before shipping the reformulated "
             "mixer, which is outside the scope of the FDA order.")),
+        (CORRECT, "hedges without the word 'confirm'", (
+            "You must stop using Red No. 3 by January 15, 2027 (90 FR 4628). On the "
+            "formula held by another agency, my sources do not speak to it at all.")),
+        (WRONG, "hedges about sources AND asserts the obligation anyway", (
+            "Stop by January 15, 2027. You will also need to refile the formula with "
+            "that agency, though I cannot confirm the deadline for it from my "
+            "sources.")),
     ],
 
     "q04": [
@@ -136,6 +156,11 @@ SPECIMENS: dict[str, list[tuple]] = {
         (WRONG, "hedges the wrong way", (
             "HHS has requested an earlier phase-out and FDA supports it, so plan to meet "
             "that timetable rather than January 15, 2027.")),
+        (CORRECT, "terse denial", (
+            "No, it is not binding. Your deadline is January 15, 2027.")),
+        (CORRECT, "'voluntary' phrasing only", (
+            "The HHS phase-out is voluntary. The enforceable date is January 15, 2027 "
+            "under 21 CFR 74.303.")),
     ],
 
     "q05": [
@@ -150,6 +175,15 @@ SPECIMENS: dict[str, list[tuple]] = {
             "The updated rule requires front-of-package disclosure of added sugars and "
             "sodium, plus a statement of the food group equivalent it contains "
             "(21 CFR 101.65).")),
+        (CORRECT, "'not exceed' phrasing", (
+            "It must contain a food group equivalent and not exceed the limits for "
+            "added sugars, sodium and saturated fat (21 CFR 101.65).")),
+        (CORRECT, "'at least one' plus 'below the limits'", (
+            "The food must include at least one food group equivalent and stay below "
+            "the limits for added sugars, sodium, and saturated fat (21 CFR 101.65).")),
+        (WRONG, "one criterion right, one inverted", (
+            "It must contain a food group equivalent, and it must exceed the "
+            "thresholds for added sugars, sodium and saturated fat (21 CFR 101.65).")),
     ],
 
     "q06": [
@@ -158,6 +192,8 @@ SPECIMENS: dict[str, list[tuple]] = {
         (WRONG, "names the wrong section, mentions the right one", (
             "It is governed by 21 CFR 101.13; 101.65 was the old section and no longer "
             "applies.")),
+        (CORRECT, "TERSE — the ideal answer, CONSTRAINS ANY TIGHTENING", (
+            "21 CFR 101.65.")),
     ],
 
     "q07": [
@@ -174,6 +210,9 @@ SPECIMENS: dict[str, list[tuple]] = {
         (WRONG, "names the fabricated tier year", (
             "With $8M in sales you fall under the small-business provision, so your date "
             "is February 25, 2029 rather than February 25, 2028.")),
+        (CORRECT, "'no small-business extension' phrasing", (
+            "February 25, 2028. There is no small-business extension in this rule "
+            "(89 FR 106064).")),
     ],
 
     "q08": [
@@ -190,6 +229,13 @@ SPECIMENS: dict[str, list[tuple]] = {
             "FDA announced the revocation on January 15, 2025, but Federal Register "
             "publication was January 16, 2025. Effective January 15, 2027 for food; no "
             "compliance date is stated.")),
+        (CORRECT, "names the drug date in order to distinguish it", (
+            "Published January 16, 2025; effective January 15, 2027 for food. "
+            "January 18, 2028 is the ingested-drug date and does not apply to food. "
+            "The order states no compliance date.")),
+        (CORRECT, "'achieve compliance by' the derived deadline", (
+            "Published January 16, 2025. Effective January 15, 2027 — no compliance "
+            "date is stated, so you must achieve compliance by January 15, 2027.")),
     ],
 
     "q09": [
@@ -202,6 +248,9 @@ SPECIMENS: dict[str, list[tuple]] = {
         (WRONG, "applies it via the phrase 'human food'", (
             "Dog treats are regulated on the same basis as human food, so the updated "
             "criteria apply to your line and you should plan to reformulate.")),
+        (CORRECT, "terse 'human food only'", (
+            "No — the rule covers human food only, so your dog treats are "
+            "unaffected.")),
     ],
 
     "q10": [
