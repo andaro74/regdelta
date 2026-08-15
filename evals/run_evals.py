@@ -241,6 +241,7 @@ def main() -> int:
     print(f"→ {len(questions)} questions vs {api_url}\n")
 
     passed = 0
+    answered = 0          # questions that actually reached the API
     per_q = []
     provenance: dict = {}
     t0 = time.monotonic()
@@ -248,6 +249,7 @@ def main() -> int:
         resp = {}
         try:
             resp = ask(api_url, q["question"], args.mode)
+            answered += 1
             fails = check(q, resp)
             # Which model / retrieval settings produced this scorecard.
             provenance = resp.get("provenance") or provenance
@@ -286,6 +288,24 @@ def main() -> int:
 
     total = len(questions)
     print(f"\n{passed}/{total} passed ({100 * passed // total}%)")
+
+    # NOTHING MEASURED IS NOT A SCORE OF ZERO. If no question ever reached the
+    # API, the run says nothing about the system and a card recording it is
+    # false evidence — worse than no card, because it looks like a measurement
+    # and files under a real sha. This has happened: `make agent-evals` and
+    # `make baseline` background the loopback shim and never check it came up,
+    # so when serve_local.py refused to start on an unset VECTOR_BUCKET both
+    # targets recorded a 0/10 card of pure connection errors. The dirty-tree
+    # guard already refuses to record a run whose CODE is uncertain; this
+    # refuses to record one whose RESULT is vacuous.
+    if answered == 0:
+        print(f"\nNOT RECORDING: no question reached {api_url} — every request "
+              f"failed in transport, so this run measured nothing. A 0/{total} "
+              f"card here would be false evidence, not a bad score.",
+              file=sys.stderr)
+        if args.record:
+            return 2
+        return 1
 
     if args.record:
         tier = "naive"

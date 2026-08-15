@@ -17,6 +17,25 @@ RERANK       ?= 0
 LEXICAL_LANE ?= 0
 CDK          := cd infra && npx cdk
 
+# The loopback shim reads its bucket names from the environment and exits if
+# they are missing. Resolving them from the deployed stack rather than from the
+# operator's shell is the idiom `up` already uses for devPrincipalArn and
+# `retrieval-evals` for the tier: the value lives in one place, and a fresh
+# clone can run the target. An exported value wins, so an operator pointing
+# somewhere else is not overridden. Evaluated inside the recipe, never at parse
+# time — `make help` must not need AWS credentials.
+#
+# This exists because both targets recorded a 0/10 scorecard on 2026-08-15 when
+# VECTOR_BUCKET happened to be unset: the shim exited, the fixed `sleep` could
+# not tell that from slow startup, and the run measured nothing but connection
+# refusals. See evals/wait_ready.py for the other half of that fix.
+STACK_Q         = --stack-name $(STACK_CORE) --region $(REGION) --output text --query
+RESOLVE_BUCKETS = \
+  export VECTOR_BUCKET=$${VECTOR_BUCKET:-$$(MSYS_NO_PATHCONV=1 aws cloudformation \
+    describe-stacks $(STACK_Q) "Stacks[0].Outputs[?OutputKey=='VectorBucketName'].OutputValue")} \
+    CORPUS_BUCKET=$${CORPUS_BUCKET:-$$(MSYS_NO_PATHCONV=1 aws cloudformation \
+    describe-stacks $(STACK_Q) "Stacks[0].Outputs[?OutputKey=='CorpusBucketName'].OutputValue")};
+
 .PHONY: help bootstrap core up down status smoke evals agent-evals discrimination lint test demo ingest-backfill synth diff \
         retrieval-evals retrieval-parity preflight rebuild-vectors
 
@@ -140,10 +159,12 @@ rebuild-vectors:
 # M00b control. Reproduces the permanent baseline scorecard: starts the
 # loopback shim, runs the full golden set against mode=naive, records it.
 baseline:
-	@python evals/serve_local.py --port 8000 & echo $$! > .baseline.pid; \
-	  sleep 2; \
+	@$(RESOLVE_BUCKETS) \
+	  python evals/serve_local.py --port 8000 & echo $$! > .baseline.pid; \
+	  python evals/wait_ready.py http://127.0.0.1:8000 \
+	    || { kill $$(cat .baseline.pid) 2>/dev/null; rm -f .baseline.pid; exit 1; }; \
 	  python evals/run_evals.py --mode naive --api-url http://127.0.0.1:8000 --record; \
-	  status=$$?; kill $$(cat .baseline.pid); rm -f .baseline.pid; exit $$status
+	  status=$$?; kill $$(cat .baseline.pid) 2>/dev/null; rm -f .baseline.pid; exit $$status
 
 # SPEC/03's Done-when, runnable. `make evals` resolves the API URL from the
 # deployed stack, and that endpoint is src/api/api.py — SPEC/04's, still
@@ -159,8 +180,10 @@ baseline:
 # ARGS="--record" to file the scorecard; omitted by default because recording
 # is a milestone-close act, not something a routine check should do.
 agent-evals:
-	@python evals/serve_local.py --port 8000 & echo $$! > .agent.pid; \
-	  sleep 3; \
+	@$(RESOLVE_BUCKETS) \
+	  python evals/serve_local.py --port 8000 & echo $$! > .agent.pid; \
+	  python evals/wait_ready.py http://127.0.0.1:8000 \
+	    || { kill $$(cat .agent.pid) 2>/dev/null; rm -f .agent.pid; exit 1; }; \
 	  python evals/run_evals.py --mode agent --api-url http://127.0.0.1:8000 $(ARGS); \
 	  status=$$?; kill $$(cat .agent.pid) 2>/dev/null; rm -f .agent.pid; exit $$status
 
