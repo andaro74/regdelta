@@ -12,6 +12,7 @@ Exit code 0 = all pass. Non-zero = failures (usable as a CI/hook gate).
 """
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import subprocess
@@ -20,9 +21,23 @@ import time
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
 HERE = Path(__file__).parent
 GOLDEN = HERE / "golden_questions.json"
 HISTORY = HERE / "history"
+
+# This script prints ✅/❌/→, and a Windows console defaults to cp1252, which
+# cannot encode any of them: the run died with UnicodeEncodeError on the
+# banner line, before question one, with no scorecard and nothing to read. The
+# repo is driven from PowerShell as often as from Git Bash (Makefile line 11
+# says so about RERANK), so this is a supported path, not an exotic one.
+# Reconfigure rather than downgrade the glyphs — the pass/fail column is the
+# thing an operator reads first, and `errors="replace"` keeps a hostile
+# terminal from taking the run down again for a different codec reason.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
 def git_sha() -> str:
@@ -31,6 +46,96 @@ def git_sha() -> str:
             ["git", "rev-parse", "--short", "HEAD"], text=True).strip()
     except Exception:  # noqa: BLE001 — provenance is best-effort; never fail a run over it
         return "nogit"
+
+
+def git_dirty() -> bool:
+    """True if the working tree differs from HEAD.
+
+    MOVED HERE from run_retrieval.py, which is where it was written and where
+    its reasoning still reads best — but run_evals.py is already the home of
+    `git_sha()` for both other harnesses (`from run_evals import git_sha` in
+    run_parity.py and run_retrieval.py), so its twin belongs beside it rather
+    than in a module that imports it.
+
+    The reason, unchanged: a scorecard is evidence, and `git_sha()` reports
+    HEAD whether or not the tree matches it — so recording from a dirty tree
+    files a measurement under a commit that cannot reproduce it. That is worse
+    than no evidence, because it survives into milestones/ and reads as a
+    verified claim. Caught while recording the first Tier A run, which was
+    labelled with the previous commit's sha.
+
+    `evals/history/` is excluded. Scorecards are OUTPUTS: the two retrieval
+    tier runs have to happen at the same commit (run_parity pairs them by sha),
+    the second cannot happen until the hot tier is deployed, and committing the
+    first run's card in between would move HEAD and guarantee the pair never
+    matches. A card sitting in the tree changes nothing about what the code
+    under measurement does.
+
+    The golden-set runner had NO such guard while its sibling did, which is how
+    a 90% agent-mode run at M03 came within one flag of being filed under a
+    commit containing none of the graph that produced it.
+    """
+    try:
+        return bool(subprocess.check_output(
+            ["git", "status", "--porcelain", "--", ".", ":(exclude)evals/history"],
+            text=True, cwd=HERE.parent).strip())
+    except Exception:  # noqa: BLE001 — same policy as git_sha: never fail a run over provenance
+        return False
+
+
+def corpus_fingerprint() -> dict:
+    """What the corpus looked like when this run happened.
+
+    Retrieval scorecards carry a `corpus_snapshot`, but it is a human-authored
+    string in retrieval_truth.json — fine when the corpus changed only when
+    someone re-ingested it. It no longer does: the daily poller took the corpus
+    from 4 FR documents to 34 between 2026-07-30 and 2026-08-12, unattended, and
+    nobody edited a string. A golden-set number measured against a corpus that
+    moves on its own is not reproducible unless the card says which corpus.
+
+    `documents_sha` is the point — one short hash over the sorted document
+    numbers, so "same corpus?" is a string comparison between two cards rather
+    than a diff of two lists.
+
+    Best-effort, like `git_sha`: no credentials, no table, or a transient error
+    yields `{"available": False}` and the run still produces a scorecard. A
+    missing fingerprint is visible; a run that died collecting one is not.
+    """
+    from shared import config
+
+    if not config.REGISTRY_TABLE:
+        return {"available": False, "reason": "REGISTRY_TABLE unset"}
+    try:
+        import boto3
+        from boto3.dynamodb.conditions import Attr
+
+        table = boto3.resource("dynamodb", region_name=config.REGION) \
+            .Table(config.REGISTRY_TABLE)
+        docs, dates, kwargs = [], [], {
+            "FilterExpression": Attr("sk").eq("META"),
+            "ProjectionExpression": "pk, pub_date",
+        }
+        while True:
+            resp = table.scan(**kwargs)
+            for item in resp.get("Items", []):
+                docs.append(str(item["pk"]).removeprefix("DOC#"))
+                if item.get("pub_date"):
+                    dates.append(str(item["pub_date"]))
+            if not resp.get("LastEvaluatedKey"):
+                break
+            kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+
+        docs.sort()
+        digest = hashlib.sha256("\n".join(docs).encode()).hexdigest()[:12]
+        return {
+            "available": True,
+            "documents": len(docs),
+            "documents_sha": digest,
+            "newest_pub_date": max(dates) if dates else None,
+            "oldest_pub_date": min(dates) if dates else None,
+        }
+    except Exception as e:  # noqa: BLE001 — provenance must never fail a run
+        return {"available": False, "reason": f"{type(e).__name__}: {e}"[:200]}
 
 
 def record(result: dict) -> Path:
@@ -113,7 +218,18 @@ def main() -> int:
                     help="naive = M00b baseline path")
     ap.add_argument("--record", action="store_true",
                     help="append scorecard to evals/history/ (used at milestone close)")
+    ap.add_argument("--allow-dirty", action="store_true",
+                    help="record from a dirty tree, stamped dirty=true (provisional)")
     args = ap.parse_args()
+
+    # Checked BEFORE the run, not at record time: a golden-set run costs real
+    # Bedrock calls, and discovering the refusal after paying for them would
+    # push an operator toward --allow-dirty for the wrong reason.
+    dirty = git_dirty()
+    if args.record and dirty and not args.allow_dirty:
+        sys.exit("refusing to record from a dirty working tree: the scorecard "
+                 "would be filed under a commit that cannot reproduce it. "
+                 "Commit first, or pass --allow-dirty to stamp it as provisional.")
 
     questions = json.loads(GOLDEN.read_text())["questions"]
     if args.subset:
@@ -161,10 +277,16 @@ def main() -> int:
                 tier = "unknown"
         out = record({
             "sha": git_sha(),
+            # run_parity.py already refuses a retrieval card carrying this;
+            # a golden-set card has to be able to say the same thing.
+            "dirty": dirty,
             "at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
             "tier": tier,
             "mode": args.mode,
             "subset": args.subset,
+            # Which corpus answered. The poller changes this daily and without
+            # it two cards cannot be compared — see corpus_fingerprint.
+            "corpus": corpus_fingerprint(),
             "provenance": provenance,
             "passed": passed,
             "total": total,
