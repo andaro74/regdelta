@@ -9,19 +9,19 @@ signature).
 Drafted 2026-08-12, on `m03-agent-graph`, against the corpus as it stands at
 `m01c` (985 chunks, four FR documents, three CFR sections).
 
-> ⚠️ **The four-document premise is already false, and this draft has not been
-> re-verified against what replaced it.** Later the same day, building the M03
-> agent graph surfaced that the live corpus holds **thirty-four** FR documents:
-> the daily poller ingested 30 more between 2026-07-30 and 2026-08-12,
-> unattended. Nothing below is withdrawn — but nothing below should be ruled on
-> until it has been re-read against 34 documents rather than 4. The specific
-> re-checks owed are listed in `corpus_premise_invalidated` in the JSON, and the
-> headline ones are that q16's "front-of-package is not in this corpus" premise
-> is now shaky (the phrase appears in the healthy rule's own preamble) and that
-> every question now faces roughly eight times the distractor pressure it was
-> written for. One thing was re-verified and holds: `$10 million` and `annual
-> food sales` are still at zero hits across all 990 chunks, so the q07 ruling
-> stands at the current corpus.
+> ⚠️ **Authored against 4 FR documents; re-checked against 49.** Later the same
+> day, building the M03 agent graph surfaced that the poller had grown the
+> corpus unattended. Every owed check has since been discharged against the live
+> index and **no question is withdrawn**: q14's crossref is citable (16 chunks
+> for 21 CFR 101.13, and 2024-29957#0384 carries the (h) carve-out verbatim);
+> q16 still measures what it says (the phrase "front-of-package" now appears in
+> exactly one chunk, as preamble discussion establishing no requirement and no
+> date, and 90 FR 5426 is still absent); and the twelvefold rise in distractor
+> pressure did not break retrieval — M02's probe set re-runs at 9/9, recall@8 =
+> 1.0. `$10 million` and `annual food sales` remain at zero hits, so the q07
+> ruling holds. Details in `corpus_premise_rechecked` in the JSON.
+>
+> **What this draft still needs is a ruling, not a verification.**
 
 ## Why twenty
 
@@ -54,7 +54,7 @@ not get slower.
 | q11 | timeline, trap | Treating a stay as tolling — "suspended 18 months, so the deadline moved 18 months". | 21 U.S.C. 371(e)(2) has no day-for-day extension; 2026-15920 / 91 FR 50475 lifts and **confirms** both dates (scope `dates_confirmed`, predicate CONFIRMS, never SUPERSEDES). ADR-0007; regulatory-domain skill. |
 | q12 | timeline | Answering "now" when asked "then" — no point-in-time reasoning over `STAY_PERIOD`. | `retrieval_truth.json` r05 explicitly defers this: "the point-in-time reasoning … is M03's, from the STAY_PERIOD interval, and is explicitly not asserted by this probe." This is that question. |
 | q13 | timeline, retrieval | Applying the ingested-drug date to food, or collapsing two amendatory instructions into one. | Chunk `2025-00830#0002`, quoted in r09: "Remove 74.303" and "Effective January 18, 2028 remove 74.1303". |
-| q14 | crossref, retrieval | Failing to resolve a cross-reference that **is** in the corpus, or missing its carve-out. | 21 CFR 101.65(a)(2): general requirements of §101.13 apply "with the exception of §101.13(h)" for paragraph (d) claims. **Fixture-verified only — see Verification owed.** |
+| q14 | crossref, retrieval | Failing to resolve a cross-reference that **is** in the corpus, or missing its carve-out. | 21 CFR 101.65(a)(2): general requirements of §101.13 apply "with the exception of §101.13(h)" for paragraph (d) claims. **Live-verified 2026-08-15** — chunk `2024-29957#0384` carries the regtext verbatim, and the index holds 16 `21 CFR 101.13` chunks including a dedicated `101.13(h)`. |
 | q15 | applicability, verdict | Collapsing two rules with two different deadlines into one row. | Both dates already established by q02/q07; adds no new ground truth, only the requirement that both survive one answer. |
 | q16 | honesty | Answering from model priors about a real FDA initiative that is not in this corpus (front-of-package, 90 FR 5426). | Named in the q07 ruling as one of the rules the $10M tier really belongs to — real, and absent here. |
 | q17 | timeline | Attributing the delay to the wrong date — the ADR-0006 conflation, asked directly rather than as q01's yes/no. | 2024-29957#0000, 2025-03118#0000 and #0003, all quoted in r01/r06. |
@@ -98,21 +98,40 @@ that cited only the lift notice. That turned out to be the question behaving
 correctly — the deadline is set by 90 FR 4628, not by the notice confirming it —
 but the requirement was unstated, so the note now says so explicitly.
 
-## Verification owed before merge
+## Verification — discharged 2026-08-15
 
-**q14 is the one question not confirmed against the live corpus.** Its quoted
-text was read from `tests/fixtures/ecfr_21_101.65.xml`, a repo fixture. Two
-things must be confirmed against the live index first:
+Every check this draft owed has been run against the live index. **No question
+is withdrawn.** What remains is a ruling, which is a human decision, not a
+verification.
 
-1. a `21 CFR 101.13` chunk actually exists (the section is tracked in
-   `config.TRACKED_CFR_SECTIONS`, which is not the same as ingested), and
-2. current `101.65(a)(2)` still carries the `(h)` carve-out.
+**q14 was the one question grounded only in a repo fixture**
+(`tests/fixtures/ecfr_21_101.65.xml`), and its own note said to withdraw rather
+than adjust it if the live index disagreed. It agrees, on better evidence than
+the fixture gave:
 
-If either fails, **withdraw the question rather than adjust it** — a crossref
-question whose target is not in the corpus is the q03 false pass rebuilt.
+- the index holds **16 chunks** for `21 CFR 101.13`, including a dedicated
+  `cfr-21-101.13@2025-04-28#0004` whose `citation_path` is `21 CFR 101.13(h)`;
+- chunk `2024-29957#0384` carries the regtext verbatim — *"The claim is made in
+  accordance with the general requirements for nutrient content claims in
+  § 101.13, with the exception of § 101.13(h) when the nutrient content claim is
+  made in accordance with paragraph (d) of this section."*
 
-Everything else is sourced to material already in the repo. Nothing here was
-verified by asking a model.
+**q16's premise survived a scare and is worth recording so the next reader does
+not repeat it.** "front-of-package" now *does* appear in the corpus — in exactly
+one chunk, `2024-29957#0367`, as comment-and-response discussion inside the
+healthy rule about how the healthy symbol relates to FOP development. It
+establishes no requirement and no date, and the FOP proposed rule itself
+(90 FR 5426) returns **zero** chunks. "I cannot confirm that from my sources"
+is still the correct answer.
+
+**The corpus growth did not break retrieval.** M02's probe set was re-run at 49
+documents and still scores 9/9, recall@8 = 1.0
+(`evals/history/0e69ef1-retrieval-s3vectors.json`). A failure of any question
+below can therefore no longer be blamed on distractor pressure without evidence.
+
+**Unchanged:** `$10 million` and `annual food sales` remain at zero hits, so the
+q07 ruling holds at the current corpus. Nothing here was verified by asking a
+model.
 
 ## Open items this draft creates or sharpens
 
