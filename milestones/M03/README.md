@@ -26,7 +26,17 @@ withdrawn at `585a95f` because a stale loopback shim had answered that run, so
 the card described code its own sha did not contain. The commit message at
 `c68b4a3` remains the record that the run happened.
 
-**Delta vs baseline: 40% → 100% overall, traps 2/5 → 5/5.**
+**Delta vs baseline — the number to quote is the second one:**
+
+| measured | instrument | overall | traps |
+|---|---|---|---|
+| at close, `ac839ca` | golden set as it stood then | 40% → 100% | 2/5 → 5/5 |
+| **re-measured, `74822d4`** | **tightened set, shown to discriminate** | **30% → 100%** | **1/5 → 5/5** |
+
+The re-measured row is the citable one: its instrument has been checked against
+right *and* wrong answers, and both runs carry the answers that earned them.
+The close-time row is kept because deleting a superseded measurement is how a
+record becomes a story.
 
 <sup>Trap counts amended 2026-08-15 from `2/4 → 4/4`. Not a re-run — a re-read
 of the cards already on file. The gate is selected by TAG, and the `trap` tag
@@ -93,7 +103,7 @@ SPEC/03: `make evals` ≥ 80% overall AND 100% on q01–q04, on the S3 Vectors
 tier; HITL demonstrated — one golden question with an underspecified company
 profile ends pending_review, then resumes correctly.
 
-- ≥ 80% overall — **10/10**, six consecutive full runs.
+- ≥ 80% overall — **10/10**, seven full runs, the last of them (`74822d4`) on the tightened set.
 - 100% on q01–q04 — **4/4**, every run since `a082219`.
 - HITL demonstrated — **both halves**, live, on q10 (see the demo below).
 
