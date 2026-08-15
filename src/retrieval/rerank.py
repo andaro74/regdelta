@@ -40,9 +40,8 @@ carried out on the Resolution rather than logged and dropped, so a scorecard
 cannot record a reranked run that silently was not one.
 """
 import json
-import re
 
-from shared import config
+from shared import config, untrusted
 from shared.models import Chunk
 
 # Fixed at 20 by SPEC/02 ("Claude rerank of top-20 -> top-k"), not tuned here.
@@ -134,24 +133,17 @@ def _invoke(prompt: str) -> str:
 def _fence(text: str | None) -> str:
     """Snippet a chunk's text so its body cannot escape its own passage element.
 
-    Two removals, both structural rather than semantic — this does not try to
-    detect "an instruction", which is not a decidable property of text. It removes
-    the two things a body could use to make the MODEL see a boundary that is not
-    there:
+    MOVED to shared/untrusted.py at M03, unchanged, because SPEC/03's verdict
+    node interpolates the same untrusted passages into the same shape of prompt
+    and was about to need a second copy. The pattern and the snippet length are
+    identical — see that module for why the removals are structural rather than
+    semantic, and why the element vocabulary stays exactly `<passage>`.
 
-    - any `</passage` sequence, which would close the element early and put the
-      remainder of the chunk at instruction level;
-    - any line that mimics a passage opener or the old `id:` label, which would
-      let a body announce an id and claim text as that id's passage.
-
-    Case-insensitive, and applied before truncation so the truncation cannot
-    slice a delimiter into existence. Removed rather than escaped: this text is
-    only ever read by a model for ranking, never rendered or stored, so there is
-    nothing that needs the original bytes back.
+    Kept as a named function here rather than inlining the import at the call
+    site: tests/test_rerank.py pins this behaviour by name, and the M02
+    scorecard is evidence about what it did.
     """
-    out = re.sub(r"</?\s*passage\b[^>]*>?", " ", text or "", flags=re.IGNORECASE)
-    out = re.sub(r"(?im)^\s*id\s*[:=]\s*\S+\s*$", " ", out)
-    return out[:_SNIPPET]
+    return untrusted.fence(text, _SNIPPET)
 
 
 def _parse_order(text: str, known: set[str]) -> list[str]:

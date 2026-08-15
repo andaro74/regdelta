@@ -24,6 +24,62 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 MAX_BODY = 64 * 1024
 
+_graph: dict = {}
+
+
+def answer_agent(question: str, profile: dict) -> dict:
+    """Run the SPEC/03 graph and shape its state for the eval runner.
+
+    `run_evals.check()` reads `answer_rows`, `answer`, `citations` and `status`
+    (run_evals.py:69-102), so the mapping below is the contract between the
+    graph and the scorecard. Everything else on the response is provenance.
+
+    NO CHECKPOINTER here, deliberately. The local shim has no DynamoDB, and a
+    graph compiled without one still runs to completion and still reports
+    `pending_review` — what it cannot do is be RESUMED. That is the honest
+    boundary of what this shim measures: SPEC/03's HITL criterion has two
+    halves, and the local path covers the pause, not the resume. The resume
+    half needs graph.checkpoint.DynamoDBSaver and a `/resume/{id}` route, which
+    is SPEC/04's surface.
+    """
+    from dataclasses import asdict
+
+    from graph.graph import build_graph
+    from graph.nodes import _cache_state
+    from retrieval import router
+    from shared import config
+
+    if "app" not in _graph:
+        _graph["app"] = build_graph()
+
+    state = _graph["app"].invoke({"query": question, "company_profile": profile})
+    rows = [asdict(r) for r in state.get("verdict_rows") or []]
+
+    return {
+        "answer": state.get("answer", ""),
+        "answer_rows": rows,
+        "citations": state.get("citations") or [],
+        "confidence": state.get("confidence"),
+        "status": state.get("status", "degraded"),
+        "mode": "agent",
+        "review_reason": state.get("review_reason"),
+        # A model that reached for authority the sources did not carry is a
+        # finding about the answer, not noise — q03 is why it is surfaced.
+        "dropped_citations": state.get("dropped_citations") or [],
+        "provenance": {
+            "model_fast": config.MODEL_FAST,
+            "model_verdict": config.MODEL_VERDICT,
+            "tier": router.active_tier(),
+            "top_k": config.NAIVE_TOP_K,
+            "rerank": config.RERANK,
+            "lexical_lane": config.RETRIEVAL_LEXICAL_LANE,
+            "prompt_cache": config.PROMPT_CACHE and _cache_state.get("supported", True),
+            "prompt_cache_note": _cache_state.get("reason"),
+            "timeline_facts": len(state.get("timeline_facts") or []),
+            "crossrefs": len(state.get("crossrefs") or []),
+        },
+    }
+
 
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code: int, payload: dict):
@@ -45,23 +101,31 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, {"error": "not found"})
 
         mode = urllib.parse.parse_qs(url.query).get("mode", ["agent"])[0]
-        if mode != "naive":
+        if mode not in ("naive", "agent"):
             # Do not silently answer as the baseline — that would let an
-            # unbuilt agent inherit the control's scorecard.
-            return self._send(501, {"error": "mode=agent is SPEC/03; "
-                                             "only mode=naive is served here"})
+            # unbuilt agent inherit the control's scorecard. The guard predates
+            # mode=agent and still holds: an unknown mode is refused rather
+            # than defaulted to something that scores.
+            return self._send(501, {"error": f"unknown mode {mode!r}; "
+                                             "expected naive or agent"})
 
         try:
             length = int(self.headers.get("Content-Length", 0))
             if not 0 < length <= MAX_BODY:
                 return self._send(400, {"error": "bad Content-Length"})
-            question = json.loads(self.rfile.read(length)).get("question")
+            body = json.loads(self.rfile.read(length))
+            question = body.get("question")
+            profile = body.get("company_profile") or {}
             if not isinstance(question, str) or not question.strip():
                 return self._send(400, {"error": "question must be a non-empty string"})
+            if not isinstance(profile, dict):
+                return self._send(400, {"error": "company_profile must be an object"})
         except (ValueError, TypeError, AttributeError):
             return self._send(400, {"error": "malformed request body"})
 
         try:
+            if mode == "agent":
+                return self._send(200, answer_agent(question, profile))
             from baseline.naive import answer_naive
             self._send(200, answer_naive(question))
         except Exception as e:  # noqa: BLE001 — surface as a failed answer

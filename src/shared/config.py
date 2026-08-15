@@ -18,6 +18,20 @@ EMBED_DIM = 1024
 
 CONFIDENCE_HITL_THRESHOLD = float(os.environ.get("HITL_THRESHOLD", "0.7"))
 
+# ------------------------------------------------------------- agent graph (03)
+# Bedrock prompt caching for the static system preamble (SPEC/03 "Model
+# policy"). On by default because the preamble is identical across every
+# question in a golden run, so a 10-question run reads the cache nine times.
+# `nodes._converse` falls open if the model rejects the cachePoint block —
+# an unsupported optimisation must not block a measurement.
+PROMPT_CACHE = os.environ.get("PROMPT_CACHE", "1") == "1"
+
+# How many cross-referenced CFR sections the crossref agent will resolve, and
+# how many chunk ids it takes per citation. A bound rather than a tuning knob:
+# "as defined in §" chains can fan out, and an unbounded expansion would crowd
+# the verdict prompt with sections nobody asked about.
+CROSSREF_MAX = int(os.environ.get("CROSSREF_MAX", "4"))
+
 SSM_SEARCH_ENDPOINT = "/regdelta/search/endpoint"
 
 # ----------------------------------------------------------- retrieval (02)
