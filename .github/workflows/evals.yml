@@ -85,6 +85,20 @@ jobs:
 
   golden-set:
     runs-on: ubuntu-latest
+    # All three restated, NOT inherited. A job-level `permissions` block
+    # REPLACES the workflow-level one; it does not merge. The workflow level is
+    # now `contents: read` only, so omitting this would leave this job without
+    # `id-token` (breaking the OIDC step below) and without `pull-requests:
+    # write` (breaking the scorecard comment) — and it would not show up until
+    # EVAL_GATE_ENABLED flips, because `if:` skips the job today.
+    #
+    # That is exactly what happened when the per-job scoping landed: the
+    # workflow level was lowered and this block was not added in the same
+    # commit. Caught by reading the parsed YAML rather than the diff.
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write        # OIDC to AWS — no long-lived keys in secrets
     needs: unit
     # Skip until the staging API exists (post-M04). Flip to enabled by
     # setting the repo variable EVAL_GATE_ENABLED=true.
