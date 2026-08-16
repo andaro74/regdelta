@@ -1,10 +1,17 @@
 # Proposed: the golden set at twenty questions
 
-**Status: DRAFT. Not ground truth.** Ten new questions (`q11`–`q20`) in
-`golden_questions_q11_q20.json`, to be merged alongside the existing `q01`–`q10`,
-which this proposal does **not** modify. Requires an SME-seat ruling before merge
-(CLAUDE.md role gates; ADR-0005 — a ruling is sound because of its sources, not a
-signature).
+**Status: MERGED 2026-08-15. This directory is now a RECORD, not a proposal.**
+All ten questions were accepted by the SME seat, none withdrawn and none amended
+at merge, and they live in `evals/golden_questions.json` — which is the only
+place to edit them now. `golden_questions_q11_q20.json` is deleted; keeping a
+second copy of ground truth is how two copies disagree.
+
+Kept because it is the case that was made and the reasoning that was ruled on:
+the coverage argument below is why the set is twenty rather than ten, and the
+scoring ruling is the record of ten questions that all looked fine and all could
+be gamed. The per-question evidence travelled with the questions, in their
+`note` fields, per the q03 ruling — a ruling recorded somewhere else is a ruling
+the next reader will not find.
 
 Drafted 2026-08-12, on `m03-agent-graph`, against the corpus as it stands at
 `m01c` (985 chunks, four FR documents, three CFR sections).
@@ -21,8 +28,10 @@ Drafted 2026-08-12, on `m03-agent-graph`, against the corpus as it stands at
 > 1.0. `$10 million` and `annual food sales` remain at zero hits, so the q07
 > ruling holds. Details in `corpus_premise_rechecked` in the JSON.
 >
-> **The scoring was ruled on 2026-08-15 and all ten questions were repaired —
-> see "Scoring ruling" below. What still needs a ruling is the questions.**
+> **Both rulings are in.** Scoring was ruled on and all ten repaired (below);
+> the questions themselves were then put to the SME seat one at a time and all
+> ten accepted, with q15's and q19's declared blind spots approved explicitly
+> rather than merged quietly.
 
 ## Why twenty
 
@@ -35,7 +44,7 @@ shipping and not. Coverage is also lopsided against the product's own thesis:
 | timeline | **1** (q08) | **7** (q08, q11, q12, q13, q17, q19, q20) |
 | trap | 5 | 8 (+q11, q19, q20) |
 | retrieval | 3 | 5 (+q13, q14) |
-| honesty | 3 | 4 (+q16) |
+| honesty | **2** | **3** (+q16) |
 | applicability | 1 | 3 (+q15, q18) |
 | crossref | 1 | 2 (+q14) |
 | hitl | 1 | 2 (+q18) |

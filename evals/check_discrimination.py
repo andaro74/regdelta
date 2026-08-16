@@ -45,7 +45,7 @@ declared, because the two kinds score in opposite directions and a single
 
 Usage:
     python evals/check_discrimination.py                    # live golden set
-    python evals/check_discrimination.py --file evals/proposed/golden_questions_q11_q20.json
+    python evals/check_discrimination.py --file some/other/set.json
     python evals/check_discrimination.py --id q14 -v
 """
 from __future__ import annotations
