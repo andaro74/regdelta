@@ -70,10 +70,20 @@ jobs:
         id: evals
         env:
           REGDELTA_API_URL: ${{ vars.STAGING_API_URL }}
+        # NO PIPE. `python ... | tee` made `$?` the exit status of TEE, which
+        # always succeeds, so this step reported exit=0 no matter how many
+        # golden questions failed and the header's claim above was false. The
+        # job sets no `shell:`, so the default is `bash -e {0}` — which does
+        # NOT include pipefail. `set -o pipefail` would fix that one line and
+        # leave `set +e` disarming everything else in the step, including the
+        # $GITHUB_OUTPUT write that Enforce depends on. So: keep -e armed and
+        # exempt only the one command that is EXPECTED to fail.
         run: |
-          set +e
-          python evals/run_evals.py | tee scorecard.txt
-          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          set -uo pipefail
+          rc=0
+          python evals/run_evals.py > scorecard.txt 2>&1 || rc=$?
+          cat scorecard.txt
+          echo "exit=$rc" >> "$GITHUB_OUTPUT"
       - name: Post scorecard on PR
         uses: actions/github-script@v7
         with:
@@ -86,5 +96,25 @@ jobs:
             await github.rest.issues.createComment({
               owner: context.repo.owner, repo: context.repo.repo,
               issue_number: context.issue.number, body });
+      # `if: always()` because on a fork PR the comment step above fails —
+      # `pull_request` hands out a read-only token regardless of `permissions:`
+      # — and without it a failed comment would SKIP enforcement entirely.
+      #
+      # The empty check is the second fail-open path: `exit ${{ ... }}` renders
+      # to a bare `exit` if the eval step died before writing its output (OOM,
+      # missing interpreter, a renamed step id), and bare `exit` returns the
+      # status of the previous command: 0. A gate that passes because its own
+      # measurement crashed is the same defect with a different trigger.
+      #
+      # Read through `env:` rather than interpolated into the shell, so the
+      # template value is never parsed as script.
       - name: Enforce
-        run: exit ${{ steps.evals.outputs.exit }}
+        if: always()
+        env:
+          EVAL_RC: ${{ steps.evals.outputs.exit }}
+        run: |
+          if [ -z "$EVAL_RC" ]; then
+            echo "the eval step recorded no exit code — failing closed" >&2
+            exit 1
+          fi
+          exit "$EVAL_RC"
