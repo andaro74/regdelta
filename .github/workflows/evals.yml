@@ -8,14 +8,28 @@ on:
   pull_request:
     branches: [main]
 
+# Scoped PER JOB rather than workflow-wide, on security review at M04. The
+# workflow-level block granted `pull-requests: write` and `id-token: write` to
+# every job, and `unit` needs neither — it assumes no AWS role and posts no
+# comment. Only `golden-set` uses them.
+#
+# Not a live exposure when it was written: no AWS role trusting this repo exists
+# yet, so the id-token was unspendable, and `unit` already ran author-controlled
+# Python via pytest under those same permissions. Scoped anyway, because the
+# moment a job starts doing more is the moment to check what it was allowed to
+# do — and because the grant should sit next to the one step that spends it.
+#
+# NOTE for anyone editing: a job-level `permissions` block REPLACES the
+# workflow-level one rather than merging with it, which is why `golden-set`
+# restates all three. Dropping one there silently breaks OIDC or the PR comment.
 permissions:
   contents: read
-  pull-requests: write
-  id-token: write        # OIDC to AWS — no long-lived keys in secrets
 
 jobs:
   unit:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -39,6 +53,35 @@ jobs:
       # deliberate Unicode payloads live in ruff.toml.
       - run: ruff check src evals infra tests
       - run: pytest -q
+      # THE INSTRUMENT, not the system. `golden-set` below measures whether
+      # RegDelta answers correctly; these measure whether the questions can tell
+      # a correct answer from an incorrect one — which the golden set silently
+      # could not, for every one of its trap questions, until 2026-08-15.
+      #
+      # They belong in `unit` rather than `golden-set`: no AWS, no API, no
+      # Bedrock, no cost, and nothing to gate them behind. `golden-set` is
+      # skipped until EVAL_GATE_ENABLED flips post-M04, so putting them there
+      # would mean the check that catches a broken question does not run at all
+      # in the window where questions are actively being written.
+      #
+      # check_discrimination gates on any specimen scoring the wrong way, and
+      # also on a question with NO specimens — which is what makes it bite when
+      # someone adds question 21, rather than only when they break question 20.
+      - run: python evals/check_discrimination.py
+      # Replays every answer ever recorded against the questions as they now
+      # stand. Reads only evals/history/, so it is deterministic here and needs
+      # no network. Catches the failure a single run cannot show: a question
+      # that passes on the wording of the day. q05 passed twice and failed the
+      # third time on identical tokens, having never once matched the sentence
+      # stating its own criteria.
+      #
+      # It gates on FRAGILE and REGRESSED but NOT on ADMITTED — the latter means
+      # "the naive control's own answer satisfies this question", which is a
+      # standing SME-seat question about the question set (true of six questions
+      # today), not a defect any one PR introduces. Gating on it would fail every
+      # PR here until a ruling lands. `--strict` is available for a deliberate
+      # audit run; CI deliberately does not use it.
+      - run: python evals/replay_history.py
 
   golden-set:
     runs-on: ubuntu-latest

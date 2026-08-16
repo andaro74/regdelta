@@ -27,10 +27,17 @@ What it reports, and why each matters:
             baseline (ADR-0002); a question it can satisfy is measuring less
             than it claims.
 
+FRAGILE and REGRESSED exit non-zero; ADMITTED does not, unless --strict. The
+first two are defects a change either introduces or does not. ADMITTED is a
+standing property of the question set awaiting an SME ruling — it is true of six
+questions today — so gating on it would fail every PR in the repo over someone
+else's open question. See the note above the return statement.
+
 Nothing here edits ground truth. A finding is an argument for a ruling, and
 under CLAUDE.md that ruling is the SME seat's.
 
-    python evals/replay_history.py
+    python evals/replay_history.py            # what CI runs
+    python evals/replay_history.py --strict   # ADMITTED gates too
     python evals/replay_history.py --id q05 -v
 """
 from __future__ import annotations
@@ -82,6 +89,10 @@ def main() -> int:
     ap.add_argument("--id", action="append", help="only these question ids")
     ap.add_argument("-v", "--verbose", action="store_true",
                     help="print the scorer's reasons")
+    ap.add_argument("--strict", action="store_true",
+                    help="also fail on ADMITTED (a naive-control answer passing). "
+                         "Off by default: that is a standing SME-seat question about "
+                         "the question set, not a defect a given change introduced.")
     args = ap.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -148,7 +159,31 @@ def main() -> int:
               f"nothing to replay; these rest on hand-written specimens alone.")
     if not (fragile or regressed or admitted):
         print("No question changes its verdict across the answers on file.")
-    return 1 if (fragile or regressed or admitted) else 0
+
+    # WHAT GATES AND WHAT ONLY REPORTS.
+    #
+    # FRAGILE and REGRESSED are defects in the instrument, and a commit either
+    # introduces one or does not — so they gate.
+    #
+    # ADMITTED is not that. "The naive control's own answer satisfies this
+    # question" is a STANDING CONDITION of the question set, owned by the SME
+    # seat under CLAUDE.md, and it is true today of six questions including four
+    # trap-tagged ones. Gating on it would fail every PR in the repo until a
+    # ruling lands, on a finding that PR did not cause and its author cannot
+    # fix — denial of merge on someone else's open question.
+    #
+    # Found by running this in CI conditions rather than by reasoning about it:
+    # the first version returned 1 for all three, which would have turned the
+    # branch red on the commit that added it.
+    if fragile or regressed:
+        return 1
+    if admitted and args.strict:
+        return 1
+    if admitted:
+        print(f"\n{len(admitted)} ADMITTED finding(s) above are REPORTED, not gated — "
+              f"they are open SME-seat questions about the question set, not defects "
+              f"in any one change. `--strict` gates on them too.")
+    return 0
 
 
 if __name__ == "__main__":

@@ -27,6 +27,12 @@
 # wins, so the golden-set line below stays SME-only.
 /evals/                         @andaro74
 /evals/golden_questions.json    @andaro74
+# The demo's questions are product SCOPE, not SME truth and not an engineering
+# probe set: they assert what the demo asks and who it claims to be asking as
+# (company_profile). Changing a scenario's question changes what the milestone
+# demonstrates, so it wants the same stop-and-decide treatment as ground truth.
+# Placed after the golden-set line because last match wins.
+/evals/scenarios.json           @andaro74
 /.claude/skills/regulatory-domain/  @andaro74
 
 # Security owns what the tooling and infrastructure MAY DO
