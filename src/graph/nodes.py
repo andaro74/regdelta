@@ -224,6 +224,13 @@ def retrieval_agent(state: RegDeltaState, retrieve=None) -> dict:
 
 
 # ------------------------------------------------------------ timeline agent
+# Fact kinds that carry a DATE. `identity` and `stay` are facts about a document
+# but neither answers "when" — a document contributing only those has told the
+# verdict nothing it can put a deadline on, which is what `timeline_degraded`
+# reports. `unreadable` is the graph failing, not the graph being silent.
+_DATED_KINDS = frozenset({"effective_date", "compliance_date", "operative_deadline"})
+
+
 def timeline_agent(state: RegDeltaState, load=None) -> dict:
     """Dates from the amendment graph — never from a retrieved paragraph.
 
@@ -243,6 +250,16 @@ def timeline_agent(state: RegDeltaState, load=None) -> dict:
     for doc in docs:
         try:
             timeline = load(doc)
+            # INSIDE the try, and that is the whole point. This line sat outside
+            # it, so only load() was guarded — but AmbiguousTimelineError is
+            # raised from resolve() and operative_deadline(), which run in
+            # _facts_for. The Red No. 3 order states two effective dates (food
+            # 2027-01-15, ingested drugs 2028-01-18); one inbound SUPERSEDES
+            # edge against it — a routine FR delay notice — makes resolve()
+            # raise, and the exception escaped this loop, took down every
+            # question that retrieved that document, and discarded the facts
+            # already gathered for earlier documents in the same loop.
+            facts.extend(_facts_for(timeline))
         except ag.DocumentNotFoundError:
             continue  # in the index but not the registry — nothing to assert
         except ag.AmendmentGraphError as e:
@@ -250,9 +267,13 @@ def timeline_agent(state: RegDeltaState, load=None) -> dict:
             facts.append({"doc": doc, "kind": "unreadable", "detail": str(e)[:200]})
             continue
 
-        facts.extend(_facts_for(timeline))
-
-    return {"timeline_facts": facts}
+    # Whether the graph was ASKED and came back empty-handed, which is not the
+    # same as not being asked. `verdict` cannot tell those apart from the facts
+    # list alone — both look like [] — and answering a date question from
+    # retrieved prose is the failure this whole node exists to prevent.
+    dated = any(f.get("kind") in _DATED_KINDS for f in facts)
+    return {"timeline_facts": facts,
+            "timeline_degraded": bool(docs) and not dated}
 
 
 def _documents_in_play(state: RegDeltaState) -> list[str]:
@@ -580,19 +601,77 @@ _MAX_HITL_PASSES = 1
 def _needs_review(state: RegDeltaState) -> tuple[str | None, str]:
     """Why this answer should not be sent unreviewed, if it should not.
 
-    Two independent triggers, and the first is not a confidence score: a
-    question with no product and no claim to apply a rule TO cannot be answered
-    for this asker at any confidence, because there is no asker in it yet. q10
-    is exactly that question.
+    Four independent triggers, and only one of them is a confidence score.
+
+    1. NO PRODUCT AND NO CLAIM. A question asking whether something applies to
+       the asker, with no asker in it, cannot be answered at any confidence.
+       q10 is exactly that question.
+    2. NO SUPPORTED CITATION. CLAUDE.md: "An answer without citations is a bug,
+       not a style issue." `verdict` filters the model's claimed citations
+       against what the context supports and can legitimately empty the list —
+       but it removes the EVIDENCE and leaves the CLAIM in the prose. Before
+       this trigger existed, "You must stop using Red No. 3 by January 15, 2027
+       under 27 CFR 5.42" shipped with citations=[] and status=ok: a dated
+       obligation, reading as cited, with a green light. That is worse than the
+       q03 false pass the filter was written for, and it discharges the
+       standing TODO in shared/citations.py.
+    3. A ROW THAT ACTS WITHOUT A CITATION. SPEC/03 defines the row as where a
+       reader acts, so a row carrying a deadline or a required change with no
+       citations of its own is the same defect one level down.
+    4. THE TIMELINE GRAPH CONTRIBUTED NOTHING. Documents were in play and the
+       graph produced no dated fact for any of them, so any date in the answer
+       came from retrieved prose — which is precisely what CLAUDE.md forbids
+       and what this module's own header says it exists to prevent. Three ways
+       to reach it, and the ordinary one is not exotic: every eCFR chunk has
+       fr_doc_number None, so a page of pure regtext puts no documents in play
+       at all.
     """
     if not state.get("profile_sufficient", True):
         return "needs_input", "no product or label claim to apply a rule to"
+
+    if str(state.get("answer") or "").strip() and not state.get("citations"):
+        dropped = state.get("dropped_citations") or []
+        because = (f"; the model claimed {dropped[:3]} and the sources support none"
+                   if dropped else "")
+        return "pending_review", f"answer carries no supported citation{because}"
+
+    for row in state.get("verdict_rows") or []:
+        if _states_a_date(row) and not _row_field(row, "citations"):
+            return "pending_review", "a verdict row states a deadline with no citation"
+
+    if state.get("timeline_degraded"):
+        return "pending_review", ("the amendment graph produced no dated fact for the "
+                                  "documents retrieved; any date here came from prose")
 
     confidence = float(state.get("confidence") or 0.0)
     if confidence < config.CONFIDENCE_HITL_THRESHOLD:
         return "pending_review", (f"confidence {confidence:.2f} below "
                                   f"{config.CONFIDENCE_HITL_THRESHOLD:.2f}")
     return None, ""
+
+
+def _row_field(row, name: str):
+    """Rows are VerdictRow or dict depending on where they came from."""
+    return row.get(name) if isinstance(row, dict) else getattr(row, name, None)
+
+
+def _states_a_date(row) -> bool:
+    """Does this row put a date in front of the reader?
+
+    Narrower than "has a real_deadline", for two reasons found in the recorded
+    run at 2cea737 rather than reasoned about. First, `real_deadline` is a
+    string and the model writes "none" in it when there is no deadline — so a
+    truthiness check reads a hedge as a date. Second, the first version of this
+    trigger also fired on `required_change`, and both rows in that run carrying
+    an uncited required_change were honest "cannot confirm any required change
+    from these sources" rows. Gating those would punish exactly the behaviour
+    q03 and q16 exist to reward.
+
+    A digit is the test because a deadline a reader acts on contains one and
+    none of the hedges do.
+    """
+    value = str(_row_field(row, "real_deadline") or "")
+    return any(ch.isdigit() for ch in value)
 
 
 def hitl_gate(state: RegDeltaState, config=None, write_review=None) -> dict:

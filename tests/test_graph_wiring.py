@@ -92,8 +92,10 @@ def test_both_parallel_branches_land_before_the_verdict(stubbed):
 
 
 def test_a_low_confidence_run_ends_pending_review(monkeypatch, stubbed):
+    # A citation is supplied deliberately: without one the no-citation trigger
+    # fires first and this test passes while measuring the wrong thing.
     monkeypatch.setattr(nodes, "verdict", lambda s: {
-        "answer": "unsure", "verdict_rows": [], "citations": [],
+        "answer": "unsure", "verdict_rows": [], "citations": ["90 FR 4628"],
         "confidence": 0.3, "dropped_citations": [], "status": "ok"})
     state = build_graph().invoke({"query": "When must we stop using Red No. 3?"})
     assert state["status"] == "pending_review"

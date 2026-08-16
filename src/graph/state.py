@@ -28,6 +28,11 @@ class RegDeltaState(TypedDict, total=False):
     # --- parallel branches
     retrieved: list[Chunk]
     timeline_facts: list[dict]   # from the amendment graph, never from prose
+    #: True when documents WERE in play and the graph produced no dated fact for
+    #: any of them. `timeline_facts == []` cannot express this: it is also what
+    #: "no documents in play" looks like, and the two need opposite treatment.
+    #: Set by `timeline_agent`, read by `_needs_review`.
+    timeline_degraded: bool
     crossrefs: list[dict]
 
     # --- synthesis

@@ -141,6 +141,67 @@ def test_an_unreadable_graph_is_reported_rather_than_read_as_no_dates():
     assert [f["kind"] for f in facts] == ["unreadable"]
 
 
+def test_ambiguity_raised_while_deriving_facts_does_not_escape_the_node():
+    """The test above injects through `load=`, which was the one path already
+    guarded. In production AmbiguousTimelineError comes from resolve() and
+    operative_deadline() — inside _facts_for, which sat OUTSIDE the try.
+
+    The Red No. 3 order states two effective dates; one inbound SUPERSEDES edge
+    against it makes resolve() raise, which took down every question that
+    retrieved that document and discarded facts already gathered for earlier
+    documents in the same loop.
+    """
+    def raises_late(doc):
+        class _Bomb:
+            doc_number = doc
+            def __getattr__(self, name):
+                raise ag.AmbiguousTimelineError(
+                    f"{doc} states 2 effective dates and 1 edge(s) move one")
+        return _Bomb()
+
+    out = nodes.timeline_agent(
+        {"retrieved": [_chunk("c", "t", doc="2025-00830")]}, load=raises_late)
+    assert [f["kind"] for f in out["timeline_facts"]] == ["unreadable"]
+    assert out["timeline_degraded"] is True
+
+
+def test_one_unreadable_document_does_not_discard_the_others():
+    """The escape also threw away facts already collected in the same loop."""
+    real = ag.load
+
+    def half_broken(doc):
+        if doc == "2025-00830":
+            raise ag.AmbiguousTimelineError("boom")
+        raise ag.DocumentNotFoundError(doc)
+
+    out = nodes.timeline_agent(
+        {"retrieved": [_chunk("a", "t", doc="2025-00830"),
+                       _chunk("b", "t", doc="2024-29957")]}, load=half_broken)
+    assert [f["doc"] for f in out["timeline_facts"]] == ["2025-00830"]
+    assert real is ag.load        # the seam, not the real loader, was used
+
+
+def test_no_dated_fact_marks_the_run_degraded():
+    """Documents in play, nothing dated back — the answer's date can then only
+    have come from retrieved prose, which is the thing this node exists to
+    prevent. `timeline_facts == []` cannot say this: it is also what "nothing
+    retrieved" looks like."""
+    def only_identity(doc):
+        raise ag.DocumentNotFoundError(doc)
+
+    out = nodes.timeline_agent(
+        {"retrieved": [_chunk("c", "t", doc="2025-00830")]}, load=only_identity)
+    assert out["timeline_facts"] == []
+    assert out["timeline_degraded"] is True
+
+
+def test_no_documents_in_play_is_not_degraded():
+    """An eCFR-only page puts no FR documents in play. That is not the graph
+    failing, and treating it as degradation would gate every regtext lookup."""
+    out = nodes.timeline_agent({"retrieved": [_chunk("c", "t")]})
+    assert out["timeline_degraded"] is False
+
+
 # ------------------------------------------------------------------- verdict
 def _verdict_state(**over):
     state = {
@@ -175,6 +236,71 @@ def test_the_prose_is_left_alone_when_a_citation_is_dropped():
         {"answer": answer, "citations": ["27 CFR 5.42"], "confidence": 0.9}))
     assert out["answer"] == answer
     assert out["citations"] == []
+
+
+def test_an_answer_whose_citations_were_all_dropped_is_not_shippable():
+    """The defect this file previously pinned as expected behaviour.
+
+    `verdict` removes the unsupported citation and leaves the claim in the
+    prose, so the reader gets a dated regulatory obligation that READS cited,
+    with an empty citation array and — before this — status ok. CLAUDE.md:
+    "An answer without citations is a bug, not a style issue."
+    """
+    out = nodes.verdict(_verdict_state(), invoke=_reply({
+        "answer": "Stop by January 15, 2027 (27 CFR 5.42).",
+        "citations": ["27 CFR 5.42"], "confidence": 0.95}))
+    assert out["citations"] == []
+
+    status, reason = nodes._needs_review({**_verdict_state(), **out})
+    assert status == "pending_review"
+    assert "no supported citation" in reason
+    assert "27 CFR 5.42" in reason      # names what the model reached for
+
+
+def test_a_row_that_states_an_obligation_without_a_citation_is_not_shippable():
+    """SPEC/03 makes the row the thing a reader acts on, so the same rule
+    applies one level down from the prose."""
+    status, reason = nodes._needs_review({
+        "answer": "See the table.", "citations": ["90 FR 4628"],
+        "confidence": 0.95,
+        "verdict_rows": [{"product": "granola bar",
+                          "real_deadline": "2027-01-15", "citations": []}]})
+    assert status == "pending_review"
+    assert "row" in reason
+
+
+def test_a_row_that_states_no_deadline_is_not_gated_for_lacking_a_citation():
+    """An honest "cannot confirm" row is the behaviour q03 and q16 reward, and
+    the model writes the string "none" into real_deadline to say so. The first
+    version of this trigger read that as a date and would have gated both such
+    rows in the recorded run at 2cea737."""
+    status, _ = nodes._needs_review({
+        "answer": "I cannot confirm a requirement from these sources.",
+        "citations": ["90 FR 4628"], "confidence": 0.95,
+        "verdict_rows": [{"product": "cocktail mixer", "real_deadline": "none",
+                          "required_change": "Cannot confirm from these sources.",
+                          "citations": []}]})
+    assert status is None
+
+
+def test_a_degraded_timeline_is_not_shippable():
+    status, reason = nodes._needs_review({
+        "answer": "The deadline is January 15, 2027.",
+        "citations": ["90 FR 4628"], "confidence": 0.95,
+        "timeline_degraded": True})
+    assert status == "pending_review"
+    assert "no dated fact" in reason
+
+
+def test_a_fully_cited_confident_answer_still_ships():
+    """The triggers must not gate everything — a gate that pauses on all
+    answers passes q10 perfectly and is useless (q18 exists for this)."""
+    status, reason = nodes._needs_review({
+        "answer": "Stop by January 15, 2027.", "citations": ["90 FR 4628"],
+        "confidence": 0.95,
+        "verdict_rows": [{"product": "frosting", "real_deadline": "2027-01-15",
+                          "citations": ["90 FR 4628"]}]})
+    assert status is None and reason == ""
 
 
 def test_a_graph_document_supports_a_citation_even_with_no_chunk_of_its_own():

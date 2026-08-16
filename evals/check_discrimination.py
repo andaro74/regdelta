@@ -61,12 +61,28 @@ from run_evals import check
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SET = ROOT / "evals" / "golden_questions.json"
 
-# Citations are supplied generously on purpose: must_cite_any is not what this
-# harness is testing, and a specimen failing on a missing citation would mask
-# the token defect it was written to expose.
-CITES = ["90 FR 4628", "2025-00830", "21 CFR 74.303", "91 FR 50475", "2026-15920",
-         "89 FR 106064", "2024-29957", "90 FR 10592", "2025-03118",
-         "21 CFR 101.65", "21 CFR 101.13"]
+# A specimen cites what its own prose cites, and nothing else.
+#
+# This used to inject the whole list into every specimen, on the reasoning that
+# must_cite_any is not what the harness tests and a citation failure would mask
+# the token defect. That reasoning was wrong in a way engineering review caught:
+# run_evals.flatten_answer folds `citations` into the SAME text that
+# must_contain, must_contain_any and must_not_contain score against. So the
+# injected list was silently satisfying CONTENT tokens the specimen's prose
+# never met — and q15's "documented limitation" turned out to be an artifact of
+# that, a defect recorded in ground truth that could not occur in a live run.
+#
+# Deriving from the prose keeps the original intent (a specimen written about
+# 90 FR 4628 should not fail for not listing it) without the contamination,
+# because a real answer's citation array and its prose name the same documents.
+_KNOWN = ["90 FR 4628", "2025-00830", "21 CFR 74.303", "91 FR 50475", "2026-15920",
+          "89 FR 106064", "2024-29957", "90 FR 10592", "2025-03118",
+          "21 CFR 101.65", "21 CFR 101.13", "90 FR 5426"]
+
+
+def cites_in(answer: str) -> list[str]:
+    low = answer.lower()
+    return [c for c in _KNOWN if c.lower() in low]
 
 CORRECT, WRONG = "correct", "wrong"
 LIMIT_FALSE_PASS = "limit-pass"   # a WRONG answer that scores PASS today, knowingly
@@ -121,7 +137,7 @@ SPECIMENS: dict[str, list[tuple]] = {
         (LIMIT_FALSE_PASS, "inversion that ALSO mentions product made before", (
             "Stop by January 15, 2027. Product manufactured before that date is fine, "
             "and product manufactured after that date using certified Red No. 3 will "
-            "also not be regarded as adulterated.")),
+            "also not be regarded as adulterated (21 CFR 74.303).")),
     ],
 
     "q03": [
@@ -143,7 +159,7 @@ SPECIMENS: dict[str, list[tuple]] = {
         (LIMIT_FALSE_PASS, "hedges about sources AND asserts the obligation anyway", (
             "Stop by January 15, 2027. You will also need to refile the formula with "
             "that agency, though I cannot confirm the deadline for it from my "
-            "sources.")),
+            "sources (90 FR 4628).")),
     ],
 
     "q04": [
@@ -157,7 +173,7 @@ SPECIMENS: dict[str, list[tuple]] = {
             "HHS has requested an earlier phase-out and FDA supports it, so plan to meet "
             "that timetable rather than January 15, 2027.")),
         (CORRECT, "terse denial", (
-            "No, it is not binding. Your deadline is January 15, 2027.")),
+            "No, it is not binding. Your deadline is January 15, 2027 (21 CFR 74.303).")),
         (CORRECT, "'voluntary' phrasing only", (
             "The HHS phase-out is voluntary. The enforceable date is January 15, 2027 "
             "under 21 CFR 74.303.")),
@@ -190,8 +206,8 @@ SPECIMENS: dict[str, list[tuple]] = {
         (CORRECT, "names the section", (
             "21 CFR 101.65 governs the implied nutrient content claim 'healthy'.")),
         (LIMIT_FALSE_PASS, "names the wrong section, mentions the right one", (
-            "It is governed by 21 CFR 101.13; 101.65 was the old section and no longer "
-            "applies.")),
+            "It is governed by 21 CFR 101.13; 21 CFR 101.65 was the old section and no "
+            "longer applies.")),
         (CORRECT, "TERSE — the ideal answer; why q06 was NOT tightened", (
             "21 CFR 101.65.")),
     ],
@@ -299,7 +315,8 @@ SPECIMENS: dict[str, list[tuple]] = {
         (CORRECT, "says 'never took effect' of the stay period", (
             "That was a fair reading then — during the stay the rule never took effect and "
             "could have been withdrawn. Stayed February 18, 2025; lifted August 5, 2026; the "
-            "removal is now in force with compliance by January 15, 2027.")),
+            "removal is now in force with compliance by January 15, 2027 "
+            "(91 FR 50475).")),
         (WRONG, "denies the 'fair then' half", (
             "That was never a fair reading; the order was always final. It was stayed "
             "February 18, 2025, lifted August 5, 2026, and compliance is January 15, 2027.")),
@@ -318,7 +335,7 @@ SPECIMENS: dict[str, list[tuple]] = {
             "They do not share the same effective date.")),
         (CORRECT, "terse 'not all on the same day'", (
             "Two provisions are removed and not all on the same day: 74.303 on "
-            "January 15, 2027 and 74.1303 on January 18, 2028.")),
+            "January 15, 2027 and 74.1303 on January 18, 2028 (90 FR 4628).")),
         (WRONG, "collapses both to the food date", (
             "The order removes 74.303 and 74.1303, both effective January 15, 2027.")),
         (WRONG, "swaps food and drug provisions", (
@@ -365,7 +382,7 @@ SPECIMENS: dict[str, list[tuple]] = {
             "Remove Red No. 3 by February 25, 2028 (90 FR 4628), and meet the healthy "
             "criteria by January 15, 2027 (89 FR 106064).")),
         (LIMIT_FALSE_PASS, "swap phrased without the banned adjacency", (
-            "The colour additive change is due February 25, 2028 under 90 FR 4628. The "
+            "The Red No. 3 change is due February 25, 2028 under 90 FR 4628. The "
             "'healthy' labeling change is due January 15, 2027 under 89 FR 106064.")),
     ],
 
@@ -445,11 +462,12 @@ SPECIMENS: dict[str, list[tuple]] = {
             "They are right that the order sets no compliance date, but they are wrong that "
             "there is no hard deadline. The effective date is January 15, 2027; from that "
             "date 74.303 is revoked, Red No. 3 is no longer listed for use in food, and any "
-            "food bearing it is adulterated.")),
+            "food bearing it is adulterated (21 CFR 74.303).")),
         (CORRECT, "derives without quoting the supplier", (
             "Only partly. The order states an effective date and no compliance date, but the "
             "effective date is the operative deadline: on January 15, 2027 the listing is "
-            "revoked and product containing the colour becomes unlawful to ship.")),
+            "revoked and product containing the colour becomes unlawful to ship "
+            "(90 FR 4628).")),
         (WRONG, "endorses the inference", (
             "Correct — the order sets no compliance date, so there is no deadline. You may "
             "continue using Red No. 3 after January 15, 2027 until your stock runs out.")),
@@ -469,7 +487,7 @@ SPECIMENS: dict[str, list[tuple]] = {
             "(90 FR 4628).")),
         (CORRECT, "corrects the memo directly", (
             "Your memo is incorrect. January 15, 2025 is the announcement date; publication "
-            "in the Federal Register was January 16, 2025.")),
+            "in the Federal Register was January 16, 2025 (90 FR 4628).")),
         (WRONG, "accepts the anchor", (
             "That is right — it was published on January 15, 2025, at 90 FR 4628.")),
         (WRONG, "accepts the anchor while naming the 16th", (
@@ -480,7 +498,7 @@ SPECIMENS: dict[str, list[tuple]] = {
 
 
 def score(q: dict, answer: str, status: str = "ok") -> list[str]:
-    return check(q, {"answer": answer, "citations": CITES, "status": status})
+    return check(q, {"answer": answer, "citations": cites_in(answer), "status": status})
 
 
 def main() -> int:
@@ -555,6 +573,15 @@ def main() -> int:
         # Green on zero coverage is the exact failure this harness exists to
         # catch, so it must not be reported as a pass.
         print("NOTHING WAS CHECKED — no specimens exist for any question in this set.")
+        return 1
+    if uncovered and not args.id:
+        # PARTIAL coverage was the case that would actually happen: the total-zero
+        # guard above was written first and does not fire when nineteen questions
+        # are covered and the twentieth is not. "OK — every question distinguishes
+        # a correct answer from a wrong one" is then false about the set, which is
+        # the one sentence this harness must never get wrong.
+        print(f"FAILED: {len(uncovered)} question(s) have no specimens and were "
+              f"not checked. Add specimens or run with --id to scope deliberately.")
         return 1
     print("OK — every question distinguishes a correct answer from a wrong one.")
     return 0
