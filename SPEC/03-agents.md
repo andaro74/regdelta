@@ -49,11 +49,29 @@ while SPEC/04's endpoint is unimplemented — with both of:
   `python evals/run_evals.py --subset trap` selects. **The tag governs; no
   list of IDs in this spec overrides it.**
 
-*Trap-tag census, 2026-08-15: five questions (q01–q04, q07).* A dated
-observation, not the criterion. If a run selects a different number, this line
-is stale and the tag is still right. But widening the tag widens this exit
-criterion, so any change to the tag is a PM-seat decision and must arrive as a
-diff to this line.
+*Trap-tag census, 2026-08-16: **eight** questions (q01–q04, q07, q11, q19, q20).*
+A dated observation, not the criterion. If a run selects a different number,
+this line is stale and the tag is still right. But widening the tag widens this
+exit criterion, so any change to the tag is a PM-seat decision and must arrive
+as a diff to this line.
+
+<sup>Was five (q01–q04, q07) on 2026-08-15. Merging `q11`–`q20` tagged three of
+the new questions `trap`, which took the gate from five to eight — the exact
+silent widening this line exists to prevent, arriving as a diff because the
+line asked it to. The criterion is stricter than it was and the agent meets it:
+8/8 at `e26d8ef`.</sup>
+
+**Known limitation of this gate, 2026-08-16.** The naive control passes four of
+the eight — q02, q04, q11, q20 — on its own recorded answers
+(`make replay-history`). ADR-0002 makes that control the thing every progress
+claim is measured against, so on those four the trap is not currently
+discriminating between naive RAG and the agent graph. The gate is still worth
+having: the agent passes all eight and the control fails four, including every
+one that turns on date attribution. But "traps 8/8" should be read as *"the
+agent passes all eight, and the control passes four of them"*, and the questions
+themselves want an SME-seat re-read. Recorded here rather than left to be
+discovered, because a delta over a control is only as strong as the control's
+inability to pass.
 
 HITL demonstrated on the golden question tagged `hitl` (q10): an underspecified
 company profile ends `needs_input` with a checkpoint written, and

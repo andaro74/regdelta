@@ -298,3 +298,31 @@ DynamoDB reads in the checkpointer, one of which meant `delete_thread` never
 deleted the review item it exists to delete (`09e0014`). `pm-spec-reviewer`
 found SPEC/03's exit criterion named four questions by ID while the gate selects
 five by tag, plus three further defects in the same sentence.
+
+### Known limitation: the control passes four of the eight traps
+
+Found 2026-08-16 by `make replay-history`, which scores every recorded answer
+against the questions as they currently stand. The **naive control's own
+answers** satisfy q02, q04, q11 and q20 — all four trap-tagged — plus q06
+(retrieval) and q09 (honesty).
+
+This does not move any number above. The agent passes 8/8 and the control
+scores 5/20 overall; both figures are measured and stand. What it changes is
+what "traps 8/8" is evidence *for*. On those four questions the trap is not
+currently discriminating between naive RAG and the agent graph, so the honest
+statement is **"the agent passes all eight, and the control passes four of
+them"** rather than "the agent passes a gate the baseline cannot."
+
+Some of it is expected and fine — q06 asks which CFR section governs a claim,
+and a naive baseline can read that off a well-ranked chunk. The four traps are
+not fine, and they are an SME-seat item: a trap that a keyword baseline can
+satisfy is measuring something easier than it claims.
+
+It is recorded here, in the pack, rather than left in a tool's output, because
+the headline claim of this milestone is a **delta over that control**, and a
+delta is only as strong as the control's inability to pass. Being caught with
+this is much worse than declaring it.
+
+Not fixed in M03. The evidence is on file (`evals/history/*-naive-full.json`,
+which carry answer text from `aa79ec5` onward) and the ruling belongs to the SME
+seat.
