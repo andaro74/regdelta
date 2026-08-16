@@ -421,6 +421,20 @@ SPECIMENS: dict[str, list[tuple]] = {
         (WRONG, "gate fires when it should not", (
             "I need more information about your company before I can answer. Yes, you are "
             "affected, and the compliance date is February 25, 2028.", "pending_review")),
+        (CORRECT, "PRODUCT as subject — the phrasing that failed live at 2cea737", (
+            "Yes, your shelf-stable lentil soup labeled 'healthy' is affected by the "
+            "updated definition of the 'healthy' nutrient content claim. The final rule "
+            "(2024-29957, 89 FR 106064) revises 21 CFR 101.65(d). Compliance is required "
+            "by February 25, 2028.", "ok")),
+        (WRONG, "subject-negation: 'nothing is affected'", (
+            "Nothing is affected by the healthy-claim changes. The compliance date for "
+            "those products that are covered is February 25, 2028.", "ok")),
+        (WRONG, "subject-negation: flat 'no product is affected'", (
+            "No product is affected by the healthy-claim changes. The compliance date "
+            "for covered products is February 25, 2028.", "ok")),
+        (LIMIT_FALSE_FAIL, "hedge: recites the rule, never applies it to this product", (
+            "No product is affected unless its label bears the claim. For those that "
+            "do, compliance is required by February 25, 2028.", "ok")),
         (WRONG, "demands a revenue figure", (
             "You are affected, but I cannot determine your deadline without your annual food "
             "sales. The date for large manufacturers is February 25, 2028.", "needs_input")),
