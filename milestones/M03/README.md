@@ -24,7 +24,7 @@
 | `74822d4` | s3vectors | naive (control, tightened set) | 3 | 10 | 70.4 | 49 |
 | `2cea737` | s3vectors | **agent, TWENTY questions** | **16** | 20 | 257.8 | 49 |
 | `2cea737` | s3vectors | naive (control, twenty) | 5 | 20 | 165.6 | 49 |
-| `e26d8ef` | s3vectors | agent, twenty, after the gate fixes | 16 | 20 | 262.0 | 49 |
+| `e26d8ef` | s3vectors | agent, twenty, after the gate fixes | 16 | 20 | 256.8 | 49 |
 
 Seven agent runs are listed and an eighth happened: a 9/10 at `fd98d64`, which
 scored q02 as the single failure. Its card is **not in `history/`** — it was
