@@ -184,6 +184,12 @@ SPECIMENS: dict[str, list[tuple]] = {
             "Two things. The food must contain a meaningful amount of a food group "
             "equivalent, and it must stay within limits for added sugars, sodium and "
             "saturated fat (21 CFR 101.65).")),
+        (CORRECT, "the LIVE phrasing at e26d8ef — quantity phrase in the gap", (
+            "Under the updated 'healthy' rule (89 FR 106064) a food must meet two "
+            "criteria: (1) it must contain a specified amount of a food group "
+            "equivalent (FGE) from the food groups encouraged by the Dietary "
+            "Guidelines; and (2) it must not exceed specified nutrient-to-limit "
+            "thresholds for added sugars, saturated fat, and sodium.")),
         (WRONG, "states both criteria INVERTED", (
             "A food qualifies if it contains no food group equivalent and exceeds the "
             "thresholds for added sugars, sodium and saturated fat (21 CFR 101.65).")),
