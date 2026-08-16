@@ -32,7 +32,7 @@ CDK          := cd infra && npx cdk
 # See evals/local_env.py and evals/wait_ready.py.
 RESOLVE_ENV = eval "$$(python evals/local_env.py)";
 
-.PHONY: help bootstrap core up down status smoke evals agent-evals discrimination lint test demo ingest-backfill synth diff \
+.PHONY: help bootstrap core up down status smoke evals agent-evals discrimination replay-history lint test demo ingest-backfill synth diff \
         retrieval-evals retrieval-parity preflight rebuild-vectors
 
 help:
@@ -42,6 +42,7 @@ help:
 	@echo "make smoke / evals   - golden-set checks (definition of done)"
 	@echo "make agent-evals     - golden set vs the LOCAL agent graph (SPEC/03)"
 	@echo "make discrimination  - can each question tell right from wrong? (no API)"
+	@echo "make replay-history  - would it have scored the answers we really got?"
 	@echo "make retrieval-evals - probe set vs the CURRENT tier (SPEC/02 A)"
 	@echo "make retrieval-parity- cross-tier gate; needs both runs recorded"
 	@echo "                       (ARGS=\"--rerank 1\" gates the RERANK=1 pair)"
@@ -101,6 +102,16 @@ evals:
 # 2026-08-12 q07 ruling, defect 4).
 discrimination:
 	python evals/check_discrimination.py $(ARGS)
+
+# The other half of the same job.  asks whether a question can
+# tell a HAND-WRITTEN right answer from a wrong one; this asks whether it would
+# have scored the answers the system ACTUALLY gave, replayed from the recorded
+# scorecards. Hand-written specimens share an author with the scoring tokens and
+# so share their blind spots — three questions were written on 2026-08-15 in a
+# phrasing the model does not use, and all three passed the specimens. No API,
+# no corpus, no cost.
+replay-history:
+	python evals/replay_history.py $(ARGS)
 
 # SPEC/02 Done-when (A). Measured at the retrieval contract, in-process —
 # not through an answering endpoint, which is M04's.
