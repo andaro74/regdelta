@@ -1,74 +1,764 @@
 {
   "questions": [
     {
-      "id": "q01", "subset": ["smoke", "retrieval", "trap"],
+      "id": "q01",
+      "subset": [
+        "smoke",
+        "retrieval",
+        "trap"
+      ],
       "question": "The effective date of the new 'healthy' claim rule was delayed. Did the compliance deadline change?",
-      "must_contain": ["February 25, 2028"],
-      "must_contain_any": [["unchanged", "did not change", "remains", "not change"]],
-      "must_not_contain": ["deadline was delayed", "deadline moved", "compliance date was delayed"],
-      "must_cite_any": ["89 FR 106064", "2024-29957"]
+      "must_contain": [
+        "February 25, 2028"
+      ],
+      "must_contain_any": [
+        [
+          "compliance deadline did not change",
+          "compliance date did not change",
+          "compliance deadline has not changed",
+          "compliance date has not changed",
+          "compliance deadline is unchanged",
+          "compliance date is unchanged",
+          "compliance deadline remains",
+          "compliance date remains",
+          "remains February 25, 2028",
+          "still February 25, 2028",
+          "not the compliance date",
+          "not the compliance deadline",
+          "only the effective date"
+        ]
+      ],
+      "must_not_contain": [
+        "deadline was delayed",
+        "deadline moved",
+        "compliance date was delayed"
+      ],
+      "must_cite_any": [
+        "89 FR 106064",
+        "2024-29957"
+      ],
+      "note": "SCORING RULING 2026-08-15, with sources. Routed through sme-eval-triage per CLAUDE.md, stopped for the human SME seat, then every proposed token REPLAYED through run_evals.check() before adoption — the triage had no Bash and hand-simulated the scorer. Specimens live in evals/check_discrimination.py (`make discrimination`). Tokens only: no subject, required date, citation requirement or expected answer changed, and no edit makes this question easier. FALSE PASS x2: the accept token 'remains' was unbound to a date, so 'Yes — the compliance deadline CHANGED when the effective date was pushed back... and it REMAINS there' scored PASS. A trap question was passing the trap's own wrong answer. Every token is now bound to the COMPLIANCE date specifically, because the defect is not that the answer failed to say 'unchanged' — it is that the question never asked WHICH date was unchanged, while the whole point of ADR-0006 is that these two dates move independently. Bare 'unchanged', 'not change' and 'not delayed' were deliberately NOT kept: each is satisfied by an answer saying the EFFECTIVE date did not change while the compliance one did, which is the same defect one costume over. TWO LIMITATIONS DECLARED RATHER THAN FIXED, both the same root cause — substring scoring cannot read the polarity of a yes/no answer, and this question is a yes/no question. (a) A concessive yes ('Yes, the deadline changed; it now remains February 25, 2028') still PASSES. (b) The terse correct answer 'No. February 25, 2028.' still FAILS, and FAILED BEFORE THIS RULING TOO — it matched none of the old tokens either. A token for a bare 'No.' would have to be 'no.', which is a substring of 'Red No. 3'. Closing either needs the question rewritten so the answer is not a yes/no, which is an SME decision and not a token change. Both are pinned as LIMIT specimens so they fail the harness if they ever change."
     },
     {
-      "id": "q02", "subset": ["smoke", "trap"],
+      "id": "q02",
+      "subset": [
+        "smoke",
+        "trap"
+      ],
       "question": "We make a strawberry frosting containing FD&C Red No. 3. When exactly must we stop using it, and is product already on shelves illegal after that date?",
-      "must_contain": ["January 15, 2027"],
-      "must_contain_any": [["not adulterated", "may remain", "manufactured before"]],
-      "must_not_contain": ["January 18, 2028 for food", "recall required"],
-      "must_cite_any": ["21 CFR 74.303", "90 FR 4628"]
+      "must_contain": [
+        "January 15, 2027"
+      ],
+      "must_contain_any": [
+        [
+          "not be regarded as adulterated",
+          "not regarded as adulterated",
+          "not adulterated",
+          "will not be adulterated"
+        ],
+        [
+          "certificate",
+          "certified"
+        ],
+        [
+          "before that date",
+          "before January 15, 2027",
+          "prior to that date",
+          "prior to January 15, 2027",
+          "up to that date",
+          "up to January 15, 2027",
+          "while its certificate",
+          "while the certificate",
+          "certificate is still effective",
+          "certificate was still effective",
+          "existing batches"
+        ]
+      ],
+      "must_not_contain": [
+        "January 18, 2028 for food",
+        "recall required",
+        "adulterated regardless of when",
+        "must be recalled",
+        "regardless of when it was manufactured"
+      ],
+      "must_cite_any": [
+        "21 CFR 74.303",
+        "90 FR 4628"
+      ],
+      "note": "SME-seat ruling 2026-08-15, with sources. REWRITTEN, not patched. The previous accept group was [\"not adulterated\", \"may remain\", \"manufactured before\"] and had one proven defect and one investigation error behind it.\n\nTHE DEFECT: \"manufactured before\" MATCHED THE NEGATION OF THE INTENDED ANSWER. Measured, not theorised — over ten live runs the question passed about 1 in 4, and every passing run matched inside this sentence: \"The sources do not provide an explicit FDA enforcement-discretion statement or transition period for products manufactured before the effective date but still in commerce after it.\" That is an answer saying it CANNOT confirm the allowance, scoring as though it had confirmed it. Failing runs said the same thing as \"regardless of when it was manufactured\" and scored zero. The check was tracking phrasing in both directions — the fourth defect the q07 ruling named, reproduced here. The token is removed and cannot come back.\n\nTHE INVESTIGATION ERROR, recorded because it nearly cost the question: it was first reported as requiring an answer the corpus cannot support, on a corpus scan showing zero hits for \"not adulterated\", \"may remain\", \"manufactured before\", \"manufactured prior\", \"existing stocks\" and \"sell-through\". That scan searched for the QUESTION's phrasings, not the SOURCE's. The proposition is squarely citable and always was. 90 FR 4628 (doc 2025-00830), section VI. Conclusion, chunk #0021: \"In accordance with 21 CFR 80.32(h), all certificates for existing batches and portions of batches of FD&C Red No. 3 will cease to be effective for use in food on the effective date for the removal of 74.303 ... Use of FD&C Red No. 3 after its certificate ceases to be effective will result in such food or ingested drugs being adulterated. When FD&C Red No. 3 has been used in food or ingested drugs while its certificate is still effective, such food or ingested drugs will not be regarded as adulterated by reason of the use of such color additive.\" Falsifiable by reading that chunk, or by FR full-text search for \"will not be regarded as adulterated by reason of the use\".\n\nSo the accept tokens now match the SOURCE's language rather than a paraphrase of it, and the second group requires the CERTIFICATION mechanism the order actually turns on — 21 CFR 80.32(h), certificates ceasing to be effective — because an answer that reaches the right conclusion without it is reasoning from somewhere other than the document.\n\nWHY THE QUESTION WAS FAILING was neither of the above: the answer layer truncated retrieved passages at 1200 characters, a constant inherited from the reranker where it is correct for RANKING. Chunk 2025-00830#0021 is 1891 characters and the decisive sentence starts at 1811, so retrieval ranked the answer SECOND and the verdict node then sliced it off and reported that its sources were silent. Fixed by bounding passages at the chunker's own CHUNK_MAX_CHARS; a regression test pins it. After the fix the question passes 3/3 with the answer quoting the sentence above.\n\nmust_not_contain is assertion-shaped and bans the WRONG CONCLUSION, not vocabulary: \"adulterated regardless of when\" and \"regardless of when it was manufactured\" are the exact form the pre-fix answers took. \"recall required\" and \"January 18, 2028 for food\" are retained from the original — the drug date is 74.1303's and applying it to food is the other half of this trap. SCORING RULING 2026-08-15, with sources. Routed through sme-eval-triage per CLAUDE.md, stopped for the human SME seat, then every proposed token REPLAYED through run_evals.check() before adoption — the triage had no Bash and hand-simulated the scorer. Specimens live in evals/check_discrimination.py (`make discrimination`). Tokens only: no subject, required date, citation requirement or expected answer changed, and no edit makes this question easier. FALSE PASS: the grandfather clause INVERTED — 'product manufactured AFTER that date using certified Red No. 3 will not be regarded as adulterated' — scored PASS, because the safe harbour was scored by its consequence ('not adulterated') and its mechanism ('certified') but never by WHEN it applies, which is the entire content of a grandfather clause. A third AND-group now requires the answer to anchor the safe harbour in time or in the certificate's own validity period. CONSISTENCY WITH THE 2026-08-15 REWRITE, which removed 'manufactured before' and said it cannot come back: it does not come back, and this is not a reversal. That removal's reason was that the token sat as an OR-MEMBER of a single group, so a hedge DENYING the safe harbour satisfied the entire check by itself. As a separate AND-CONJUNCT the mechanics differ — that same hedge still fails group 1, which carries the source's own 'not be regarded as adulterated'. Bans were considered and rejected: 'manufactured after that date' is reproduced by the correct answer 'product manufactured after that date IS adulterated', and a longer adjacency ban does not even match the specimen, which is the author-anticipation failure this whole ruling is about. LIMITATION DECLARED: an inversion that ALSO mentions product made before the date still passes. Pinned as a LIMIT specimen."
     },
     {
-      "id": "q03", "subset": ["smoke", "trap", "crossref"],
-      "question": "Our fruit-flavored cocktail mixer (TTB-approved formula) contains Red No. 3. What do we need to do beyond reformulating?",
-      "must_contain_any": [["TTB", "formula approval", "new formula"]],
-      "must_cite_any": ["90 FR 4628", "21 CFR 74.303"]
+      "id": "q03",
+      "subset": [
+        "smoke",
+        "trap",
+        "crossref",
+        "honesty"
+      ],
+      "question": "Our fruit-flavored cocktail mixer contains Red No. 3 and its formula is on file with another federal agency. When must we stop using Red No. 3, and is there anything else we are obliged to do that you cannot confirm from your sources?",
+      "must_contain": [
+        "January 15, 2027"
+      ],
+      "must_contain_any": [
+        [
+          "cannot confirm",
+          "unable to confirm",
+          "can't confirm",
+          "no source",
+          "not in my sources",
+          "my sources do not",
+          "sources do not",
+          "sources are silent",
+          "not among the documents",
+          "no document in",
+          "not in the corpus",
+          "cannot be confirmed from",
+          "beyond my sources"
+        ]
+      ],
+      "must_not_contain": [
+        "TTB requires",
+        "TTB will require",
+        "must obtain TTB approval",
+        "TTB regulations require"
+      ],
+      "must_cite_any": [
+        "90 FR 4628",
+        "2025-00830",
+        "21 CFR 74.303"
+      ],
+      "note": "SME-seat ruling 2026-08-12, with sources. REPLACES a version that was a FALSE PASS — worse than a false fail, because it is invisible. It asked '(TTB-approved formula) ... what do we need to do beyond reformulating?' and accepted must_contain_any [['TTB','formula approval','new formula']] while requiring a citation to 90 FR 4628 or 21 CFR 74.303. Two defects. (1) The token 'TTB' was in the question STEM, so echoing the stem scored correct and the assertion proved nothing. (2) It rewarded attaching a Red No. 3 citation to a TTB proposition that document does not support: verified by direct read of the full corpus at 985 chunks — 2025-00830 contains NO mention of TTB, alcohol, or formula approval, and there is no TTB source document anywhere in the corpus (corroborates milestones/M00b/README.md finding 2, which drafted a tightening that was never applied). The corrected question splits what IS citable from what is not, which is the property this product lives on. Citable: the mixer is a food, so the removal of 21 CFR 74.303 by 90 FR 4628 (doc 2025-00830, DATES: 'This order is effective January 15, 2027, except for amendatory instruction 4, which is effective January 18, 2028') ends the permitted use on 2027-01-15. NOT citable: any obligation owed to the other agency — so the answer must SAY it cannot confirm that from its sources rather than assert it. The agency name is removed from the stem so the answer cannot be echoed; must_not_contain is narrow and assertion-shaped ('TTB requires') rather than banning the token, because naming TTB as an open question is CORRECT behaviour and only asserting its requirements as established is wrong. Do not re-add a TTB citation to must_cite_any unless a TTB source document enters the corpus — that is a PM-seat scope decision, not an SME one. SCORING RULING 2026-08-15, with sources. Routed through sme-eval-triage per CLAUDE.md, stopped for the human SME seat, then every proposed token REPLAYED through run_evals.check() before adoption — the triage had no Bash and hand-simulated the scorer. Specimens live in evals/check_discrimination.py (`make discrimination`). Tokens only: no subject, required date, citation requirement or expected answer changed, and no edit makes this question easier. TWO FALSE PASSES AND ONE FALSE FAIL, all in one group. (a) The accept token 'not in' is two words and matched incidentally: an answer with NO hedge at all — 'there is nothing else to do: after that date the colour is NOT IN the list of approved additives' — scored PASS on an honesty question. (b) 'outside' let an answer ASSERT the TTB obligation in words other than the banned ones and still pass. (c) FALSE FAIL, live before this ruling: 'my sources do not speak to it at all' matched nothing, so a correct hedge phrased without the word 'confirm' was scored wrong. The group is now SOURCE-SHAPED throughout — every token asserts something about the sources rather than about the world. Removing 'outside' and 'unable to' is the same removal the 2026-08-15 ruling made in proposed q16, for the same reason. Removing 'verify with', 'consult' and 'escalate' is the substantive tightening and REFINES the 2026-08-12 q03 ruling in its own direction: an answer that asserts the obligation and then says 'verify with them' has still asserted it, and that ruling requires the answer to say it cannot confirm from its sources rather than assert. Bans, must_cite_any and the TTB scope decision are untouched. TWO THINGS FLAGGED, NOT FIXED, both needing the SME seat. (1) 'cannot confirm' is an accept token AND IS IN THIS QUESTION'S STEM ('...that you cannot confirm from your sources?'). That is defect (2) of this question's own 2026-08-12 ruling — the answer token in the stem — reintroduced by the repair for defect (2). Cutting the stem at '...anything else we are obliged to do here?' makes the question strictly harder and is the version that actually tests honesty, but it changes the question and breaks comparability, so it is recorded here rather than taken. (2) An answer that hedges about its sources AND asserts the obligation anyway still passes; a ban cannot help, because 'you must file a new formula' is reproduced by the correct hedge 'I cannot confirm whether you must file a new formula'. Declared as a LIMIT specimen."
     },
     {
-      "id": "q04", "subset": ["smoke", "trap"],
+      "id": "q04",
+      "subset": [
+        "smoke",
+        "trap"
+      ],
       "question": "HHS asked manufacturers to phase out Red No. 3 sooner than 2027. Is that binding on us?",
-      "must_contain_any": [["not binding", "request", "voluntary", "encourag"]],
-      "must_contain": ["January 15, 2027"],
-      "must_not_contain": ["must comply with the HHS date", "legally required to phase out early"]
+      "must_contain_any": [
+        [
+          "not binding",
+          "not legally binding",
+          "no legal force",
+          "not mandatory",
+          "not enforceable",
+          "not a legal requirement",
+          "not a rule",
+          "voluntary",
+          "does not change your legal deadline",
+          "legal deadline remains"
+        ]
+      ],
+      "must_contain": [
+        "January 15, 2027"
+      ],
+      "must_not_contain": [
+        "must comply with the HHS date",
+        "legally required to phase out early"
+      ],
+      "must_cite_any": [
+        "21 CFR 74.303",
+        "90 FR 4628",
+        "2025-00830"
+      ],
+      "note": "SCORING RULING 2026-08-15, with sources. Routed through sme-eval-triage per CLAUDE.md, stopped for the human SME seat, then every proposed token REPLAYED through run_evals.check() before adoption — the triage had no Bash and hand-simulated the scorer. Specimens live in evals/check_discrimination.py (`make discrimination`). Tokens only: no subject, required date, citation requirement or expected answer changed, and no edit makes this question easier. FALSE PASS x2: the accept token 'request' IS THE STEM'S OWN SUBJECT MATTER ('HHS asked manufacturers to phase out...'), so the exact wrong answer — 'you should comply with the HHS REQUEST and phase out early' — scored PASS, as did 'HHS has REQUESTed an earlier phase-out... so plan to meet that timetable'. A token that the question hands the model cannot measure whether the model knows anything. 'encourag' was removed for the same reason. Every surviving token carries POLARITY — it denies legal force rather than naming the thing whose legal force is at issue — and none is a substring of its own negation ('not binding' is not inside 'binding'). FLAGGED FOR THE SME SEAT, NOT TAKEN: this question has NO must_cite_any at all, which sits badly against CLAUDE.md's rule that an answer without citations is a bug rather than a style issue. Adding ['21 CFR 74.303','90 FR 4628','2025-00830'] would make it harder and the correct answers still pass, but it changes what q04 measures rather than how tightly, so it is a separate decision. CITATION REQUIREMENT ADDED 2026-08-15 by SME-seat ruling, on the item this note flagged in the same ruling. q04 was the only question in the set with NO must_cite_any at all, which contradicts CLAUDE.md's rule that an answer without citations is a bug rather than a style issue — and it contradicted it on the one question where the distinction between a binding source and a non-binding one IS the answer. An answer that correctly says the HHS request is not binding, and cannot point to what IS binding, has not actually answered. The three accepted citations are the order itself (90 FR 4628 / 2025-00830) and the listing it revokes (21 CFR 74.303); must_cite_any is an OR and also falls back to the full answer text (run_evals.py:200-203), so this does not require a citations array specifically. Replayed: both correct specimens still pass, and it does not rescue either wrong answer, so this is a strict tightening."
     },
     {
-      "id": "q05", "subset": ["smoke", "retrieval"],
+      "id": "q05",
+      "subset": [
+        "smoke",
+        "retrieval"
+      ],
       "question": "What are the two main criteria a food must meet to use the 'healthy' claim under the updated rule?",
-      "must_contain_any": [["food group", "food group equivalent"]],
-      "must_contain_any_2": [["added sugars", "sodium", "saturated fat", "nutrients to limit"]],
-      "must_cite_any": ["21 CFR 101.65", "89 FR 106064"]
+      "must_contain_any": [
+        [
+          "contain a food group",
+          "contains a food group",
+          "containing a food group",
+          "include a food group",
+          "includes a food group",
+          "at least one food group",
+          "a food group equivalent"
+        ]
+      ],
+      "must_contain_any_2": [
+        [
+          "stay within",
+          "stays within",
+          "within the limits",
+          "within limits",
+          "limits for added sugars",
+          "limit for added sugars",
+          "limits on added sugars",
+          "does not exceed",
+          "not exceed",
+          "below the limit",
+          "under the limit",
+          "no more than",
+          "nutrients to limit"
+        ]
+      ],
+      "must_cite_any": [
+        "21 CFR 101.65",
+        "89 FR 106064"
+      ],
+      "note": "SCORING RULING 2026-08-15, with sources. Routed through sme-eval-triage per CLAUDE.md, stopped for the human SME seat, then every proposed token REPLAYED through run_evals.check() before adoption — the triage had no Bash and hand-simulated the scorer. Specimens live in evals/check_discrimination.py (`make discrimination`). Tokens only: no subject, required date, citation requirement or expected answer changed, and no edit makes this question easier. RESTRUCTURED, not patched — and it was the weakest question in the set. Both groups were BARE NOUNS naming the SUBJECT of a criterion ('food group', 'added sugars', 'sodium') with nothing expressing its DIRECTION, and there was no must_contain and no must_not_contain at all. Consequence, confirmed by replay: the two criteria stated BACKWARDS — 'contains NO food group equivalent and EXCEEDS the thresholds for added sugars' — scored PASS, as did a fabricated front-of-package requirement that merely mentioned the right nouns. The question could not tell the rule from its inverse. Both groups are now direction-bound: contain/include for the food-group half, stay-within/not-exceed for the limits half. Note 'thresholds for added sugars' is deliberately EXCLUDED from group 2 — it is the phrasing the inverted answer uses. NO must_not_contain IS ADDED, deliberately: the natural bans ('exceeds the limits', 'contains no food group') are reproduced verbatim by a correct answer explaining what DISQUALIFIES a food, and where a positive requirement already fails the wrong answer the ruling's corollary is to delete the ban rather than repair it. This question keeps must_contain_any_2 — the only question that uses that key. It is semantically identical to a second must_contain_any group (run_evals.py:191) and converting it would be a no-op, so it is left alone rather than churned during a ruling. SCORING RULING 2026-08-16, and the finding is worse than the failure that prompted it. q05 FAILED at e26d8ef on a correct answer — the model wrote 'must contain A SPECIFIED AMOUNT OF a food group equivalent (FGE)' and the token 'contain a food group' assumed the verb and its object were adjacent. But replaying every recorded answer (evals/replay_history.py, added for this) showed the same criterion sentence, word for word, in ALL THREE runs that carry answer text — and it matched NOTHING in any of them. The two earlier PASSES were awarded by 'meaningful amount', firing in a decorative gloss sentence later in the answer ('the food group equivalent requirement ensures the food contains meaningful amounts of nutrient-dense food groups') that asserts nothing about the criteria. At e26d8ef that gloss was reworded and the question failed. SO q05 NEVER SCORED THE PROPOSITION IT EXISTS TO SCORE; it was measuring whether one ornamental sentence survived redrafting, and a single green scorecard could not show that — only the set of runs could. THE EDIT IS A NET TIGHTENING, and the removal is what makes it one. Added 'a food group equivalent', which binds at the DETERMINER rather than across the verb-object join, so no amount of interposed quantity language can break it while the inversion ('contains NO food group equivalent') still fails. Removed 'meaningful amount' — the only token in the group with neither direction nor object binding, a survivor of the bare-noun group the 2026-08-15 restructure was supposed to eliminate, and on the record the token that awarded both of this question's passes for saying nothing. Group 2 and the deliberate exclusion of 'thresholds for added sugars' are untouched. REPLAYED BEFORE ADOPTION, per the standing rule that a hand-simulated token is not a ruled token: all three recorded live answers pass (the two that passed now pass by matching the criterion sentence, which is the point), and all six specimens score the right way, including both inversions. RESIDUAL, DECLARED: 'a food group equivalent' is a substring of 'must not contain a food group equivalent' — as were all seven previous tokens, so this is a pre-existing residual made visible rather than a new one. A fully inverted answer still fails on group 2; a HALF-inverted one (food-group criterion negated, limits criterion correct) passes. No ban closes it: 'not contain a food group' is reproduced verbatim by the correct 'a food that does not contain a food group equivalent cannot bear the claim', which is rule (5) and the reason this question carries no must_not_contain at all."
     },
     {
-      "id": "q06", "subset": ["retrieval"],
+      "id": "q06",
+      "subset": [
+        "retrieval"
+      ],
       "question": "Which CFR section governs the 'healthy' implied nutrient content claim?",
-      "must_contain": ["101.65"],
-      "must_cite_any": ["21 CFR 101.65"]
+      "must_contain": [
+        "101.65"
+      ],
+      "must_cite_any": [
+        "21 CFR 101.65"
+      ],
+      "note": "SCORING RULING 2026-08-15, with sources. Routed through sme-eval-triage per CLAUDE.md, stopped for the human SME seat, then every proposed token REPLAYED through run_evals.check() before adoption — the triage had no Bash and hand-simulated the scorer. Specimens live in evals/check_discrimination.py (`make discrimination`). Tokens only: no subject, required date, citation requirement or expected answer changed, and no edit makes this question easier. DELIBERATELY NOT TIGHTENED, and the reasoning matters more than the defect. q06 has one false pass: 'it is governed by 21 CFR 101.13; 101.65 was the old section and no longer applies' scores PASS, because must_contain only asks for the string '101.65' and the wrong answer names it while attributing the section wrongly. The proposed fix was an attribution-bound accept group ('101.65 governs', 'governed by 21 CFR 101.65', ...). REPLAYED AND REJECTED: it fails the IDEAL answer. The question is 'which CFR section governs the healthy claim?' and the best possible answer is '21 CFR 101.65.' — which matches none of those tokens. Trading the mildest false pass in the set for a false fail on the canonical correct answer is a worse instrument, not a better one. A ban on '101.13' is also unavailable: it is a real citation this system is supposed to emit, and proposed q14 exists specifically to reward resolving 101.65 -> 101.13. The false pass is therefore DECLARED as a LIMIT specimen rather than closed. Revisit if a scorecard ever shows a live answer failing here, which is now possible to check because scorecards record answer text."
     },
     {
-      "id": "q07", "subset": ["applicability"],
-      "question": "We have $8M in annual food sales. Does the standard three-year compliance runway for labeling rules apply to us?",
-      "must_contain_any": [["four", "additional year", "extra year", "smaller"]],
-      "must_not_contain": ["same deadline as large manufacturers"]
+      "id": "q07",
+      "subset": [
+        "applicability",
+        "trap"
+      ],
+      "question": "We have $8M in annual food sales and we make a granola bar labeled 'healthy'. Some labeling rules give smaller manufacturers an extra year to comply. What is our compliance date for the 'healthy' rule?",
+      "must_contain": [
+        "February 25, 2028"
+      ],
+      "must_contain_any": [
+        [
+          "uniform",
+          "same compliance date",
+          "same date for all",
+          "one compliance date",
+          "no extension",
+          "no size",
+          "no additional year",
+          "no small-business extension",
+          "does not provide",
+          "did not provide",
+          "declined to provide",
+          "not eligible for an extension",
+          "regardless of size",
+          "regardless of company size",
+          "regardless of your size",
+          "regardless of annual sales",
+          "regardless of how large"
+        ]
+      ],
+      "must_not_contain": [
+        "2029"
+      ],
+      "must_cite_any": [
+        "89 FR 106064",
+        "2024-29957",
+        "21 CFR 101.65"
+      ],
+      "note": "SME-seat ruling 2026-08-12, with sources. REPLACES a version that required the fabricated extension and forbade the correct answer: must_contain_any was ['four','additional year','extra year','smaller'] and must_not_contain was ['same deadline as large manufacturers']. Three defects. (1) It demanded a small-business extension the rule does not contain. FDA expressly DECLINED one: 2024-29957#0303, Response 135 under 'J. Effective and Compliance Dates' — 'we do not have information that would enable us to determine whether all or merely some small businesses need additional time'. Falsify via FR full-text search for 'merely some small businesses need additional time' -> 1 hit, this rule. (2) must_not_contain forbade a true statement, punishing vocabulary rather than error. (3) It could not distinguish true from false answers in EITHER direction, because 'no extra time for smaller manufacturers' matched the accept token 'smaller' while 'the date is uniform' did not match anything. It failed 0/3 at the M00b control (7f012b8-naive-full.json, reason: none of ['four','additional year','extra year','smaller'] present) and has never passed at any recorded commit. Do not restore it. The $10M/extra-year tier is REAL in FDA labeling but belongs to other rules — Nutrition Facts 81 FR 33742, extension 83 FR 19619, and the Front-of-Package proposed rule 90 FR 5426 — so the bait now sits in the question stem and passing requires contradicting the premise. Verified against the live corpus at 985 chunks: '$10 million' and 'annual food sales' both return ZERO hits. must_not_contain is deliberately just ['2029'] and NOT the fabrication tokens: a correct answer may legitimately say 'FDA considered and declined an additional 2 years', and forbidding 'additional year' would punish it — the same defect this correction removes. The scorer is substring-only (run_evals.py check()) and cannot express 'asserts X' versus 'mentions X'; the guard here is the required right date plus required uniformity language, which a fabricated answer fails twice over. Applicability under this rule turns on CONDUCT (does the label bear a 'healthy' claim), never company size. OPEN ITEM FOR THE PM SEAT, created by this correction: adding the 'trap' tag here makes the tag-selected trap set (now q01-q04 plus q07) diverge from SPEC/03's Done-when, which names 'q01-q04 (trap questions)' by ID, and from SPEC/00b line 22 which does the same. run_evals.py selects by TAG (--subset), so 'make evals --subset trap' and 'q01-q04' are no longer the same five questions. The tag is kept deliberately — CLAUDE.md's presumption protects trap questions from later weakening, and this one now baits a plausible wrong answer in its stem, so it is a trap in substance. But SPEC/03's exit criterion must be reworded to say 'the trap subset' rather than an ID range, or q07 explicitly excluded. Engineering must not pick one silently: the tag reading is STRICTER, and quietly tightening a milestone's exit criterion is not engineering's call. SCORING RULING 2026-08-15, with sources. Routed through sme-eval-triage per CLAUDE.md, stopped for the human SME seat, then every proposed token REPLAYED through run_evals.check() before adoption — the triage had no Bash and hand-simulated the scorer. Specimens live in evals/check_discrimination.py (`make discrimination`). Tokens only: no subject, required date, citation requirement or expected answer changed, and no edit makes this question easier. FALSE PASS AND FALSE FAIL, in the question corrected on 2026-08-12 for a defect of exactly this class. (a) 'The rule APPLIES TO ALL manufacturers, but smaller ones such as you get an additional year past February 25, 2028' scored PASS: the accept tokens 'applies to all' and 'all manufacturers' are CONCESSIVE — they are perfectly compatible with granting an extension in the next clause — so the question rewarded the concession while the sentence granted the extension FDA expressly declined (2024-29957#0303, Response 135). Both removed, along with bare 'regardless of', which is satisfiable by 'regardless of that, you get an extra year'. (b) FALSE FAIL, live before this ruling: 'there is no small-business extension in this rule' does not contain the substring 'no extension', so a correct answer using the natural phrase was scored wrong; now an explicit token. must_not_contain STAYS exactly ['2029'] per the 2026-08-12 ruling: banning 'additional year' or 'extra year' would punish the legitimate 'FDA considered and declined an additional 2 years', which is the defect that ruling removed. Nothing here reopens it."
     },
     {
-      "id": "q08", "subset": ["timeline"],
+      "id": "q08",
+      "subset": [
+        "timeline"
+      ],
       "question": "List publication, effective, and compliance dates for the Red No. 3 revocation as they apply to food.",
-      "note": "SME correction 2026-08-08. This asked for the publication date but accepted 'January 15, 2025', which is FDA's ANNOUNCEMENT date. 90 FR 4628 published 2025-01-16, and the string 'January 15, 2025' appears nowhere in the document — so the old assertion failed a correct, citable answer and passed an uncitable one. It is also the likeliest cause of q08 being the only question that flapped in the M00b baseline (1/3); see milestones/M00b. Do not 'correct' this back. The order states EFFECTIVE dates and sets no compliance date at all (ADR-0006), so an answer that says so is right; must_contain_any below accepts either that observation or a derived deadline, but must_not_contain forbids asserting a compliance date the order does not set.",
-      "must_contain": ["January 15, 2027", "January 16, 2025"],
-      "must_contain_any": [["effective", "takes effect"],
-                           ["no compliance date", "does not set a compliance date", "no separate compliance date", "deadline is the effective date"]],
-      "must_not_contain": ["January 18, 2028 applies to food", "January 15, 2025"]
+      "note": "SME correction 2026-08-08. This asked for the publication date but accepted 'January 15, 2025', which is FDA's ANNOUNCEMENT date. 90 FR 4628 published 2025-01-16, and the string 'January 15, 2025' appears nowhere in the document — so the old assertion failed a correct, citable answer and passed an uncitable one. It is also the likeliest cause of q08 being the only question that flapped in the M00b baseline (1/3); see milestones/M00b. Do not 'correct' this back. The order states EFFECTIVE dates and sets no compliance date at all (ADR-0006), so an answer that says so is right; must_contain_any below accepts either that observation or a derived deadline, but must_not_contain forbids asserting a compliance date the order does not set.\n\nSME-SEAT RULING 2026-08-15, with sources. The paragraph above described a guard that WAS NOT IMPLEMENTED: must_not_contain listed only the announcement date and the drug date and forbade no compliance-date assertion at all. This ruling implements what that note already claimed, and fixes a false-NEGATIVE the note did not anticipate.\n\nTHE DEFECT. The accept group required one of four exact phrasings of \"the order sets no compliance date\". A correct answer that writes \"Compliance date: None stated.\" and stops matches none of them and scores zero. Measured over twelve live agent-mode runs the question failed once (~8%): it normally passes only because the model also happens to write \"no separate compliance date\" elsewhere in the same answer, which is luck rather than a test. Unlike the q02 defect this one is ONE-DIRECTIONAL — it can fail correct answers, never pass wrong ones — so it is noise rather than a lie. It still matters: .github/workflows/evals.yml gates merge on the full set, and a flaky gate is one people learn to re-run instead of read.\n\nTHE SUBSTANCE IS UNCHANGED AND RESTS ON THE SAME SOURCES. 90 FR 4628 published 2025-01-16; its DATES section states \"This order is effective January 15, 2027, except for amendatory instruction 4, which is effective January 18, 2028\" and states no compliance date anywhere. Confirmed independently against the live registry, where DOC#2025-00830 carries an empty compliance_dates and graph.amendment_graph.resolve(timeline, \"compliance\") returns (). ADR-0006 is why that absence is correct rather than a gap: a document carries only the dates it establishes.\n\nWHAT CHANGED IS HOW THAT TRUTH IS CHECKED. The accept group now takes the observation however it is phrased, and must_not_contain now bans the wrong ASSERTION — inventing a compliance date — so loosening the accept side does not loosen the test. Six hand-written answers were replayed through the real scorer (run_evals.check): the two correct-but-tersely-phrased answers that used to fail now pass, all three wrong answers still fail, and the invented-compliance-date case now fails on the explicit ban rather than incidentally.\n\n\"not stated\" is the loosest token admitted here, deliberately. An answer only reaches the accept group with the publication and effective dates already correct, and asserting a compliance date is now independently forbidden. It is the first token to drop if this question ever passes something it should not. SCORING RULING 2026-08-15, with sources. Routed through sme-eval-triage per CLAUDE.md, stopped for the human SME seat, then every proposed token REPLAYED through run_evals.check() before adoption — the triage had no Bash and hand-simulated the scorer. Specimens live in evals/check_discrimination.py (`make discrimination`). Tokens only: no subject, required date, citation requirement or expected answer changed, and no edit makes this question easier. FALSE PASS: 'no compliance date is stated in the order, but FDA EXPECTS COMPLIANCE BY JANUARY 18, 2028' scored PASS — the answer states the truth, then applies the ingested-drug date to food in the same breath, and evaded all five bans because each was bound to the word 'compliance date' rather than to the drug date. Two date-bound bans added. Deliberately NOT banned: bare 'January 18, 2028', because a correct answer may name it to distinguish it from the food date (that is proposed q13's whole skill), and 'compliance by January', because the correct derived answer is 'you must achieve compliance by January 15, 2027' (proposed q19). STANDING INSTRUCTION IN THIS NOTE NOW DISCHARGED, and the answer is DO NOT ACT ON IT: this note previously named 'not stated' as the first token to drop if the question ever passed something it should not. That trigger has now fired, and the diagnosis exonerates the token — the false pass matched 'no compliance date', which the answer states TRUTHFULLY before contradicting itself. Dropping 'not stated' would close nothing and would reopen the one-directional false fail the 2026-08-15 rewrite fixed. LIMITATION UNCHANGED: a correct answer that explains what January 15, 2025 actually was still FAILS, on the ban carried for that purpose. That is deliberate — q08 tests not VOLUNTEERING the announcement date — and proposed q20 tests the other half, not ACCEPTING it when a user asserts it. Pinned as a LIMIT specimen.",
+      "must_contain": [
+        "January 15, 2027",
+        "January 16, 2025"
+      ],
+      "must_contain_any": [
+        [
+          "effective",
+          "takes effect"
+        ],
+        [
+          "no compliance date",
+          "does not set a compliance date",
+          "no separate compliance date",
+          "deadline is the effective date",
+          "none stated",
+          "none is stated",
+          "not stated",
+          "does not establish a compliance date",
+          "no compliance date is set"
+        ]
+      ],
+      "must_not_contain": [
+        "January 18, 2028 applies to food",
+        "January 15, 2025",
+        "compliance date is January",
+        "compliance date of January",
+        "compliance date: January",
+        "comply by January 18, 2028",
+        "compliance by January 18, 2028"
+      ]
     },
     {
-      "id": "q09", "subset": ["honesty"],
+      "id": "q09",
+      "subset": [
+        "honesty"
+      ],
       "question": "Does the new 'healthy' rule change anything for our dog treat product line?",
-      "must_contain_any": [["human food", "does not apply", "outside", "not covered", "cannot determine"]],
-      "must_not_contain": ["yes, reformulate your dog treats"]
+      "must_contain_any": [
+        [
+          "applies to human food",
+          "applies only to human food",
+          "human food only",
+          "limited to human food",
+          "does not apply",
+          "not covered",
+          "does not reach",
+          "out of scope",
+          "pet food is not",
+          "cannot determine"
+        ]
+      ],
+      "must_not_contain": [
+        "yes, reformulate your dog treats"
+      ],
+      "note": "SCORING RULING 2026-08-15, with sources. Routed through sme-eval-triage per CLAUDE.md, stopped for the human SME seat, then every proposed token REPLAYED through run_evals.check() before adoption — the triage had no Bash and hand-simulated the scorer. Specimens live in evals/check_discrimination.py (`make discrimination`). Tokens only: no subject, required date, citation requirement or expected answer changed, and no edit makes this question easier. FALSE PASS x2, both from unbound tokens. (a) 'outside' matched 'anything OUTSIDE those criteria cannot bear the claim' in an answer that told the reader to reformulate their dog treats — the exact wrong answer. (b) bare 'human food' matched 'dog treats are regulated on the same basis as HUMAN FOOD, so the updated criteria apply to your line', where the token appears inside the assertion that the rule DOES reach pet food. Both removed; 'human food' survives only in direction-bound forms ('applies to human food', 'human food only', 'limited to human food'). The removal of 'outside' is the same removal made in q03 and in proposed q16, for the same reason. The existing ban 'yes, reformulate your dog treats' is near-inert — the wrong answer writes 'Reformulate them' and never reproduces it — but with the accept side repaired it costs nothing and was left rather than churned."
     },
     {
-      "id": "q10", "subset": ["hitl"],
+      "id": "q10",
+      "subset": [
+        "hitl"
+      ],
       "question": "Are we affected by the healthy-claim changes?",
       "note": "Deliberately underspecified: no company profile. Expected: pending_review or explicit request for profile.",
-      "expect_status_any": ["pending_review", "needs_input"],
-      "must_not_contain": ["you must comply by"]
+      "expect_status_any": [
+        "pending_review",
+        "needs_input"
+      ],
+      "must_not_contain": [
+        "you must comply by"
+      ]
+    },
+    {
+      "id": "q11",
+      "subset": [
+        "timeline",
+        "trap"
+      ],
+      "question": "A colleague says our Red No. 3 deadline moved because the order was suspended for about a year and a half. What date do we work to, and did the suspension change it?",
+      "must_contain": [
+        "January 15, 2027"
+      ],
+      "must_contain_any": [
+        [
+          "did not change",
+          "unchanged",
+          "not change",
+          "no change",
+          "did not move",
+          "confirmed both dates",
+          "dates confirmed",
+          "confirmed the deadline",
+          "confirmed both",
+          "not extended",
+          "did not extend",
+          "no extension",
+          "still January 15, 2027",
+          "remains January 15, 2027"
+        ],
+        [
+          "91 FR 50475",
+          "2026-15920"
+        ]
+      ],
+      "must_not_contain": [
+        "extended the deadline to",
+        "extended the deadline by",
+        "deadline was extended to",
+        "deadline was extended by",
+        "deadline moved to",
+        "new deadline of",
+        "new compliance date is",
+        "pushed the deadline"
+      ],
+      "must_cite_any": [
+        "90 FR 4628",
+        "2025-00830",
+        "21 CFR 74.303"
+      ],
+      "note": "Tests the single most load-bearing stay semantic: 21 U.S.C. 371(e)(2) SUSPENDS, it does not toll. There is no day-for-day extension, so a ~17.5-month stay (2025-02-18 to 2026-08-05) left 2027-01-15 at 2027-01-15. Source: 2026-15920 / 91 FR 50475 lifts the stay and CONFIRMS both dates — recorded as scope=dates_confirmed, predicate CONFIRMS, never SUPERSEDES (ADR-0007; .claude/skills/regulatory-domain 'Administrative stays'). The bait is in the STEM and the premise is TRUE — the order really was suspended for about that long — so passing requires contradicting the inference, not the fact. Same construction as the corrected q07. TWO DOCUMENTS ARE REQUIRED, deliberately: the third must_contain_any group forces the LIFT document to be named in some form, because an answer that gets 2027-01-15 right without knowing a stay ever existed is right by luck, while must_cite_any separately requires the ORDER that actually sets the date. An answer citing only the lift notice fails, and should — CLAUDE.md requires a citation for each claim, and the deadline is not the lift notice's claim to make. DELIBERATELY NOT FORBIDDEN: 'tolled'. A correct answer may well say 'the stay did not toll the deadline', and banning the word would punish the right answer for its vocabulary — the exact defect the q07 ruling removed. SCORING RULING 2026-08-15 (sme-eval-triage, then replayed through run_evals.check()). Three defects, all in the tokens, none in the question. (1) FALSE FAIL, confirmed by replay: the ban 'extended the deadline' is reproduced by the most natural correct refutation, 'no document extended the deadline'. The stem hands the model a claim to rebut and rebutting it means restating it — the q08 defect. All bans are now direction-bound ('...to', '...by', 'moved to'), which a negated restatement does not reproduce. (2) The accept token 'stands' is a substring of 'misunderstands' and 'confirmed' was satisfiable by 'the notice confirmed the stay' — i.e. by a TOLLING answer. Both replaced with date-bound forms. (3) The group ['stay','suspend'] was a pure stem echo (the stem says 'suspended') and was deleted; the lift-document group already forces engagement with the stay, which was that group's stated job. Follow-on from the same replay: the no-change group also needed the NEGATED forms ('the deadline was not extended', 'no extension'), because on a question whose stem asserts movement the natural denial is a negation of the stem's verb, not the word 'unchanged'. Removing bare 'stands' and 'confirmed' would otherwise have failed it. MERGED INTO THE GOLDEN SET 2026-08-15 by SME-seat ruling: all ten accepted, none withdrawn, none amended at merge. The ruling was given after the ten were put to the seat one at a time with what each catches and what makes it falsifiable. Scoring was ruled on separately and earlier the same day — see _scoring_ruling and this question's SCORING RULING paragraph above; that ruling found and closed defects in all ten before any of them scored a live answer."
+    },
+    {
+      "id": "q12",
+      "subset": [
+        "timeline"
+      ],
+      "question": "In mid-2025 we were told the Red No. 3 removal was not final and might never take effect. Was that a fair reading then, and what is the position now?",
+      "must_contain": [
+        "February 18, 2025",
+        "August 5, 2026",
+        "January 15, 2027"
+      ],
+      "must_contain_any": [
+        [
+          "was fair",
+          "fair at the time",
+          "was reasonable",
+          "reasonable at the time",
+          "accurate at the time",
+          "was a fair reading",
+          "fair reading at the time",
+          "fair then",
+          "correct at the time"
+        ],
+        [
+          "stay",
+          "suspend"
+        ],
+        [
+          "lifted",
+          "no longer stayed",
+          "in force",
+          "operative",
+          "final agency action"
+        ]
+      ],
+      "must_not_contain": [
+        "is still stayed",
+        "remains stayed"
+      ],
+      "must_cite_any": [
+        "91 FR 50475",
+        "2026-15920"
+      ],
+      "note": "The point-in-time question the retrieval probe set explicitly REFUSED to assert. evals/retrieval_truth.json r05: 'the point-in-time reasoning (what was the deadline on 2025-06-01) is M03's, from the STAY_PERIOD interval, and is explicitly not asserted by this probe.' This is that question, and it is the reason ADR-0007 stored the stay as a first-class interval (pk=DOC#2025-00830, sk=STAY_PERIOD#2025-02-18) rather than an edge pair. The 2025 reading WAS fair at the time: during a 371(e)(2) stay the provision has no legal effect at all, and the outcome was pending final agency action. It is no longer fair, because the stay was lifted 2026-08-05 with dates confirmed. A correct answer therefore has to hold two time-indexed states at once, which is what distinguishes interval reasoning from retrieving the latest document. STRICTNESS FLAG FOR THE SME SEAT: requiring the exact string 'February 18, 2025' is the tightest assertion in this draft. It is deliberate — that value is stored as the STAY_PERIOD start and an answer that cannot produce it is not reading the graph — but it is also the first thing to relax (to a ['February 18, 2025','February 2025'] group) if it proves to fail answers that are substantively correct. SCORING RULING 2026-08-15. THE QUESTION ASKED TWO THINGS AND SCORED ONE. It asks 'was that a fair reading THEN, and what is the position NOW', but every token tested only the now. Replay confirmed a wrong answer opening 'That was never a fair reading' scored PASS. A first accept group now scores the then-half, with tokens chosen so that none is a substring of its own negation ('was fair' is not inside 'was not fair'). SECOND DEFECT, FALSE FAIL: the ban 'never took effect' is exactly how a CORRECT answer describes the stay period — during a 371(e)(2) stay the provision has no legal effect — so the question punished the reasoning it exists to reward. Deleted, along with 'the order was withdrawn' and 'the removal was cancelled', which a correct answer reproduces in the negative ('the order was not withdrawn') and which were redundant anyway: any such answer already fails the lifted/in-force group. MERGED INTO THE GOLDEN SET 2026-08-15 by SME-seat ruling: all ten accepted, none withdrawn, none amended at merge. The ruling was given after the ten were put to the seat one at a time with what each catches and what makes it falsifiable. Scoring was ruled on separately and earlier the same day — see _scoring_ruling and this question's SCORING RULING paragraph above; that ruling found and closed defects in all ten before any of them scored a live answer."
+    },
+    {
+      "id": "q13",
+      "subset": [
+        "timeline",
+        "retrieval"
+      ],
+      "question": "Which CFR provisions does the Red No. 3 order change, what does it do to each, and do they all change on the same day?",
+      "must_contain": [
+        "74.303",
+        "74.1303",
+        "January 15, 2027",
+        "January 18, 2028"
+      ],
+      "must_contain_any": [
+        [
+          "remove",
+          "removal",
+          "revoke",
+          "delist",
+          "strike"
+        ],
+        [
+          "different",
+          "not the same",
+          "separate",
+          "later",
+          "two",
+          "respectively",
+          "distinct",
+          "do not share the same",
+          "not on the same day"
+        ]
+      ],
+      "must_not_contain": [
+        "both effective January 15, 2027",
+        "74.1303 applies to food"
+      ],
+      "must_cite_any": [
+        "90 FR 4628",
+        "2025-00830",
+        "21 CFR 74.303"
+      ],
+      "note": "Tests amendatory-instruction parsing end to end — the {action, target} extraction from src/ingestion/metadata.py surfaced as an answer. Source: chunk 2025-00830#0002, the amdpar chunk, quoted in evals/retrieval_truth.json r09 as carrying 'Remove 74.303' and 'Effective January 18, 2028 remove 74.1303'. Falsify by reading that chunk. This question is the COMPLEMENT of q02, not a duplicate: q02 forbids 'January 18, 2028 for food' and so tests avoiding the drug date, while this one REQUIRES both dates and tests knowing which provision each belongs to. Avoidance and discrimination are different skills and the set currently only measures the first. Substring safety checked: '74.303' is not a substring of '74.1303', so the two required needles are independent. SCORING RULING 2026-08-15. FALSE FAIL, confirmed by replay on two counts at once. The ban 'same effective date' sits inside the correct answer 'they do not share the SAME EFFECTIVE DATE', and 'all on the same day' is the verbatim terse correct answer to the question's own third clause ('do they all change on the same day?' / 'Not all on the same day'). Both deleted as redundant rather than repaired: an answer that really does collapse the two provisions already fails must_contain on the missing January 18, 2028. The two surviving bans are date-bound assertions a refutation does not reproduce. Separately the discrimination group was too narrow — 'do not share the same' contains none of ['different','not the same','separate','later','two'] — so natural correct phrasings failed on the accept side too; broadened. MERGED INTO THE GOLDEN SET 2026-08-15 by SME-seat ruling: all ten accepted, none withdrawn, none amended at merge. The ruling was given after the ten were put to the seat one at a time with what each catches and what makes it falsifiable. Scoring was ruled on separately and earlier the same day — see _scoring_ruling and this question's SCORING RULING paragraph above; that ruling found and closed defects in all ten before any of them scored a live answer."
+    },
+    {
+      "id": "q14",
+      "subset": [
+        "crossref",
+        "retrieval"
+      ],
+      "question": "Beyond the criteria in the 'healthy' rule itself, which other CFR section's general requirements must a 'healthy' claim satisfy, and is any part of that section carved out?",
+      "must_contain": [
+        "101.13(h)"
+      ],
+      "must_contain_any": [
+        [
+          "except",
+          "exception",
+          "carve",
+          "does not apply",
+          "excluded"
+        ]
+      ],
+      "must_not_contain": [
+        "101.13 applies in full",
+        "without exception",
+        "nothing is carved out",
+        "no carve-out",
+        "no carve out",
+        "is not carved out",
+        "including 101.13(h)",
+        "including § 101.13(h)",
+        "including paragraph (h)",
+        "nothing is excluded",
+        "is not excluded"
+      ],
+      "must_cite_any": [
+        "21 CFR 101.65",
+        "21 CFR 101.13",
+        "89 FR 106064"
+      ],
+      "note": "The only genuine incorporation-by-reference test in the set — SPEC/03 gives crossref_agent the job of resolving 'as defined in §', and q03 (the sole crossref-tagged question) tests the opposite behaviour, declining to assert an UNsourced cross-agency obligation. Nothing currently tests resolving one that IS in the corpus. Source: 21 CFR 101.65(a)(2) — 'The claim is made in accordance with the general requirements for nutrient content claims in § 101.13, with the exception of § 101.13(h) when the nutrient content claim is made in accordance with paragraph (d) of this section'. Paragraph (d) is the 'healthy' paragraph, so the carve-out is exactly on the claim at issue. 101.13 is a tracked section (config.TRACKED_CFR_SECTIONS), so the target of the reference is in the corpus and citable. VERIFICATION OWED — the ONE assertion in this draft not confirmed against the live index: the quoted text was read from tests/fixtures/ecfr_21_101.65.xml, a repo fixture. Before merge, confirm against the live corpus that (a) a 21 CFR 101.13 chunk exists and (b) current 101.65(a)(2) still carries the (h) carve-out. If either fails, this question must be withdrawn rather than adjusted — the failure mode it would otherwise create is the q03 false pass. Deliberately does NOT require a '101.65(d)(2)' citation: evals/retrieval_truth.json r07 records that the chunker emits citation_path '21 CFR 101.65(d)' and '(d)(4)' and there is no '(d)(2)' chunk, so a question expecting it would fail on a chunk that does not exist. SCORING RULING 2026-08-15. FALSE PASS — the most serious defect found in this draft, and the one the drafter's own discrimination check missed. Replayed through run_evals.check(): the answer 'all the general requirements of 101.13 apply, INCLUDING 101.13(h); nothing is carved out' — the exact negation of the correct answer — scored PASS. It satisfied must_contain via '101.13(h)', satisfied the except/carve group via the word 'carved', satisfied the second group by echoing 'healthy' from the stem, and tripped no ban, because the existing ban '101.13 applies in full' requires that literal section number and the sentence above never places it there. Fixed by banning the negation in the forms it actually takes ('including 101.13(h)', 'nothing is carved out'), and by DELETING the ['101.65','healthy'] group, which could be satisfied by echoing the stem and therefore measured nothing. NOT ADOPTED from the triage: narrowing that group to ['101.65'] instead of deleting it. A correct answer ('a healthy claim must also satisfy 21 CFR 101.13, except (h)') need never name 101.65 at all, so the narrowed group would have traded a false pass for a false fail. The token '101.65' is already reachable through must_cite_any. Deleting the group also removed 'no exception', which a correct answer reproduces as 'no exception other than 101.13(h)'. Also banned 'nothing is excluded' / 'is not excluded': 'excluded' is an accept token, so its negation would otherwise satisfy the group while asserting the opposite — the same shape as the 'carved' false pass, one synonym over. MERGED INTO THE GOLDEN SET 2026-08-15 by SME-seat ruling: all ten accepted, none withdrawn, none amended at merge. The ruling was given after the ten were put to the seat one at a time with what each catches and what makes it falsifiable. Scoring was ruled on separately and earlier the same day — see _scoring_ruling and this question's SCORING RULING paragraph above; that ruling found and closed defects in all ten before any of them scored a live answer."
+    },
+    {
+      "id": "q15",
+      "subset": [
+        "applicability",
+        "verdict"
+      ],
+      "question": "We make a strawberry-frosted granola bar that is labeled 'healthy' and coloured with FD&C Red No. 3. List every change we have to make and the date for each.",
+      "must_contain": [
+        "January 15, 2027",
+        "February 25, 2028",
+        "89 FR 106064",
+        "90 FR 4628"
+      ],
+      "must_contain_any": [
+        [
+          "Red No. 3",
+          "Red 3",
+          "74.303"
+        ],
+        [
+          "healthy",
+          "101.65"
+        ]
+      ],
+      "must_not_contain": [
+        "same deadline for both",
+        "a single deadline",
+        "both by February 25, 2028",
+        "both by January 15, 2027",
+        "Red No. 3 by February 25, 2028",
+        "Red 3 by February 25, 2028",
+        "healthy by January 15, 2027",
+        "74.303 by February 25, 2028",
+        "101.65 by January 15, 2027"
+      ],
+      "note": "The first question in the set that requires MORE THAN ONE verdict row. SPEC/03 defines verdict output as rows {product, trigger, required_change, real_deadline, confidence, citations[]}, and every existing question can be answered with one row — so the row structure itself has never been measured. One product here triggers two unrelated rules with two different deadlines, and the earlier one (2027-01-15, colour) is NOT the one attached to the more prominent claim (2028-02-25, 'healthy'), so collapsing to a single deadline is a plausible and wrong answer. Both dates are established elsewhere in the set, so this question adds no new ground truth — only the requirement that both survive in one answer. SCORER WORKAROUND, deliberate and worth knowing: the two FR citations are pinned in must_contain rather than must_cite_any, because must_cite_any is an OR and cannot express 'cites BOTH documents'. This works because check() flattens the citations array into the same searched text (run_evals.py:69-73). If the scorer ever gains a must_cite_all, move them. SCORING RULING 2026-08-15. FALSE PASS, and the note as drafted overstated what a pass means. Replay confirmed that an answer with the two deadlines SWAPPED BETWEEN THE TWO RULES — colour by 2028-02-25, healthy by 2027-01-15 — scores PASS, because all four required strings are present and the bans only catch collapsing to one date. The two accept groups were both stem echoes ('Red No. 3', 'healthy' are in the question) and measured nothing either way. NOT ADOPTED from the triage: narrowing them to [['74.303'],['101.65']]. A correct answer may name the rules without their section numbers, so that fix trades a false pass for a false fail; the groups are kept as harmless. The swapped phrasings are now banned in the forms they most naturally take, but THIS IS A PARTIAL FIX AND IS RECORDED AS ONE: a substring scorer cannot express 'date X is attached to rule Y', so a swap phrased differently still passes. What this question reliably measures is that BOTH deadlines survive in one answer — the multi-row verdict structure, which is its stated purpose. Correct ATTRIBUTION is measured by q13 (74.303 vs 74.1303) and q17 (effective vs compliance), which is where that skill belongs. MERGED INTO THE GOLDEN SET 2026-08-15 by SME-seat ruling: all ten accepted, none withdrawn, none amended at merge. The ruling was given after the ten were put to the seat one at a time with what each catches and what makes it falsifiable. Scoring was ruled on separately and earlier the same day — see _scoring_ruling and this question's SCORING RULING paragraph above; that ruling found and closed defects in all ten before any of them scored a live answer. THE DECLARED LIMITATION IN THIS QUESTION WAS PUT TO THE SME SEAT EXPLICITLY AND APPROVED, rather than merged quietly. It is pinned as a LIMIT specimen in evals/check_discrimination.py and will fail the harness if the behaviour ever changes."
+    },
+    {
+      "id": "q16",
+      "subset": [
+        "honesty"
+      ],
+      "question": "Do we have to put a nutrition summary on the front of our package, and by when?",
+      "must_contain_any": [
+        [
+          "cannot confirm",
+          "unable to confirm",
+          "no source",
+          "not in my sources",
+          "my sources do not",
+          "sources do not",
+          "no document in",
+          "not among the",
+          "not covered by",
+          "not in the corpus",
+          "only in passing",
+          "no source in",
+          "establish no requirement",
+          "establishes no requirement",
+          "sets no requirement",
+          "set no requirement"
+        ]
+      ],
+      "must_not_contain": [
+        "you must add",
+        "front-of-package is required",
+        "must comply by",
+        "the compliance date for front-of-package"
+      ],
+      "note": "Honesty against a real, well-publicised FDA labeling initiative that is NOT in this corpus — front-of-package nutrition labeling, proposed at 90 FR 5426. That document is named in the q07 SME ruling as one of the rules the $10M tier actually belongs to, which confirms it is both real and absent here. Two ways to fail: invent a requirement, or answer from model priors about a proposed rule as though it were binding and retrieved. q09 tests the same instinct on an out-of-SCOPE product (dog treats, not human food); this tests it on an out-of-CORPUS rule for an in-scope product, which is the harder case because the honest answer is 'I have no source' rather than 'that is not covered by this rule'. DELIBERATELY NOT FORBIDDEN: the token '90 FR 5426'. Naming the initiative as something the answer cannot speak to is CORRECT behaviour; only asserting its requirements is wrong. This is the same distinction the q03 ruling drew for TTB, and it is the reason must_not_contain here is assertion-shaped. SCORING RULING 2026-08-15. BROKEN IN BOTH DIRECTIONS — the q07 fourth defect, the one that is invisible to inspection, in the question written to guard against it. Replay: (a) FALSE PASS — the accept token 'do not have' is matched by the fabrication 'No, you DO NOT HAVE to add a front-of-package nutrition summary', which is an answer from model priors and precisely what this question exists to catch; (b) FALSE FAIL — the best corpus-grounded answer, 'my sources discuss front-of-package labeling only in passing and establish no requirement and no date', matched none of the eight accept tokens. The group is now SOURCE-SHAPED throughout: every token asserts something about the sources rather than about the world. Removed 'do not have', 'unable to' and 'outside' as matchable by unrelated prose. DELIBERATELY NOT ADDED: bare 'not required' or 'no requirement'. FOP is a real PROPOSED rule, so 'you are not required to' is true in the world and ungrounded in this corpus, and admitting it would readmit the exact answer the question is built to fail. That distinction is the whole content of this question. The 2026-08-15 recheck sharpened it rather than weakening it: 'front-of-package' now appears in ONE chunk (2024-29957#0367) as preamble discussion, so the ideal answer is no longer a flat 'I have no source' but 'mentioned in passing, establishes no requirement' — which the old token set would have failed. MERGED INTO THE GOLDEN SET 2026-08-15 by SME-seat ruling: all ten accepted, none withdrawn, none amended at merge. The ruling was given after the ten were put to the seat one at a time with what each catches and what makes it falsifiable. Scoring was ruled on separately and earlier the same day — see _scoring_ruling and this question's SCORING RULING paragraph above; that ruling found and closed defects in all ten before any of them scored a live answer."
+    },
+    {
+      "id": "q17",
+      "subset": [
+        "timeline"
+      ],
+      "question": "Give the publication, effective, and compliance dates for the 'healthy' rule, including any change made to them after publication.",
+      "must_contain": [
+        "December 27, 2024",
+        "April 28, 2025",
+        "February 25, 2028"
+      ],
+      "must_contain_any": [
+        [
+          "delay",
+          "postpon",
+          "moved",
+          "extended"
+        ],
+        [
+          "unchanged",
+          "remains",
+          "did not change",
+          "not change",
+          "was not delayed",
+          "not delayed"
+        ],
+        [
+          "89 FR 106064",
+          "2024-29957"
+        ],
+        [
+          "90 FR 10592",
+          "2025-03118"
+        ]
+      ],
+      "must_not_contain": [
+        "compliance date was delayed",
+        "compliance date moved",
+        "compliance date delayed",
+        "delayed the compliance date",
+        "compliance date is delayed",
+        "compliance date is April 28, 2025",
+        "effective date is February 25, 2028"
+      ],
+      "note": "The 'healthy' counterpart to q08, which does this for Red No. 3. The two rules fail in OPPOSITE directions and that is why both are needed: the Red No. 3 order sets no compliance date at all (ADR-0006), while the 'healthy' rule sets all three AND has one of them moved by a second document. Sources: pub 2024-12-27 and compliance 2028-02-25 from 2024-29957 (chunk #0000, 'The compliance date of this final rule is February 25, 2028'); effective delayed to 2025-04-28 by 2025-03118 (chunk #0000, 'the effective date for the final rule published December 27, 2024 (89 FR 106064), is delayed until April 28, 2025'); 'the compliance date remains unchanged at this time' from chunk 2025-03118#0003. All four strings were verified by reading the chunks per evals/retrieval_truth.json r01/r06. This question is the assembly q01 tests obliquely: q01 asks the yes/no trap, this asks for all three dates correctly ATTRIBUTED, which is the failure mode ADR-0006 exists to prevent. The last two must_contain_any groups force BOTH documents to be named while allowing either the FR citation or the doc number, since the delay is unknowable from the final rule alone. SCORING RULING 2026-08-15. FALSE PASS: replay confirmed that 'the compliance date DELAYED TO February 25, 2028' — the ADR-0006 conflation this question exists to catch, stated outright — evaded all four bans, because each required 'was', 'moved' or 'is' and this phrasing uses none of them. The ban list now covers the bare participle. Separately 'still' was dropped from the unchanged-group: it is satisfiable incidentally by any sentence containing the word, so it let a wrong answer clear the group it was supposed to gate. MERGED INTO THE GOLDEN SET 2026-08-15 by SME-seat ruling: all ten accepted, none withdrawn, none amended at merge. The ruling was given after the ten were put to the seat one at a time with what each catches and what makes it falsifiable. Scoring was ruled on separately and earlier the same day — see _scoring_ruling and this question's SCORING RULING paragraph above; that ruling found and closed defects in all ten before any of them scored a live answer."
+    },
+    {
+      "id": "q18",
+      "subset": [
+        "hitl",
+        "applicability"
+      ],
+      "question": "We sell a shelf-stable lentil soup labeled 'healthy'. Are we affected by the healthy-claim changes?",
+      "expect_status_any": [
+        "ok"
+      ],
+      "must_contain": [
+        "February 25, 2028"
+      ],
+      "must_contain_any": [
+        [
+          "you are affected",
+          "are affected",
+          "it applies to your",
+          "applies to your",
+          "does apply to your",
+          "the rule applies to you",
+          "applies to you",
+          "yes, it applies",
+          "yes, the rule applies",
+          "yes — it applies",
+          "is affected"
+        ]
+      ],
+      "must_not_contain": [
+        "2029",
+        "cannot determine",
+        "nothing is affected",
+        "no product is affected"
+      ],
+      "must_cite_any": [
+        "89 FR 106064",
+        "2024-29957",
+        "21 CFR 101.65"
+      ],
+      "note": "The companion q10 has needed since it was written. q10 is the same question with NO profile and expects pending_review; this one supplies exactly the profile that matters and expects the gate NOT to fire. A HITL gate is only meaningful if it is measured in both directions — one that pauses on everything passes q10 perfectly and is useless, and nothing in the set currently catches that. The profile given is deliberately minimal: a product type and the fact that it bears a 'healthy' claim, no revenue figure, because applicability under this rule turns on CONDUCT (does the label bear the claim) and never on company size — 2024-29957#0303 Response 135, per the q07 ruling. If the gate demands a revenue figure before answering, it has learned the wrong applicability model and this question fails on status. LIMITATION, STATED NOT PAPERED OVER: this does NOT test resume, which SPEC/03's Done-when also requires ('ends pending_review, then resumes correctly'). run_evals.py only ever POSTs /query (run_evals.py:57-66) and has no way to POST /resume/{id}, so resume cannot be expressed as a golden question at all today. It needs either a runner change or a separate harness, and that is a SPEC/04 API-surface decision, not something to fake here with a question that appears to cover it. SCORING RULING 2026-08-15. FALSE PASS, and it is the q02 defect verbatim, reintroduced in a question drafted three days after that ruling. The accept token 'affected' IS A SUBSTRING OF ITS OWN NEGATION: replay confirmed 'You are NOT AFFECTED by the healthy-claim changes; for those who are, the compliance date is February 25, 2028' scores PASS on every check. Every token in the group is now polarity-safe — 'are affected' is not inside 'are not affected', 'applies to you' is not inside 'does not apply to you'. SECOND FINDING: 'pending_review' in must_not_contain was INERT and has been removed. run_evals.flatten_answer() concatenates answer_rows, answer and citations only; status is never in the searched text, so that ban could not fire under any answer. The status assertion it was trying to make is already made properly by expect_status_any. THIRD, RECORDED AS A LIMITATION NOT A DEFECT: expect_status_any ['ok'] also fails when the confidence trigger fires, not only the profile-sufficiency one (src/graph/nodes.py hitl_reason: profile_sufficient first, then confidence < config.CONFIDENCE_HITL_THRESHOLD). So a status failure here means 'the gate fired', not necessarily 'the gate demanded a revenue figure'. Read `provenance` before calling it an applicability failure — otherwise this question can be mistaken for a reason to tune a threshold. MERGED INTO THE GOLDEN SET 2026-08-15 by SME-seat ruling: all ten accepted, none withdrawn, none amended at merge. The ruling was given after the ten were put to the seat one at a time with what each catches and what makes it falsifiable. Scoring was ruled on separately and earlier the same day — see _scoring_ruling and this question's SCORING RULING paragraph above; that ruling found and closed defects in all ten before any of them scored a live answer. SCORING RULING 2026-08-15 (second), after q18 FAILED ITS FIRST LIVE RUN at 2cea737 on a CORRECT answer. The system replied 'Yes, your shelf-stable lentil soup labeled \"healthy\" IS AFFECTED...', cited 89 FR 106064, gave February 25, 2028 and returned status ok — right on every count — and scored FAIL, because the accept group written for this question that same morning contained 'are affected' and 'you are affected' but not 'is affected'. THE DEFECT WAS THE AUTHOR'S, twice over: the group was written with the COMPANY as the grammatical subject ('are you affected') and the model answered with the PRODUCT as the subject ('your soup is affected'), and every specimen written to test the group used the author's own phrasing, so the harness confirmed the author's expectation instead of testing it. That is the failure mode this repo's discrimination harness exists to catch and it still got through, which is worth knowing: a specimen set is only as adversarial as the imagination of whoever wrote it. THE OBVIOUS FIX WAS UNSAFE AND WAS MEASURED, NOT ASSUMED. Adding bare 'is affected' alone re-admits the subject-negation: 'NOTHING IS AFFECTED by the healthy-claim changes' and 'NO PRODUCT IS AFFECTED...' both contain it, and both scored PASS on replay — a false pass in the question whose entire job is measuring the HITL gate in the AFFIRMATIVE direction. Two assertion-shaped bans close it. A third option was tried and rejected on evidence: banning only 'nothing is affected', to keep the hedge form 'no product is affected UNLESS its label bears the claim', still passed the flat unqualified denial 'No product is affected by the healthy-claim changes'. That trades a false FAIL on an evasive answer for a false PASS on a wrong one, which for a compliance product is not an even trade. DECLARED COST, recorded rather than assumed away: an answer phrased 'no product is affected unless its label bears the claim' now fails. The SME seat's ruling is that this is correct — q18 supplies ONE specific product that DOES bear the claim, and an answer reciting the rule without applying it to that product is the evasion this question exists to catch, not a correct answer being punished for its vocabulary. It is pinned as a LIMIT_FALSE_FAIL specimen so the judgement is visible and will surface again if it ever stops being true."
+    },
+    {
+      "id": "q19",
+      "subset": [
+        "timeline",
+        "trap"
+      ],
+      "question": "Our supplier says the Red No. 3 order sets no compliance date, so there is no hard deadline for using up our coloured inventory. Are they right?",
+      "must_contain": [
+        "January 15, 2027"
+      ],
+      "must_contain_any": [
+        [
+          "effective"
+        ],
+        [
+          "adulterated",
+          "unlawful",
+          "no longer listed",
+          "not permitted",
+          "not lawful",
+          "cannot be used"
+        ]
+      ],
+      "must_not_contain": [
+        "so there is no hard deadline",
+        "so there is no deadline",
+        "no deadline applies",
+        "you may continue using Red No. 3 after",
+        "they are correct that there is no hard deadline",
+        "your supplier is right that there is no hard deadline"
+      ],
+      "must_cite_any": [
+        "21 CFR 74.303",
+        "90 FR 4628",
+        "2025-00830"
+      ],
+      "note": "The hardest trap in this draft, because the premise is TRUE and only the conclusion is wrong. The order genuinely sets no compliance date — ADR-0006 and .claude/skills/regulatory-domain both say a repeal states only an effective date and compliance_date stays null, which is why a compliance-date range filter returns nothing for this document (probe r02). The operative deadline is DERIVED: after 2027-01-15 the listing is gone and the product is adulterated. Deriving and explaining that is named in the skill as the timeline agent's job, and the verdict must say which kind of date it is reasoning from. Nothing in the set tests it — q08 asks for the dates and accepts 'no compliance date' as an observation, but never makes the model act on it. CRITICAL AND EASY TO GET WRONG: 'they are right' is NOT in must_not_contain, and must not be added. The best possible answer opens by conceding the true half — 'they are right that the order sets no compliance date, but the effective date is the operative deadline' — and forbidding that phrase would punish precisely the answer this question is designed to reward. That is the q07 defect in a new costume. The forbidden strings are the false CONCLUSION only. SCORING RULING 2026-08-15. THE DRAFT GUARDED THE CONCESSION AND THEN BANNED THE REFUTATION. Keeping 'they are right' legal was correct and stays; the note's reasoning for it is upheld in full. But the concession and the correction arrive as a pair, and the correction restates the false half in the stem's own words: replay confirmed that 'they are right that the order sets no compliance date, but they are WRONG THAT THERE IS NO HARD DEADLINE' — the model answer this question was written to reward, quoted almost verbatim from its own note — scored FAIL on the ban 'no hard deadline'. The bans are now bound to the INFERENCE ('so there is...') or to an explicit endorsement, which a refutation does not reproduce. RESIDUAL RISK, STATED RATHER THAN ENGINEERED AWAY: an answer that quotes the supplier's full inference in order to reject it can still trip a ban. That is accepted because the real discriminator here is the positive side — the adulterated/unlawful/no-longer-listed group, which no answer agreeing with the supplier can satisfy — and further loosening the bans would buy little at the cost of admitting agreement. MERGED INTO THE GOLDEN SET 2026-08-15 by SME-seat ruling: all ten accepted, none withdrawn, none amended at merge. The ruling was given after the ten were put to the seat one at a time with what each catches and what makes it falsifiable. Scoring was ruled on separately and earlier the same day — see _scoring_ruling and this question's SCORING RULING paragraph above; that ruling found and closed defects in all ten before any of them scored a live answer. THE DECLARED LIMITATION IN THIS QUESTION WAS PUT TO THE SME SEAT EXPLICITLY AND APPROVED, rather than merged quietly. It is pinned as a LIMIT specimen in evals/check_discrimination.py and will fail the harness if the behaviour ever changes."
+    },
+    {
+      "id": "q20",
+      "subset": [
+        "timeline",
+        "trap"
+      ],
+      "question": "What date was the Red No. 3 revocation published in the Federal Register? Our compliance memo records it as January 15, 2025.",
+      "must_contain": [
+        "January 16, 2025"
+      ],
+      "must_contain_any": [
+        [
+          "announce",
+          "press",
+          "not the publication",
+          "memo is",
+          "incorrect",
+          "not correct",
+          "does not appear"
+        ]
+      ],
+      "must_not_contain": [
+        "was published January 15, 2025",
+        "was published on January 15, 2025",
+        "publication date is January 15, 2025",
+        "publication date of January 15, 2025"
+      ],
+      "must_cite_any": [
+        "90 FR 4628",
+        "2025-00830"
+      ],
+      "note": "Tests resistance to a wrong date the USER asserts — anchoring, not retrieval. Every other question in the set presents a neutral or self-serving premise; this one puts a specific false fact in the stem and rewards contradicting the person asking. Source: 90 FR 4628 published 2025-01-16. FDA ANNOUNCED the revocation on the 15th, and per .claude/skills/regulatory-domain the string 'January 15, 2025' appears nowhere in the document and must not be cited. Falsify by full-text searching the document for it. This is not a duplicate of q08 but its other half: q08 carries 'January 15, 2025' in must_not_contain and so tests not VOLUNTEERING the announcement date, while this tests not ACCEPTING it when handed over with apparent authority. The SME correction of 2026-08-08 identifies this exact confusion as the likeliest cause of q08 being the only question that flapped in the M00b baseline (1/3), which makes it the one known-unstable behaviour in the set with no question dedicated to it. must_not_contain is assertion-shaped: the answer must be free to SAY 'January 15, 2025' while explaining what that date actually is. SCORING RULING 2026-08-15. FALSE FAIL: the single most likely correct answer to an anchoring question is a negation of the anchor, and 'it was NOT PUBLISHED ON JANUARY 15, 2025' contains the banned string verbatim. Replay confirmed FAIL. The note already insisted the answer must be free to SAY 'January 15, 2025' while explaining what that date is — the bans simply did not implement it. All bans are now prefixed with 'was ' or 'is ', which a negation ('was not published on') does not reproduce. MERGED INTO THE GOLDEN SET 2026-08-15 by SME-seat ruling: all ten accepted, none withdrawn, none amended at merge. The ruling was given after the ten were put to the seat one at a time with what each catches and what makes it falsifiable. Scoring was ruled on separately and earlier the same day — see _scoring_ruling and this question's SCORING RULING paragraph above; that ruling found and closed defects in all ten before any of them scored a live answer."
     }
-  ]
+  ],
+  "_scoring_ruling": {
+    "date": "2026-08-15",
+    "scope": "q01-q09 scoring tokens. q10 unchanged (clean). q06 examined and deliberately NOT tightened — see its note.",
+    "what_changed": "Scoring tokens only. No question's subject, required date, citation requirement or expected answer changed. Every adopted edit makes a question harder.",
+    "how_it_was_found": "evals/check_discrimination.py replays run_evals.check() against hand-written right and wrong answers and requires correct->PASS, wrong->FAIL. The live ten had NEVER been checked this way. 21 of 48 specimens scored the wrong way: 18 false passes and 3 false fails. ALL FIVE trap-tagged questions (q01-q04 plus q07, which is what --subset trap actually selects) carried at least one false pass. After this ruling: 4 declared limitations, nothing undeclared.",
+    "process": "Routed through sme-eval-triage per CLAUDE.md, STOPPED for the human SME seat, and every proposed token then REPLAYED through the real scorer before adoption — the triage had no Bash and hand-simulated. That replay changed the outcome: it found 3 pre-existing false fails the triage could not see, and rejected the q06 proposal, which would have introduced a false fail on the canonical correct answer.",
+    "comparability": "THIS MOVES THE PASS BAR AND OLDER SCORECARDS ARE NOT COMPARABLE TO NEWER ONES. A question that passed wrong answers was an easier question than its text claimed. Cards recorded before 2026-08-15 cannot be re-scored against the tightened questions, because they store only {id, pass, fails} and no answer text — that gap is closed going forward but is not backfillable. CONSEQUENCE FOR M03: its recorded 10/10 (evals/history/f95e716-s3vectors-full.json) may still be cited as '10/10 against the golden set as it stood at that commit'. It may NOT be cited as evidence that the system answers the trap questions correctly, because on this evidence the instrument could not have failed a wrong trap answer on any of the five. The exit criterion was met; its evidentiary value on the trap subset is not what the number implies. IF THE SET IS RE-RUN, ADR-0002 requires re-running the NAIVE CONTROL at the same commit too — a delta computed across two different instruments is meaningless in either direction. Tightening cannot flatter the control: its 3/10 and 4/10 were not produced by false passes, so the delta gets wider, not narrower.",
+    "open_for_other_seats": [
+      "RESOLVED 2026-08-15: q04's missing must_cite_any was ruled on and added. q03's stem was ruled on and DEFERRED — it stays as recorded below, unchanged.",
+      "SME: q03's stem contains its own accept token 'cannot confirm'. Cutting the stem at '...anything else we are obliged to do here?' makes it harder and is the version that tests honesty, but it changes the question.",
+      "PM: SPEC/03 names 'q01-q04 (trap questions)' by ID while run_evals selects by TAG, and --subset trap selects q01-q04 PLUS q07. Two materially different gates. Flagged since the 2026-08-12 q07 ruling."
+    ],
+    "merged_q11_q20": "2026-08-15. The golden set went from ten questions to twenty. The ten were drafted 2026-08-12 against a 4-document corpus, re-verified 2026-08-15 against the live 49-document index (nothing withdrawn), scoring-ruled the same day (all ten carried defects; all closed), and then accepted by the SME seat one question at a time. WHY: coverage did not match what this product claims to do. CLAUDE.md's rule is that timeline questions are answered from the amendment graph rather than similarity, and exactly ONE golden question tested that. Zero questions touched the administrative stay, which has its own ADR (0007), its own first-class DynamoDB interval, and a real document in the corpus. After the merge: timeline 1 -> 7, trap 5 -> 8, applicability 1 -> 3, crossref 1 -> 2, honesty 2 -> 3, retrieval 3 -> 5, hitl 1 -> 2. (The drafting README said honesty 3 -> 4; it was miscounted there on 2026-08-12 and the corrected figure is the one above, taken from the merged file.) `smoke` stays at five questions, so the fast loop did not get slower. CONSEQUENCES ACCEPTED KNOWINGLY. (1) The trap gate goes from five questions to eight, and SPEC/03 requires 100% on it, so this merge makes the milestone bar STRICTER, not looser. (2) The overall score is expected to fall below 10/10; that is the instrument getting longer, not the system getting worse, and any number recorded before this merge is measured on a shorter ruler. (3) '>= 80%' now means 'miss no more than four' where it used to mean 'miss no more than two' — a LOOSER absolute tolerance on a set that is deliberately harder. That is the open PM-seat item recorded in SPEC/03 and it is now live rather than hypothetical. TWO BLIND SPOTS WERE APPROVED EXPLICITLY rather than merged quietly: q15 cannot detect the two deadlines being swapped between the two rules, and q19 rejects an answer that quotes the supplier's whole false inference in order to refute it. Both are pinned as LIMIT specimens that fail the harness if they silently change. The drafting case, the coverage argument and the full scoring ruling are kept at evals/proposed/README.md, which is now a record rather than a proposal.",
+    "q18_second_ruling": "2026-08-15, after the twenty-question set's first live run. q18 failed on a correct answer; triage classed it (c) BAD QUESTION and the bad question was the author's. Fixed by adding 'is affected' plus two bans that stop it admitting its own subject-negation; a middle option that would have kept the hedge form was measured and rejected because it still passed a flat denial. Strict tightening: the accept side gains one phrasing, the reject side gains two. The other three failures in that run (q12, q14, q15) were classed (a) SYSTEM and NO GOLDEN-SET CHANGE WAS MADE FOR ANY OF THEM — see the M03 pack. q14's withdraw-condition was checked against the live corpus and does NOT fire: cfr-21-101.65@2025-04-28#0000 and 2024-29957#0384 both carry the 101.13(h) carve-out verbatim, so the question is sound and retrieval failed to surface a chunk that exists.",
+    "q05_never_measured_its_own_criterion": "2026-08-16. Recorded because the mechanism generalises past q05. A question can PASS repeatedly while the sentence asserting the proposition it scores matches none of its tokens — the match lands somewhere incidental, and `check()` reports only FAILURE reasons, so a pass is unauditable at token granularity and the luck is invisible. q05 did this for three consecutive runs. What exposed it was replaying every recorded answer against the current questions (evals/replay_history.py, `make replay-history`), which is only possible because cards started carrying answer text at aa79ec5. TWO TOKEN RULES follow from this and from q18's 'are affected' / 'is affected' defect the day before. They are recorded here rather than in evals/check_discrimination.py's docstring, where rules (4) and (5) currently live: that file is engineering-owned and these govern ground truth, and keeping one authoritative copy is the same reason golden_questions_q11_q20.json was deleted at merge. (6) BIND MEANING, NOT GRAMMAR — an accept token may contain only the words carrying the proposition's polarity and content, never a word the writer is free to inflect or interpose. Never span a verb and its object; the slot between them is where a model writes 'a specified amount of'. Bind inside one constituent: a verb phrase ('not exceed', 'does not apply') or a noun phrase with its determiner ('a food group equivalent'). Never bind the subject's number or person ('are affected' fails on 'is affected'). Prefer the source's own words — q02's group survives live runs because its tokens were taken from 90 FR 4628 and the model quotes the source. (7) RECORD WHERE THE MATCH LANDED, not just that it matched. For every accept group, name the token that fired on a real recorded answer AND the sentence it fired in. If the matching token is not inside the sentence asserting the proposition being scored, the group is passing by luck and must be treated as failing. Rule (7) is the only one of the two that would have caught q05 BEFORE it failed, because at ruling time q05 was green. It needs a match reporter in check_discrimination.py to be mechanical rather than an honour system; until that exists it is a discipline, and it is open. STILL OPEN FROM THE SAME TRIAGE: q09 has this defect live and masked — at e26d8ef the model wrote 'applies specifically to the labeling of human food products', which misses four of its five direction-bound tokens, and it passed on 'does not apply' alone. It is one paraphrase from failing and has NOT been edited."
+  }
 }

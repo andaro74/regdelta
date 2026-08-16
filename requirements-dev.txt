@@ -1,0 +1,14 @@
+# Dev + CI tooling. `pip install -r requirements-dev.txt` gives you exactly what
+# the eval gate runs, which is the point: a lint or test that passes here and
+# fails in CI is a version drift, not a finding.
+#
+# Found at M03: CI pinned ruff==0.16.2 while this laptop had 0.16.1. The pin's
+# stated purpose is that "identical code passes or fails identically regardless
+# of the day of the pip resolve" — which it cannot do if local and CI pin
+# different versions. One file now, so they cannot diverge again.
+-r requirements.txt
+
+# Rule SELECTION lives in ruff.toml, also explicit. Both halves matter: the
+# version fixes what the rules mean, ruff.toml fixes which rules apply.
+ruff==0.16.2
+pytest==9.1.1

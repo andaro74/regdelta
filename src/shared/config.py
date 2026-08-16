@@ -18,6 +18,20 @@ EMBED_DIM = 1024
 
 CONFIDENCE_HITL_THRESHOLD = float(os.environ.get("HITL_THRESHOLD", "0.7"))
 
+# ------------------------------------------------------------- agent graph (03)
+# Bedrock prompt caching for the static system preamble (SPEC/03 "Model
+# policy"). On by default because the preamble is identical across every
+# question in a golden run, so a 10-question run reads the cache nine times.
+# `nodes._converse` falls open if the model rejects the cachePoint block —
+# an unsupported optimisation must not block a measurement.
+PROMPT_CACHE = os.environ.get("PROMPT_CACHE", "1") == "1"
+
+# How many cross-referenced CFR sections the crossref agent will resolve, and
+# how many chunk ids it takes per citation. A bound rather than a tuning knob:
+# "as defined in §" chains can fan out, and an unbounded expansion would crowd
+# the verdict prompt with sections nobody asked about.
+CROSSREF_MAX = int(os.environ.get("CROSSREF_MAX", "4"))
+
 SSM_SEARCH_ENDPOINT = "/regdelta/search/endpoint"
 
 # ----------------------------------------------------------- retrieval (02)
@@ -99,11 +113,72 @@ QUEUE_URL = os.environ.get("QUEUE_URL", "")
 SEMANTIC_CACHE = os.environ.get("SEMANTIC_CACHE", "0") == "1"
 RERANK = os.environ.get("RERANK", "0") == "1"
 
+# ------------------------------------------------------------- graph (03)
+# LangSmith tracing is FORCED OFF, and this is a data-egress control rather
+# than a preference. `langgraph` pulls `langsmith` transitively (M03), and
+# langsmith uploads prompts, inputs and outputs to a third-party SaaS endpoint
+# when LANGSMITH_TRACING or LANGCHAIN_TRACING_V2 is truthy. For this product
+# those payloads are the worst possible thing to leak by accident: the company
+# profile a user submits (revenue tier, product lines) plus the regulatory
+# analysis derived from it.
+#
+# It is off by default upstream, so this changes nothing today. It exists
+# because the failure mode is a single environment variable — one `export
+# LANGSMITH_TRACING=1` in a shell, one leftover value in a Lambda config — and
+# nothing in the code would report it. Same reasoning as pinning versions:
+# defaults are not decisions until they are written down. Setting the variables
+# rather than reading them means an inherited value is overridden, not detected.
+#
+# Deliberately NOT configurable. If tracing is ever wanted, that is a decision
+# about sending customer data to a third party, and it belongs in an ADR and a
+# spec — not in an env var that already exists.
+os.environ["LANGSMITH_TRACING"] = "false"
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
+os.environ["LANGSMITH_OTEL_ENABLED"] = "false"
+
 # ---------------------------------------------------------------- ingestion
 FR_API = "https://www.federalregister.gov/api/v1"
 ECFR_API = "https://www.ecfr.gov/api/versioner/v1"
 FR_AGENCY_SLUG = "food-and-drug-administration"
 FR_DOC_TYPES = ("RULE", "PRORULE", "NOTICE")
+
+# ------------------------------------------------------- poller scope (SPEC/01)
+# FDA is one agency publishing for food, drugs, devices, veterinary medicine and
+# tobacco, so "agency = FDA" is not a subject filter. Unfiltered, the poller
+# ingested a digital breast tomosynthesis reclassification, three more device
+# reclassifications and a run of drug user-fee notices into a food-labeling
+# corpus — 30 documents in two weeks, competing for the eight retrieval slots
+# every answer gets.
+#
+# THE DISCRIMINATOR IS THE CFR REFERENCE, and it was chosen by measurement
+# rather than taste. Against the 49 documents in the corpus on 2026-08-15:
+#
+#   21 CFR part <= 199   ->  the 6 documents this product is actually about
+#                            (101 healthy rule + its delay, 74 Red No. 3 + the
+#                            stay lift, 170/570 GRAS, 117 RTE food guide)
+#   21 CFR part >= 200   ->  the 5 device documents, all of them
+#
+# TOPICS WERE TRIED AND ARE WRONG. The Red No. 3 order's topics are
+# ['Color additives', 'Cosmetics', 'Drugs'] — no "Food labeling" anywhere — so
+# a topic allowlist would drop the document half the golden set is about.
+FR_FOOD_CFR_TITLE = 21
+# Title 21 splits cleanly at 200: parts 1-199 are food (70-82 colour additives,
+# 100-169 labelling and standards, 170-199 food additives); 200+ are drugs,
+# 500s veterinary, 800s devices, 1100+ tobacco.
+FR_FOOD_CFR_MAX_PART = int(os.environ.get("FR_FOOD_CFR_MAX_PART", "199"))
+
+# What to do with a document that cites NO CFR part at all — 38 of the 49, and
+# unfilterable by any other structured field: they carry no topics either (all
+# 26 sampled were empty), so only the title distinguishes "Food Safety
+# Modernization Act Third-Party Certification" from "Prescription Drug User Fee
+# Rates", and title matching is not a scope rule.
+#
+# Default EXCLUDE. A document citing no CFR part amends no regulation, so it
+# cannot be the subject of "what changed and what is the deadline" — this
+# product's whole question. That is a scope judgement, which is why it is a
+# flag and not an assumption: POLL_REQUIRE_CFR=0 restores the old behaviour and
+# takes the drug and device fee notices back with it.
+POLL_REQUIRE_CFR = os.environ.get("POLL_REQUIRE_CFR", "1") == "1"
 POLL_LOOKBACK_DAYS = int(os.environ.get("POLL_LOOKBACK_DAYS", "7"))
 
 # ------------------------------------------------- ingestion input hardening

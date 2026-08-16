@@ -1,0 +1,25 @@
+# RegDelta runtime dependencies. Pinned exactly, for the same reason
+# .github/workflows/evals.yml pins its tools: unpinned, what runs in CI is
+# whatever the resolver picked that morning, and "identical code passed
+# yesterday" stops being information.
+#
+# This file did not exist until M03. Everything through M02 ran on stdlib +
+# boto3, so dependencies were ambient — which was survivable at four packages
+# and is not at twenty-five. If you add one, add it here and say why.
+
+# AWS SDK. The only runtime dependency through M02: S3, S3 Vectors, DynamoDB,
+# Bedrock, SSM. AOSS's data plane is hand-signed on top of botocore's SigV4
+# (src/retrieval/aoss_client.py) rather than via a client.
+boto3==1.43.54
+
+# Agent graph (SPEC/03, M03). Verified to resolve on Python 3.14.3 with cp314
+# binary wheels — no build-from-source step. Pulls langchain-core and ~20
+# transitive packages; that cost was accepted deliberately, see
+# docs/adr/0010 if one is written, and the M03 evidence pack either way.
+#
+# NOT included and deliberately so: langchain, langchain-community,
+# langchain-aws. Bedrock is called through boto3 Converse directly
+# (src/baseline/naive.py, src/retrieval/rerank.py, and the graph nodes), so a
+# provider wrapper would add a second way to do the thing this repo already
+# does one way.
+langgraph==1.2.11

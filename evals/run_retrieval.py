@@ -41,7 +41,11 @@ sys.path.insert(0, str(HERE.parent / "src"))
 # reporting layer rather than the thing being reported.
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-from run_evals import git_sha  # noqa: E402  (path set above)
+from run_evals import (  # noqa: E402  (path set above)
+    corpus_fingerprint,
+    git_dirty,
+    git_sha,
+)
 
 from shared import config  # noqa: E402
 from shared.models import Filters  # noqa: E402
@@ -85,32 +89,6 @@ def resolve_stack_env() -> None:
             r["PhysicalResourceId"] for r in resources
             if r["ResourceType"] == "AWS::DynamoDB::Table"
             and r["LogicalResourceId"].startswith("RegistryTable"))
-
-
-def git_dirty() -> bool:
-    """True if the working tree differs from HEAD.
-
-    A scorecard is evidence, and `git_sha()` reports HEAD whether or not the
-    tree matches it — so recording from a dirty tree files a measurement under
-    a commit that cannot reproduce it. That is worse than no evidence: it
-    survives into milestones/ and reads as a verified claim. Caught while
-    recording the first Tier A run, which was labelled with the previous
-    commit's sha.
-
-    `evals/history/` is excluded. Scorecards are OUTPUTS: the two tier runs
-    have to happen at the same commit (run_parity pairs them by sha), the
-    second run cannot happen until the hot tier is deployed, and committing
-    the first run's card in between would move HEAD and guarantee the pair
-    never matches. A scorecard sitting in the tree changes nothing about what
-    the code under measurement does.
-    """
-    import subprocess
-    try:
-        return bool(subprocess.check_output(
-            ["git", "status", "--porcelain", "--",
-             ".", ":(exclude)evals/history"], text=True).strip())
-    except Exception:  # noqa: BLE001 — no git means no claim either way
-        return False
 
 
 def _json_attr(item: dict, key: str):
@@ -383,7 +361,17 @@ def run(tier_requested: str, record: bool, allow_dirty: bool = False) -> int:
             # Tier A has no lexical lane; the field records the flag as the run
             # saw it, which is what makes a pair one configuration.
             "lexical_lane": config.RETRIEVAL_LEXICAL_LANE,
+            # The probe set's own claim about when it was authored — a
+            # HAND-WRITTEN string, and therefore a claim about the past that
+            # nothing updates.
             "corpus_snapshot": truth.get("corpus_snapshot"),
+            # What actually answered this run. The same argument that put a
+            # fingerprint on golden-set cards applies here and applies harder:
+            # this card asserts recall, and recall against WHICH corpus is the
+            # whole content of the claim. The poller moved the corpus from 4
+            # documents to 49 while the snapshot string above still said
+            # 2026-08-08 (ADR-0011).
+            "corpus": corpus_fingerprint(),
             # Recall is not answer quality. The M00b control measures answer
             # quality, so a recall number is not a delta against it and must
             # not be read as one (SPEC/02 "Scorecard namespace").

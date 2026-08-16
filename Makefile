@@ -17,7 +17,22 @@ RERANK       ?= 0
 LEXICAL_LANE ?= 0
 CDK          := cd infra && npx cdk
 
-.PHONY: help bootstrap core up down status smoke evals lint test demo ingest-backfill synth diff \
+# The loopback shim runs the real graph in-process, so it needs the same
+# configuration the deployed function has — buckets, tables, the search-endpoint
+# parameter — and it exits if any of it is missing. Those values come from the
+# DEPLOYED LAMBDA'S OWN ENVIRONMENT rather than from the operator's shell or from
+# hand-picked CloudFormation outputs: it is what production runs with, CDK sets
+# it, and a variable added to the function reaches this target with no change
+# here. Already-exported values win. Evaluated inside the recipe, never at parse
+# time — `make help` must not need AWS credentials.
+#
+# This exists because both targets recorded a 0/10 scorecard on 2026-08-15 with
+# VECTOR_BUCKET unset, and then failed a second time on REGISTRY_TABLE, which the
+# stack does not export at all. Chasing outputs one at a time was the wrong fix.
+# See evals/local_env.py and evals/wait_ready.py.
+RESOLVE_ENV = eval "$$(python evals/local_env.py)";
+
+.PHONY: help bootstrap core up down status smoke evals agent-evals discrimination replay-history lint test demo ingest-backfill synth diff \
         retrieval-evals retrieval-parity preflight rebuild-vectors
 
 help:
@@ -25,6 +40,9 @@ help:
 	@echo "make up / make down  - create/destroy AOSS hot tier"
 	@echo "make status          - tier state"
 	@echo "make smoke / evals   - golden-set checks (definition of done)"
+	@echo "make agent-evals     - golden set vs the LOCAL agent graph (SPEC/03)"
+	@echo "make discrimination  - can each question tell right from wrong? (no API)"
+	@echo "make replay-history  - would it have scored the answers we really got?"
 	@echo "make retrieval-evals - probe set vs the CURRENT tier (SPEC/02 A)"
 	@echo "make retrieval-parity- cross-tier gate; needs both runs recorded"
 	@echo "                       (ARGS=\"--rerank 1\" gates the RERANK=1 pair)"
@@ -76,6 +94,24 @@ smoke:
 
 evals:
 	python evals/run_evals.py
+
+# Measures the INSTRUMENT, not the system: replays run_evals.check() against
+# hand-written right and wrong answers and requires it to tell them apart. No
+# API, no corpus, no cost. Run it whenever a question is added or its scoring
+# tokens change — the defects it finds are invisible to reading (ADR-0005; the
+# 2026-08-12 q07 ruling, defect 4).
+discrimination:
+	python evals/check_discrimination.py $(ARGS)
+
+# The other half of the same job.  asks whether a question can
+# tell a HAND-WRITTEN right answer from a wrong one; this asks whether it would
+# have scored the answers the system ACTUALLY gave, replayed from the recorded
+# scorecards. Hand-written specimens share an author with the scoring tokens and
+# so share their blind spots — three questions were written on 2026-08-15 in a
+# phrasing the model does not use, and all three passed the specimens. No API,
+# no corpus, no cost.
+replay-history:
+	python evals/replay_history.py $(ARGS)
 
 # SPEC/02 Done-when (A). Measured at the retrieval contract, in-process —
 # not through an answering endpoint, which is M04's.
@@ -130,10 +166,33 @@ rebuild-vectors:
 # M00b control. Reproduces the permanent baseline scorecard: starts the
 # loopback shim, runs the full golden set against mode=naive, records it.
 baseline:
-	@python evals/serve_local.py --port 8000 & echo $$! > .baseline.pid; \
-	  sleep 2; \
+	@$(RESOLVE_ENV) \
+	  python evals/serve_local.py --port 8000 & echo $$! > .baseline.pid; \
+	  python evals/wait_ready.py http://127.0.0.1:8000 \
+	    || { kill $$(cat .baseline.pid) 2>/dev/null; rm -f .baseline.pid; exit 1; }; \
 	  python evals/run_evals.py --mode naive --api-url http://127.0.0.1:8000 --record; \
-	  status=$$?; kill $$(cat .baseline.pid); rm -f .baseline.pid; exit $$status
+	  status=$$?; kill $$(cat .baseline.pid) 2>/dev/null; rm -f .baseline.pid; exit $$status
+
+# SPEC/03's Done-when, runnable. `make evals` resolves the API URL from the
+# deployed stack, and that endpoint is src/api/api.py — SPEC/04's, still
+# NotImplementedError — so the milestone whose exit criterion IS the golden set
+# had no command that could run it. Same loopback shim as `baseline`, mode=agent
+# instead of naive.
+#
+# The shim now refuses to share its port (evals/serve_local.py), so a stale
+# instance fails this target loudly instead of quietly answering the run with
+# the previous commit's code, which is how one scorecard already got filed
+# under the wrong sha.
+#
+# ARGS="--record" to file the scorecard; omitted by default because recording
+# is a milestone-close act, not something a routine check should do.
+agent-evals:
+	@$(RESOLVE_ENV) \
+	  python evals/serve_local.py --port 8000 & echo $$! > .agent.pid; \
+	  python evals/wait_ready.py http://127.0.0.1:8000 \
+	    || { kill $$(cat .agent.pid) 2>/dev/null; rm -f .agent.pid; exit 1; }; \
+	  python evals/run_evals.py --mode agent --api-url http://127.0.0.1:8000 $(ARGS); \
+	  status=$$?; kill $$(cat .agent.pid) 2>/dev/null; rm -f .agent.pid; exit $$status
 
 # Same scope as the eval-gate `unit` job, so a green local run means a green
 # gate. Keep the two in step.

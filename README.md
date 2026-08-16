@@ -11,7 +11,7 @@ question set, and journaled — the repo history IS the demo.
 | 00b | Naive-RAG baseline (the control) | `m00b` | 1/4 * | 30% | ✅ |
 | 01 | Ingestion + amendment graph | `m01` | n/a | n/a | ✅ |
 | 02 | Two-tier retrieval (S3 Vectors / AOSS) | `m02` | n/a ** | 9/9 probes ** | ✅ |
-| 03 | Agent graph + HITL | `m03` | –/4 | –% | ⬜ |
+| 03 | Agent graph + HITL | `m03` | 4/4 | 100% *** | ✅ |
 | 04 | API + demo UI | `m04` | – | – | ⬜ |
 | 05 | Deploy + lifecycle | `m05` | – | – | ⬜ |
 | 06 | Load + observability | `m06` | – | – | ⬜ |
@@ -40,6 +40,20 @@ measured *worse* than vector-only (7/9 vs 9/9), so the lexical lane is off
 (ADR-0009 Ruling 3(a)); and Tier B's replacement justification — latency — is
 **unmeasured**, owed to SPEC/04, with ADR-0001 amended to reopen if it shows no
 advantage.
+\*\*\* **M03's 100% is against a re-run control, not against the 30% above it.**
+The M00b row was recorded on a different instrument: four of the ten golden
+questions have been rewritten since (q03 and q07 on 2026-08-12, q02 and q08 on
+2026-08-15, each under an SME-seat ruling with sources), and the corpus has
+grown from 4 FR documents to 49. So the control was **re-run at M03's own
+commit, against M03's questions, over M03's corpus** — `naive` scores **4/10,
+traps 2/4** there, and the agent scores **10/10, traps 4/4**. That is the
+delta this row claims. Re-running the control is not improving it (ADR-0002);
+`src/baseline/naive.py` is untouched. Evidence:
+`evals/history/ac839ca-{naive,s3vectors}-full.json`, both recorded from a
+clean tree, both carrying the corpus fingerprint that makes them comparable.
+The corpus changed *during* the closing session — 34 documents to 49 — which
+is why that fingerprint now exists (ADR-0011).
+
 The intended arc: baseline fails the trap questions → retrieval fixes
 recall → the agent graph fixes the traps → the rest makes it production-
 shaped. Evidence lives in milestones/M*/ and evals/history/.

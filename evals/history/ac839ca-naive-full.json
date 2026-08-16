@@ -1,0 +1,90 @@
+{
+  "sha": "ac839ca",
+  "dirty": false,
+  "at": "2026-08-15T16:09:03+00:00",
+  "tier": "naive",
+  "mode": "naive",
+  "subset": null,
+  "corpus": {
+    "available": true,
+    "documents": 49,
+    "documents_sha": "b70879d76cea",
+    "newest_pub_date": "2026-08-17",
+    "oldest_pub_date": "2024-12-27"
+  },
+  "provenance": {
+    "model": "us.anthropic.claude-opus-4-6-v1",
+    "top_k": 8
+  },
+  "passed": 4,
+  "total": 10,
+  "wall_s": 71.5,
+  "questions": [
+    {
+      "id": "q01",
+      "pass": false,
+      "fails": [
+        "missing required: 'February 25, 2028'",
+        "no citation from ['89 FR 106064', '2024-29957']"
+      ]
+    },
+    {
+      "id": "q02",
+      "pass": true,
+      "fails": []
+    },
+    {
+      "id": "q03",
+      "pass": false,
+      "fails": [
+        "missing required: 'January 15, 2027'"
+      ]
+    },
+    {
+      "id": "q04",
+      "pass": true,
+      "fails": []
+    },
+    {
+      "id": "q05",
+      "pass": false,
+      "fails": [
+        "no citation from ['21 CFR 101.65', '89 FR 106064']"
+      ]
+    },
+    {
+      "id": "q06",
+      "pass": true,
+      "fails": []
+    },
+    {
+      "id": "q07",
+      "pass": false,
+      "fails": [
+        "missing required: 'February 25, 2028'",
+        "no citation from ['89 FR 106064', '2024-29957', '21 CFR 101.65']"
+      ]
+    },
+    {
+      "id": "q08",
+      "pass": false,
+      "fails": [
+        "missing required: 'January 15, 2027'",
+        "missing required: 'January 16, 2025'",
+        "none of ['no compliance date', 'does not set a compliance date', 'no separate compliance date', 'deadline is the effective date', 'none stated', 'none is stated', 'not stated', 'does not establish a compliance date', 'no compliance date is set'] present"
+      ]
+    },
+    {
+      "id": "q09",
+      "pass": true,
+      "fails": []
+    },
+    {
+      "id": "q10",
+      "pass": false,
+      "fails": [
+        "status='answered', expected one of ['pending_review', 'needs_input']"
+      ]
+    }
+  ]
+}
