@@ -1,11 +1,14 @@
 # M03 — Agent graph + HITL
 
-- Git tag: `m03`               Commit: `<close sha>`   Branch: `m03-agent-graph`
+- Git tag: `m03` → `ff5fff6`   Branch: `m03-agent-graph`
 - Spec: SPEC/03-agents.md      ADRs: **ADR-0010** (checkpointer), **ADR-0011**
   (poller scope) added here; ADR-0006 and ADR-0007 are consumed by the timeline
   agent for the first time
-- Sessions: 1 Claude Code session, 2026-08-15, ~3.5 hrs wall clock
-  (`6aec3cc` 05:36 → `ac839ca` 09:05)
+- Sessions: 1 Claude Code session, 2026-08-15. Milestone work ~3.5 hrs
+  (`6aec3cc` 05:36 → `ac839ca` 09:05), tagged `ff5fff6` 09:14. **Work continued
+  for ~10 hrs after the tag** and the branch is now well ahead of it — see
+  "After the tag" below. Everything in this pack up to that section describes
+  the milestone as closed; everything after it is amendment.
 
 ## Scorecard
 | run | tier | mode | pass | total | wall_s | corpus docs |
@@ -19,24 +22,32 @@
 | `7f012b8` | — | naive (frozen M00b) | 3 | 10 | 81.0 | *not recorded* |
 | `74822d4` | s3vectors | **agent, tightened set** | **10** | 10 | 129.2 | 49 |
 | `74822d4` | s3vectors | naive (control, tightened set) | 3 | 10 | 70.4 | 49 |
+| `2cea737` | s3vectors | **agent, TWENTY questions** | **16** | 20 | 257.8 | 49 |
+| `2cea737` | s3vectors | naive (control, twenty) | 5 | 20 | 165.6 | 49 |
 
-Six agent runs are listed and a seventh happened: a 9/10 at `fd98d64`, which
+Seven agent runs are listed and an eighth happened: a 9/10 at `fd98d64`, which
 scored q02 as the single failure. Its card is **not in `history/`** — it was
 withdrawn at `585a95f` because a stale loopback shim had answered that run, so
 the card described code its own sha did not contain. The commit message at
 `c68b4a3` remains the record that the run happened.
 
-**Delta vs baseline — the number to quote is the second one:**
+**Delta vs baseline — three rulers, three numbers:**
 
 | measured | instrument | overall | traps |
 |---|---|---|---|
 | at close, `ac839ca` | golden set as it stood then | 40% → 100% | 2/5 → 5/5 |
-| **re-measured, `74822d4`** | **tightened set, shown to discriminate** | **30% → 100%** | **1/5 → 5/5** |
+| re-measured, `74822d4` | tightened set, ten questions | 30% → 100% | 1/5 → 5/5 |
+| **current, `2cea737`** | **twenty questions, 102 specimens green** | **25% → 80%** | **1/8 → 8/8** |
 
-The re-measured row is the citable one: its instrument has been checked against
-right *and* wrong answers, and both runs carry the answers that earned them.
-The close-time row is kept because deleting a superseded measurement is how a
-record becomes a story.
+**Quote the last row.** Each is a different ruler, and the later ones are
+longer: `74822d4` tightened the ten questions after finding they could be gamed,
+`2cea737` added ten more. The agent's absolute score falls (100% → 80%) while
+the delta over the control holds and the trap count triples — which is what a
+harder instrument is supposed to do to an honest system. The earlier rows are
+kept because deleting a superseded measurement is how a record becomes a story.
+
+The three failures behind 16/20 are system defects, not question defects: they
+are listed under "After the tag" and deferred to M04 with evidence.
 
 <sup>Trap counts amended 2026-08-15 from `2/4 → 4/4`. Not a re-run — a re-read
 of the cards already on file. The gate is selected by TAG, and the `trap` tag
@@ -227,3 +238,63 @@ to twenty questions in a draft (`evals/proposed/`) whose four-document corpus
 premise was false within hours of being written. Drafting ground truth against
 a corpus that changes daily needs the corpus pinned first — which is now
 possible, because the cards carry a fingerprint.
+
+---
+
+## After the tag — 2026-08-15, ~10 hrs (`ff5fff6` → `09e0014`)
+
+The milestone closed at 10/10 and then the instrument that produced that number
+was checked, for the first time, against the thing a scorecard implicitly
+assumes: **that a question can tell a right answer from a wrong one.** It could
+not. What follows happened after the tag, on the same branch, and is amendment
+rather than milestone evidence.
+
+**The golden questions could be gamed, all of them.** 21 of 48 hand-written
+answers scored the wrong way — 18 false passes, 3 false fails — and **every one
+of the five trap-tagged questions passed the exact wrong answer it was built to
+catch.** q18's accept token `affected` is a substring of `not affected`; q14
+passed the precise negation of its own correct answer; q05 could not tell the
+'healthy' criteria from their inverse. Ruled on and closed
+(`_scoring_ruling` in `evals/golden_questions.json`); `evals/check_discrimination.py`
+now replays the real scorer against 102 right-and-wrong specimens and is the
+reason any of this is checkable.
+
+**Why it was invisible:** the same seat wrote the questions and the wrong-answer
+specimens, and phrased the wrong answers the way its own bans anticipated. A
+discrimination test authored by whoever wrote the bans tests the bans against
+themselves and always passes. That is the single most transferable thing this
+session produced, and it is in the harness's module docstring rather than only
+here.
+
+**Scorecards now record the answer, not just the verdict.** They carried
+`{id, pass, fails}`, so a FAILURE was legible and a PASS was dark — the wrong
+way round. When the false passes were found there was no way to ask whether any
+recorded pass had been earned. Re-running settled it (see the scorecard table),
+but only for runs from `aa79ec5` onward; earlier cards are not backfillable.
+
+**A shim that never started recorded a 0/10 scorecard, twice.** Both eval
+targets backgrounded the loopback shim and slept a fixed 2–3 s, which cannot
+distinguish "still starting" from "never started". Fixed at three layers: the
+runner refuses to record a run where nothing reached the API, `wait_ready.py`
+fails before the Bedrock spend, and the Makefile resolves configuration from the
+deployed Lambda instead of the operator's shell.
+
+**The golden set is now twenty questions**, ruled on one at a time. Coverage was
+the reason: one timeline question, for a product whose thesis is timelines, and
+zero touching the administrative stay that ADR-0007 exists for. On its **first
+live run** the new questions found three real system defects — a `crossref_agent`
+whose output no node reads, retrieval crowding that hides a chunk which
+demonstrably exists, and a single unfiltered query that answers a two-trigger
+question with one trigger. All three are deferred to M04 with evidence, not
+fixed at the end of a long session.
+
+**Current: 16/20 (80%), traps 8/8; control 5/20.** That is the honest number on
+the longer ruler, and it sits exactly on the ≥80% bar with no margin — which is
+why `≥ 80%` as a *form* of bar is now an open PM item in SPEC/03.
+
+**Reviews:** `security-reviewer` found the CI eval gate could not fail (two
+independent fail-open paths, both fixed at `b6b7779`) and three unpaginated
+DynamoDB reads in the checkpointer, one of which meant `delete_thread` never
+deleted the review item it exists to delete (`09e0014`). `pm-spec-reviewer`
+found SPEC/03's exit criterion named four questions by ID while the gate selects
+five by tag, plus three further defects in the same sentence.
