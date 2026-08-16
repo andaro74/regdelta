@@ -24,6 +24,7 @@
 | `74822d4` | s3vectors | naive (control, tightened set) | 3 | 10 | 70.4 | 49 |
 | `2cea737` | s3vectors | **agent, TWENTY questions** | **16** | 20 | 257.8 | 49 |
 | `2cea737` | s3vectors | naive (control, twenty) | 5 | 20 | 165.6 | 49 |
+| `e26d8ef` | s3vectors | agent, twenty, after the gate fixes | 16 | 20 | 262.0 | 49 |
 
 Seven agent runs are listed and an eighth happened: a 9/10 at `fd98d64`, which
 scored q02 as the single failure. Its card is **not in `history/`** — it was
@@ -37,7 +38,7 @@ the card described code its own sha did not contain. The commit message at
 |---|---|---|---|
 | at close, `ac839ca` | golden set as it stood then | 40% → 100% | 2/5 → 5/5 |
 | re-measured, `74822d4` | tightened set, ten questions | 30% → 100% | 1/5 → 5/5 |
-| **current, `2cea737`** | **twenty questions, 102 specimens green** | **25% → 80%** | **1/8 → 8/8** |
+| **current, `2cea737`** | **twenty questions, 103 specimens green** | **25% → 80%** | **1/8 → 8/8** |
 
 **Quote the last row.** Each is a different ruler, and the later ones are
 longer: `74822d4` tightened the ten questions after finding they could be gamed,
@@ -46,8 +47,16 @@ the delta over the control holds and the trap count triples — which is what a
 harder instrument is supposed to do to an honest system. The earlier rows are
 kept because deleting a superseded measurement is how a record becomes a story.
 
-The three failures behind 16/20 are system defects, not question defects: they
-are listed under "After the tag" and deferred to M04 with evidence.
+The delta row stays at `2cea737` because it is the last commit where BOTH the
+agent and the control ran on the same instrument — ADR-0002's requirement. The
+later agent-only run at `e26d8ef` scores the same 16/20 after the gate fixes
+(`e26d8ef` added three HITL triggers; they fired zero times, so the score is
+unchanged and that is the honest reading of them).
+
+The failures behind 16/20 are system defects, not question defects: q12, q14 and
+q15 are listed under "After the tag" and deferred to M04 with evidence. q05 also
+failed at `e26d8ef` and was a QUESTION defect, ruled on at `d478a12` — it had
+never once scored the sentence stating its own criteria.
 
 <sup>Trap counts amended 2026-08-15 from `2/4 → 4/4`. Not a re-run — a re-read
 of the cards already on file. The gate is selected by TAG, and the `trap` tag
