@@ -83,6 +83,15 @@ Worked example: Red No. 3 order 2025-00830 (90 FR 4628) → stayed 2025-02-18 �
 Common pattern: $10M annual food sales splits compliance timelines
 (bigger = sooner). Always resolve deadlines against company profile.
 
+**Verify the tier per rule — never assume it.** That threshold is real in FDA
+labeling generally (the Nutrition Facts rule), but it does **not** apply to
+the "healthy" rule: FDA considered a longer small-business period and declined
+it (2024-29957#0303), so 2028-02-25 is uniform. Zero mentions of any dollar
+threshold exist across the whole corpus. Asserting a size tier that the rule
+does not contain invents an exemption — the mirror of inventing a deadline,
+and the same class of error as ADR-0006. If a rule sets no tier, applicability
+turns on conduct (here: whether the product bears a "healthy" claim).
+
 ## Binding vs non-binding
 Final rule / order = binding. Guidance, press releases, "FDA encourages…"
 = requests. Verdicts must label which is which.

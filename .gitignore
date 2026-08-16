@@ -4,4 +4,9 @@ __pycache__/
 infra/cdk.out/
 loadtest/reports/
 .milestone-active
+# Loopback-shim pid files, written by `make baseline` / `make agent-evals`.
+# Not ignoring them makes the tree dirty for the duration of the run, and
+# run_evals.py --record refuses a dirty tree — so the harness would fail on
+# a file the harness itself created, seconds after creating it.
+*.pid
 infra/cdk.context.json

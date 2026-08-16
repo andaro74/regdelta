@@ -31,3 +31,104 @@ golden set here" — that deferral is only honest if this clause holds.
 This also re-verifies SPEC/00's "same golden set must pass on both paths":
 after M02, cross-tier evidence is chunk-level only, so the live tier-switch
 demo moment above has no answer-level verifier until this runs.
+
+### Answer-level cross-tier comparability (owed by ADR-0009)
+Passing the same assertions on both tiers is **not** the same as producing
+comparable *answers*, and the tier-switch demo beat sells the latter. ADR-0009
+recorded this as unhomed; it is homed here.
+
+`answer_rows[]` are SPEC/03's verdict rows — `{product, trigger,
+required_change, real_deadline, confidence, citations[]}`.
+
+**Done when:** `make demo-parity` writes
+`milestones/M04/answer-parity-<sha>.json` recording, per canned scenario per
+tier: the citation set, every `real_deadline`, and each response's **cache
+status**. It passes when, for each scenario, the two tiers agree on (a) every
+`citations[]` entry — FR doc number and CFR section, as sets — and (b) every
+`real_deadline`, exactly. Confidence may differ; prose may differ. **A citation or
+a date that changes when only the infrastructure changed is a bug**, by the same
+argument that makes an uncited answer a bug rather than a style issue.
+
+Two controls, without which this criterion measures nothing:
+
+1. **Both runs bypass the response cache**, and the artifact records that they
+   did. The cache is an exact-match DynamoDB lookup on the normalised question
+   hash with a 1h TTL, and the two tier runs are minutes apart across a `make up`
+   / `make down` — well inside the TTL. Uncontrolled, the second tier's request is
+   a **cache hit returning the first tier's stored answer**, so citations and
+   dates agree by construction and the criterion measures the cache.
+2. **Each scenario is additionally answered twice on ONE tier.** Without a
+   same-tier control a disagreement cannot be attributed: ordinary LLM
+   run-to-run variance and genuine tier-caused divergence look identical. A
+   same-tier disagreement is a **determinism** finding and voids the cross-tier
+   reading for that scenario.
+
+> **Both controls are corrections, not refinements.** The first draft of this
+> criterion was **green by construction via the response cache** — the same defect
+> class as ADR-0009 fact 4's in-filter tautology (a comparison that was 1/1 by
+> construction and measured nothing), reproduced in a criterion written *after*
+> that finding was recorded. It also claimed a disagreement "indicates the answer
+> layer is non-deterministic across tiers", which does not follow without control
+> 2 — the same instrument objection SPEC/02 makes against using the golden set at
+> M02, pointed at my own new criterion. And it asserted on `real_deadline`, a
+> field this spec never defined, with no command or artifact producing the
+> comparison. `pm-spec-reviewer` B10 and B11.
+
+After ADR-0009 Ruling 3(a) both tiers run the same retrieval algorithm, so this is
+expected to pass easily. It stays because "expected to pass" is not "checked", and
+because the tier-switch demo beat sells answer-level equivalence specifically.
+
+### Tier B's latency claim (owed by ADR-0009 Ruling 3(a))
+Ruling 3(a) retired Tier B's relevance justification: with the lexical lane off
+it runs the same algorithm as Tier A, so its only remaining candidate
+justification is **latency**. (An earlier draft said "latency and concurrent
+load"; concurrent load is homed in no milestone before M06 and is struck here and
+declared out of scope below — half a justification no criterion will ever check is
+worse than none.) The UI above already displays a retrieval-latency readout;
+displaying a number is not asserting one, and **retiring an unmeasured hybrid
+claim in favour of an unmeasured performance claim would be the same defect in
+new clothes.**
+
+**Done when:** the UI readout is populated from a real per-query measurement
+through the deployed API on both tiers, and `make demo-parity`'s artifact records
+**median and p95 `router.retrieve()` latency per tier over the probe set**. The
+artifact number is what gates; the UI readout is what a viewer sees. Those are
+different instruments — in-process harness versus Lambda round trip — and an
+earlier draft fused them into one criterion without saying which one gates
+(`pm-spec-reviewer` N5).
+
+**No target is set here, deliberately.** A threshold invented before the first
+measurement would be fitted to nothing, and if Tier B turns out *not* to be
+meaningfully faster at this corpus size that is a finding to record and a demo
+beat to drop, not a number to tune until it passes. What this criterion gates is
+the **existence and honesty of the number**. Deciding what to do with it is a
+PM-seat call once it exists.
+
+**This obligation is older than this milestone.** ADR-0001's Evidence line asked
+for "retrieval p50 per tier" recorded at **M02**. M02 closed without it, recorded
+as deferred rather than met — see SPEC/02 "The lexical lane". The only
+latency-adjacent number in the repo is whole-run `wall_s`, which has AOSS slower
+in every recorded pair; that is not per-query latency, but it is the reason this
+claim must not be narrated before it is measured.
+
+## Out of scope
+Added at `pm-spec-reviewer`'s request (B9): this file gained two gating criteria
+while having no scope boundary at all, so each omission below was a judgement
+buried in prose rather than a declared exclusion.
+
+- **Any latency *target*.** The criterion above gates that a real number exists
+  and is recorded, not that it beats a threshold. Setting one is a PM call once
+  the number exists, and inventing one first would fit it to nothing.
+- **Concurrent-load and throughput evidence.** M06's (SPEC/00, "load test &
+  observability"). The latency criterion times sequential probes in a single
+  stream and cannot become concurrency evidence — so **until M06, Tier B's
+  claim is latency only**, never "handles load".
+- **Prose- and confidence-level cross-tier comparability.** Explicitly excluded
+  by the comparability criterion: only citations and `real_deadline` must match.
+- **Comparability for anything but the three canned scenarios.** The golden set
+  runs per tier (above); pairwise answer comparison does not.
+- **Semantic cache.** Flag-off by default (`SEMANTIC_CACHE=1`), and a wrong cache
+  hit in compliance is worse than a slow answer. No criterion here exercises it.
+- **Auth on `/query`.** Not specified in this milestone. Worth naming because
+  "production-grade demo" and "production" differ here, and this is one of the
+  places they differ.

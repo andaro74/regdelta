@@ -18,7 +18,92 @@ EMBED_DIM = 1024
 
 CONFIDENCE_HITL_THRESHOLD = float(os.environ.get("HITL_THRESHOLD", "0.7"))
 
+# ------------------------------------------------------------- agent graph (03)
+# Bedrock prompt caching for the static system preamble (SPEC/03 "Model
+# policy"). On by default because the preamble is identical across every
+# question in a golden run, so a 10-question run reads the cache nine times.
+# `nodes._converse` falls open if the model rejects the cachePoint block —
+# an unsupported optimisation must not block a measurement.
+PROMPT_CACHE = os.environ.get("PROMPT_CACHE", "1") == "1"
+
+# How many cross-referenced CFR sections the crossref agent will resolve, and
+# how many chunk ids it takes per citation. A bound rather than a tuning knob:
+# "as defined in §" chains can fan out, and an unbounded expansion would crowd
+# the verdict prompt with sections nobody asked about.
+CROSSREF_MAX = int(os.environ.get("CROSSREF_MAX", "4"))
+
 SSM_SEARCH_ENDPOINT = "/regdelta/search/endpoint"
+
+# ----------------------------------------------------------- retrieval (02)
+# Ranking knobs, here rather than inline so both tiers read the same numbers
+# (CLAUDE.md: thresholds are values, never literals in node code).
+#
+# RETRIEVAL_PER_DOC_CAP — how many of the 8 page slots one document may take
+# before every other candidate has been considered. Deferred candidates
+# back-fill, so this changes the ORDER of a full page, never its length.
+#
+# Measured, and worth recording in full because it is NOT monotonic:
+# cap 3 -> 9/9 probes, 4 -> 8/9, 5 -> 9/9, 6 -> 7/9, 8 -> 7/9. A value that
+# fails between two passing values means nine probes cannot robustly determine
+# this constant.
+#
+# STALE (ADR-0009 fact 2): that row is Tier A measured BEFORE 7d65a07, which
+# deleted the top-N-distinct-documents heuristic, its window bound, its
+# per-document chunk cap and the grouped-vs-interleaved ordering question. It
+# describes a retrieval path that no longer exists and must not be compared
+# against a live Tier B row. Tier B at 11489e5: 3 -> 7/9, 4 -> 8/9, 5 -> 7/9 —
+# non-monotonic there too, which is what the argument actually rests on.
+# Re-sweeping Tier A costs nothing and would settle it. The MECHANISM (one document may not crowd the page) is
+# load-bearing and demonstrable — removing it entirely drops two probes — but
+# the exact bound is a design judgement the probe set cannot settle. It is the
+# softest number in M02 and the first thing to re-examine if a probe regresses.
+#
+# RETRIEVAL_ASSIST_WEIGHT — the structural lane's weight in RRF, relative to
+# the relevance lane's 1.0. Kept at parity after measurement: down-weighting
+# it is the intuitive move and measured strictly worse (1.0 -> 8/9 probes,
+# 0.8 -> 7/9, 0.5 -> 5/9), because discounting the lane only re-buries the
+# DATES paragraphs it exists to surface. The knob stays because the mechanism
+# is real and M03 may want it; the default records what the measurement said.
+#
+# RETRIEVAL_STRUCTURAL_KINDS — the chunk kinds the structural lane searches.
+# These are the paragraphs that state what a document DOES: its DATES block
+# and its amendatory instructions. They carry the deadlines and the CFR edits,
+# they are short, and every relevance signal under-ranks them for a verbose
+# question — which is the entire reason the lane exists. `summary` is
+# deliberately out: it is context, not an operative provision, and including
+# it triples the lane without adding an answer.
+#
+# RETRIEVAL_LEXICAL_LANE — whether Tier B fuses a BM25 lane into its relevance
+# lane. DEFAULT OFF per ADR-0009 Ruling 3, resolved as (a). Measured: with the
+# lane on, Tier B scores 7/9 against Tier A's 9/9, and the one chunk it loses
+# (`2025-03118#0003`, which states "the compliance date remains unchanged at
+# this time") is ranked 14th by BM25 on r03 and not returned at all on r01,
+# because BM25 over verbose regulatory prose prefers shorter chunks that repeat
+# the query's terms without answering it. The only weight at which Tier B passes
+# criterion 1 is 0.05, where the lane has stopped affecting the outcome.
+#
+# The flag exists rather than the lane being deleted because the ruling is
+# REVERSIBLE ON A NAMED CONDITION: author a probe the lexical lane wins — an
+# expected_chunk_ids member BM25 places in the top-8 and the vector lane does
+# not — and this default flips back. Nine probes can witness a counterexample;
+# they cannot establish that BM25 never helps, and the ruling claims only the
+# former. Off, Tier B's relevance lane is pure kNN, which makes it the same
+# algorithm as Tier A on different infrastructure — that is the honest reading.
+# Tier B's remaining CANDIDATE justification is latency, and it is UNMEASURED:
+# the only proxy in the repo (whole-run `wall_s`) has AOSS slower in every
+# recorded pair, 11.6 vs 6.7 at b16f596. SPEC/04 homes the criterion. Do not
+# narrate "faster" before it passes, and do not say "concurrent load" at all —
+# that is M06's and was struck from the spec (pm-spec-reviewer B1, B3).
+# (An earlier version of this comment claimed the flag-off path had to
+# avoid single-lane RRF because it "re-scores by rank". That was false — RRF over
+# one lane is rank-preserving and truncating, so it equals slicing — and
+# aoss_tier.py now has one code path. Engineering review caught the claim.)
+RETRIEVAL_LEXICAL_LANE = os.environ.get("RETRIEVAL_LEXICAL_LANE", "0") == "1"
+RETRIEVAL_STRUCTURAL_KINDS = tuple(
+    k for k in os.environ.get("RETRIEVAL_STRUCTURAL_KINDS",
+                              "dates,amdpar").split(",") if k)
+RETRIEVAL_PER_DOC_CAP = int(os.environ.get("RETRIEVAL_PER_DOC_CAP", "3"))
+RETRIEVAL_ASSIST_WEIGHT = float(os.environ.get("RETRIEVAL_ASSIST_WEIGHT", "1.0"))
 CORPUS_BUCKET = os.environ.get("CORPUS_BUCKET", "")
 REGISTRY_TABLE = os.environ.get("REGISTRY_TABLE", "")
 STATE_TABLE = os.environ.get("STATE_TABLE", "")
@@ -28,11 +113,72 @@ QUEUE_URL = os.environ.get("QUEUE_URL", "")
 SEMANTIC_CACHE = os.environ.get("SEMANTIC_CACHE", "0") == "1"
 RERANK = os.environ.get("RERANK", "0") == "1"
 
+# ------------------------------------------------------------- graph (03)
+# LangSmith tracing is FORCED OFF, and this is a data-egress control rather
+# than a preference. `langgraph` pulls `langsmith` transitively (M03), and
+# langsmith uploads prompts, inputs and outputs to a third-party SaaS endpoint
+# when LANGSMITH_TRACING or LANGCHAIN_TRACING_V2 is truthy. For this product
+# those payloads are the worst possible thing to leak by accident: the company
+# profile a user submits (revenue tier, product lines) plus the regulatory
+# analysis derived from it.
+#
+# It is off by default upstream, so this changes nothing today. It exists
+# because the failure mode is a single environment variable — one `export
+# LANGSMITH_TRACING=1` in a shell, one leftover value in a Lambda config — and
+# nothing in the code would report it. Same reasoning as pinning versions:
+# defaults are not decisions until they are written down. Setting the variables
+# rather than reading them means an inherited value is overridden, not detected.
+#
+# Deliberately NOT configurable. If tracing is ever wanted, that is a decision
+# about sending customer data to a third party, and it belongs in an ADR and a
+# spec — not in an env var that already exists.
+os.environ["LANGSMITH_TRACING"] = "false"
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
+os.environ["LANGSMITH_OTEL_ENABLED"] = "false"
+
 # ---------------------------------------------------------------- ingestion
 FR_API = "https://www.federalregister.gov/api/v1"
 ECFR_API = "https://www.ecfr.gov/api/versioner/v1"
 FR_AGENCY_SLUG = "food-and-drug-administration"
 FR_DOC_TYPES = ("RULE", "PRORULE", "NOTICE")
+
+# ------------------------------------------------------- poller scope (SPEC/01)
+# FDA is one agency publishing for food, drugs, devices, veterinary medicine and
+# tobacco, so "agency = FDA" is not a subject filter. Unfiltered, the poller
+# ingested a digital breast tomosynthesis reclassification, three more device
+# reclassifications and a run of drug user-fee notices into a food-labeling
+# corpus — 30 documents in two weeks, competing for the eight retrieval slots
+# every answer gets.
+#
+# THE DISCRIMINATOR IS THE CFR REFERENCE, and it was chosen by measurement
+# rather than taste. Against the 49 documents in the corpus on 2026-08-15:
+#
+#   21 CFR part <= 199   ->  the 6 documents this product is actually about
+#                            (101 healthy rule + its delay, 74 Red No. 3 + the
+#                            stay lift, 170/570 GRAS, 117 RTE food guide)
+#   21 CFR part >= 200   ->  the 5 device documents, all of them
+#
+# TOPICS WERE TRIED AND ARE WRONG. The Red No. 3 order's topics are
+# ['Color additives', 'Cosmetics', 'Drugs'] — no "Food labeling" anywhere — so
+# a topic allowlist would drop the document half the golden set is about.
+FR_FOOD_CFR_TITLE = 21
+# Title 21 splits cleanly at 200: parts 1-199 are food (70-82 colour additives,
+# 100-169 labelling and standards, 170-199 food additives); 200+ are drugs,
+# 500s veterinary, 800s devices, 1100+ tobacco.
+FR_FOOD_CFR_MAX_PART = int(os.environ.get("FR_FOOD_CFR_MAX_PART", "199"))
+
+# What to do with a document that cites NO CFR part at all — 38 of the 49, and
+# unfilterable by any other structured field: they carry no topics either (all
+# 26 sampled were empty), so only the title distinguishes "Food Safety
+# Modernization Act Third-Party Certification" from "Prescription Drug User Fee
+# Rates", and title matching is not a scope rule.
+#
+# Default EXCLUDE. A document citing no CFR part amends no regulation, so it
+# cannot be the subject of "what changed and what is the deadline" — this
+# product's whole question. That is a scope judgement, which is why it is a
+# flag and not an assumption: POLL_REQUIRE_CFR=0 restores the old behaviour and
+# takes the drug and device fee notices back with it.
+POLL_REQUIRE_CFR = os.environ.get("POLL_REQUIRE_CFR", "1") == "1"
 POLL_LOOKBACK_DAYS = int(os.environ.get("POLL_LOOKBACK_DAYS", "7"))
 
 # ------------------------------------------------- ingestion input hardening

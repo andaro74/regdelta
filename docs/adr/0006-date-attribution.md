@@ -3,7 +3,7 @@
 - Status: accepted
 - Date: 2026-08-08
 - Milestone: M02 (pre-work)
-- Approved by: human SME sign-off, on sme-eval-triage ruling
+- Basis: SME-seat ruling; primary sources cited inline; no second approver exists (ADR-0005). Triaged by sme-eval-triage against the live FR API.
 - Governs: SPEC/02 retrieval-filter semantics
 
 ## Context
@@ -53,7 +53,8 @@ Prompts are probabilistic and this field carries liability — a prompt-only fix
 leaves the failure mode reachable on any model swap.
 
 ### Effective dates are NOT symmetric with compliance dates
-Added 2026-08-08 after live re-ingest, human SME sign-off.
+Added 2026-08-08 after live re-ingest. SME-seat ruling (ADR-0005); the
+FR API's `effective_on` for this document is the citable basis.
 
 Applying decision 1 made the model return `effective_dates: []` for the delay
 notice — correctly, since the delayed date belongs to the rule being delayed.

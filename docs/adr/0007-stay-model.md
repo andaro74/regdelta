@@ -3,7 +3,8 @@
 - Status: accepted
 - Date: 2026-08-08
 - Milestone: M02 (pre-work)
-- Approved by: human SME sign-off, on sme-eval-triage ruling
+- Basis: SME-seat ruling; primary sources cited inline; no second approver exists (ADR-0005). Statutory text (21 U.S.C. 371(e)(2)) and both FR
+  documents verified against federalregister.gov.
 - Amends: SPEC/01 supersession scoping
 
 ## Context

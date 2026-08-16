@@ -10,8 +10,16 @@ Low-confidence verdicts pause for human review.
 ## Demo scenarios (both real, public-domain rules)
 1. **"Healthy" claim redefinition** — final rule Dec 19 2024; effective date
    delayed to Apr 28 2025; **compliance date Feb 25 2028 unchanged**. Trap:
-   naive RAG reads "delayed" and moves the deadline. Size-tiered compliance
-   ($10M threshold).
+   naive RAG reads "delayed" and moves the deadline. **The compliance date is
+   uniform — there is no size tier in this rule.** FDA considered and
+   *declined* a longer period for small businesses ("we do not have
+   information that would enable us to determine whether all or merely some
+   small businesses need additional time", 2024-29957#0303), so 2028-02-25
+   applies to everyone. An earlier draft of this scenario claimed size-tiered
+   compliance on a $10M threshold; that threshold is real elsewhere in FDA
+   labeling (the Nutrition Facts rule) but appears nowhere in this corpus —
+   zero hits across all 485 chunks. Applicability here turns on whether you
+   make a "healthy" claim, not on company size.
 2. **FD&C Red No. 3 revocation** — order published Jan 16 2025 (90 FR 4628);
    food use **effective** Jan 15 2027; ingested drugs **effective** Jan 18
    2028 (two dates in one order). **Administratively stayed** under
@@ -49,7 +57,9 @@ Low-confidence verdicts pause for human review.
   EventBridge ingestion · API GW + Lambda (LangGraph) · nightly evals.
 - **Ephemeral search stack**: AOSS vector search collection (dev mode,
   ~$0.24/hr), hydrated from S3 on deploy, destroyed after each session.
-- **Routing seam**: SSM `/regdelta/search/endpoint` present → AOSS hybrid;
+- **Routing seam**: SSM `/regdelta/search/endpoint` present → AOSS
+  (vector-only by default; ADR-0009 Ruling 3(a) retired the lexical lane after
+  hybrid measured 7/9 against vector-only's 9/9);
   absent → S3 Vectors. Same golden set must pass on both paths.
 
 ## Milestones
