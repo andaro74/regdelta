@@ -31,6 +31,9 @@ import sys
 
 REGION = os.environ.get("AWS_REGION", "us-west-2")
 FUNCTION_HINT = "QueryFn"
+# Names that would redirect tooling rather than configure RegDelta.
+_NOT_OURS = ("PATH", "PYTHON", "LD_", "DYLD_", "AWS_ENDPOINT", "AWS_CA_",
+             "AWS_PROFILE", "AWS_ACCESS", "AWS_SECRET", "AWS_SESSION")
 
 
 def _aws(*args: str) -> str:
@@ -66,14 +69,24 @@ def main() -> int:
         print(f"{name} has no environment variables", file=sys.stderr)
         return 1
 
-    exported, kept = [], []
+    exported, kept, skipped = [], [], []
     for k, v in sorted(variables.items()):
-        if os.environ.get(k):
+        if k.startswith(_NOT_OURS):
+            # These are not RegDelta settings and this output is `eval`ed by the
+            # Makefile, so exporting one would redirect every subsequent aws /
+            # boto3 call in the operator's shell — including the eval harness's.
+            # The trust boundary is IAM and it holds; this bounds the blast
+            # radius if it ever does not, and costs one comparison.
+            skipped.append(k)
+        elif os.environ.get(k):
             kept.append(k)
         else:
             print(f"export {k}={shlex.quote(str(v))}")
             exported.append(k)
 
+    if skipped:
+        print(f"NOT exporting {', '.join(skipped)} — not RegDelta settings",
+              file=sys.stderr)
     print(f"resolved from {name}: {', '.join(exported) or 'nothing'}"
           + (f" (already set, left alone: {', '.join(kept)})" if kept else ""),
           file=sys.stderr)

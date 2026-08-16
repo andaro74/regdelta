@@ -37,8 +37,15 @@ def main() -> int:
                 if r.status == 200:
                     return 0
                 last = f"HTTP {r.status}"
-        except urllib.error.HTTPError as e:      # up, but unhappy — still up
-            return 0 if e.code < 500 else _sleep(f"HTTP {e.code}")
+        except urllib.error.HTTPError as e:
+            # 4xx means something is listening and answering — that is "up".
+            # 5xx is retried rather than fatal: the shim imports boto3 and
+            # compiles the graph on first request, so a transient 500 while
+            # warming is expected. Returning here skipped the whole diagnostic
+            # message below for a condition that usually clears in a second.
+            if e.code < 500:
+                return 0
+            last = f"HTTP {e.code}"
         except Exception as e:                   # noqa: BLE001 — not up yet
             last = f"{type(e).__name__}: {e}"
         time.sleep(POLL_S)
@@ -53,10 +60,6 @@ def main() -> int:
           file=sys.stderr)
     return 1
 
-
-def _sleep(msg: str) -> int:
-    time.sleep(POLL_S)
-    return 1
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ import pytest
 from conftest import FIXTURES  # noqa: F401  (path setup)
 
 from graph import amendment_graph as ag, nodes
-from graph.checkpoint import CheckpointTooLargeError, DynamoDBSaver
+from graph.checkpoint import CheckpointTooLargeError, DynamoDBSaver, write_review_item
 from graph.graph import build_graph
 from shared.models import Chunk
 
@@ -112,8 +112,14 @@ def test_an_underspecified_run_ends_needs_input(monkeypatch, stubbed):
 class _FakeTable:
     """DynamoDB stand-in supporting the three shapes the saver issues."""
 
-    def __init__(self):
+    def __init__(self, page_size: int | None = None):
         self.items: dict[tuple, dict] = {}
+        # A real query returns at most 1MB. With page_size set, this fake
+        # truncates and hands back LastEvaluatedKey the way DynamoDB does —
+        # without which no test here can see an unpaginated caller silently
+        # dropping rows, which is how three of them shipped.
+        self.page_size = page_size
+        self.queries = 0
 
     def put_item(self, Item):
         self.items[(Item["pk"], Item["sk"])] = dict(Item)
@@ -126,7 +132,8 @@ class _FakeTable:
         self.items.pop((Key["pk"], Key["sk"]), None)
 
     def query(self, KeyConditionExpression=None, ProjectionExpression=None,
-              ScanIndexForward=True, Limit=None):
+              ScanIndexForward=True, Limit=None, ExclusiveStartKey=None):
+        self.queries += 1
         values = getattr(KeyConditionExpression, "_values", ())
         if len(values) == 2 and hasattr(values[0], "_values"):
             pk, prefix = values[0]._values[1], values[1]._values[1]
@@ -135,6 +142,22 @@ class _FakeTable:
         rows = [dict(v) for (p, s), v in self.items.items()
                 if p == pk and s.startswith(prefix)]
         rows.sort(key=lambda i: i["sk"], reverse=not ScanIndexForward)
+        if self.page_size:
+            start = 0
+            if ExclusiveStartKey:
+                # Resume AFTER the key, by sort order — not by locating the row.
+                # delete_thread deletes as it pages, so by the time the next
+                # page is requested that row is gone; requiring it to still
+                # exist made the fake stricter than DynamoDB.
+                esk = ExclusiveStartKey["sk"]
+                start = next((n for n, r in enumerate(rows)
+                              if (r["sk"] > esk) == ScanIndexForward
+                              and r["sk"] != esk), len(rows))
+            page = rows[start:start + self.page_size]
+            out = {"Items": page}
+            if start + self.page_size < len(rows):
+                out["LastEvaluatedKey"] = {"pk": page[-1]["pk"], "sk": page[-1]["sk"]}
+            return out
         return {"Items": rows[:Limit] if Limit else rows}
 
     def batch_writer(self):
@@ -453,3 +476,103 @@ def test_a_review_item_is_written_when_the_run_pauses():
     assert items[0]["needs"] == "company_profile"
     assert items[0]["status"] == "needs_input"
     assert "ttl" in items[0]
+
+
+# ------------------------------------------------- pagination (security review)
+# A DynamoDB query returns at most 1MB. Three of this saver's queries read only
+# the first page, and each silently broke something different. The `page_size=1`
+# fake makes every one of these fail without the fix.
+
+
+def test_delete_thread_deletes_past_the_first_page():
+    """It reported success having deleted page one.
+
+    A checkpoint item runs to the 380KB budget, so two or three fill a page,
+    and this graph writes one per superstep. What survived is full channel
+    state — including `retrieved`, i.e. the question and the regulatory
+    passages retrieved for it — sitting in the table until TTL.
+    """
+    table = _FakeTable(page_size=1)
+    saver = DynamoDBSaver(table=table)
+    for i in range(5):
+        saver.put(_config(), _checkpoint(f"ckpt-{i}"), {}, {})
+        saver.put_writes(_config(checkpoint_id=f"ckpt-{i}"), [("c", i)], f"task-{i}")
+    assert len(table.items) >= 10
+
+    saver.delete_thread("t1")
+    assert table.items == {}, f"{len(table.items)} rows survived deletion"
+
+
+def test_delete_thread_deletes_the_review_item():
+    """The one row it never deleted was the one it exists to delete.
+
+    write_review_item writes pk=REVIEW#<thread>; delete_thread only queried
+    pk=THREAD#<thread>. Its docstring's stated reason for existing is that TTL
+    alone leaves answered reviews sitting for a month — and the review item
+    carries the human-facing question text.
+    """
+    table = _FakeTable()
+    saver = DynamoDBSaver(table=table)
+    saver.put(_config(), _checkpoint("ckpt-1"), {}, {})
+    write_review_item("t1", {"question": "Are we affected?",
+                             "reason": "confidence 0.41 below 0.70"}, table=table)
+    assert any(pk.startswith("REVIEW#") for pk, _ in table.items)
+
+    saver.delete_thread("t1")
+    assert not any(pk.startswith("REVIEW#") for pk, _ in table.items), \
+        "the review item survived delete_thread"
+    assert table.items == {}
+
+
+def test_pending_writes_are_not_truncated_at_a_page_boundary():
+    """A partial write set is the exact failure _writes exists to prevent.
+
+    Missing writes make a resumed run re-execute tasks whose results were
+    already durable — for this graph, paying for a second verdict call and
+    risking a different answer on the resumed half of a HITL round trip. Silent,
+    and worst on the big runs where that call costs most.
+    """
+    table = _FakeTable(page_size=2)
+    saver = DynamoDBSaver(table=table)
+    saver.put(_config(), _checkpoint("ckpt-1"), {}, {})
+    saver.put_writes(_config(checkpoint_id="ckpt-1"),
+                     [(f"channel-{i}", i) for i in range(7)], "task-a")
+
+    tup = saver.get_tuple(_config(checkpoint_id="ckpt-1"))
+    assert len(tup.pending_writes) == 7, f"got {len(tup.pending_writes)} of 7 writes"
+    assert [w[1] for w in tup.pending_writes] == [f"channel-{i}" for i in range(7)]
+
+
+def test_list_returns_matches_from_beyond_the_first_page():
+    table = _FakeTable(page_size=2)
+    saver = DynamoDBSaver(table=table)
+    for i in range(6):
+        saver.put(_config(), _checkpoint(f"ckpt-{i}"), {}, {})
+
+    got = list(saver.list(_config()))
+    assert len(got) == 6, f"got {len(got)} of 6 checkpoints"
+
+
+def test_list_limit_counts_matches_not_rows_read():
+    """`limit=4` returning 2 because the others sat on page two is a wrong
+    answer, not a short one."""
+    table = _FakeTable(page_size=1)
+    saver = DynamoDBSaver(table=table)
+    for i in range(6):
+        saver.put(_config(), _checkpoint(f"ckpt-{i}"), {}, {})
+
+    assert len(list(saver.list(_config(), limit=4))) == 4
+
+
+def test_list_stops_querying_once_the_limit_is_met():
+    """Pages are fetched lazily, so an early return does not read the thread."""
+    table = _FakeTable(page_size=1)
+    saver = DynamoDBSaver(table=table)
+    for i in range(20):
+        saver.put(_config(), _checkpoint(f"ckpt-{i}"), {}, {})
+
+    table.queries = 0
+    assert len(list(saver.list(_config(), limit=2))) == 2
+    # Two page reads plus one _writes read per yielded tuple. The point is that
+    # it is bounded by the limit rather than by the 20 checkpoints on the thread.
+    assert table.queries <= 4, f"read {table.queries} queries for a limit of 2"

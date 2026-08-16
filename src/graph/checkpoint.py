@@ -213,14 +213,28 @@ class DynamoDBSaver(BaseCheckpointSaver):
         Without these a resumed run re-executes tasks whose results were already
         durable — for this graph that means paying for a second verdict call and
         risking a different answer on the resumed half of a HITL round trip.
+
+        PAGINATED, because that invariant is exactly what truncation breaks. A
+        `query` caps at 1MB and write values are serialised channel payloads, so
+        a large superstep silently returned a PARTIAL write set — and the
+        failure it produces is the one this docstring exists to prevent, on the
+        big runs where a second verdict call costs most, with nothing in the
+        output to say it happened.
         """
         from boto3.dynamodb.conditions import Key
 
-        resp = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"THREAD#{thread_id}")
-            & Key("sk").begins_with(f"WRITE#{ns}#{checkpoint_id}#"))
+        items, kwargs = [], {
+            "KeyConditionExpression": Key("pk").eq(f"THREAD#{thread_id}")
+            & Key("sk").begins_with(f"WRITE#{ns}#{checkpoint_id}#")}
+        while True:
+            resp = self.table.query(**kwargs)
+            items += resp.get("Items") or []
+            if not (last := resp.get("LastEvaluatedKey")):
+                break
+            kwargs["ExclusiveStartKey"] = last
+
         writes = []
-        for item in sorted(resp.get("Items") or [], key=lambda i: i["sk"]):
+        for item in sorted(items, key=lambda i: i["sk"]):
             writes.append((str(item["task_id"]), str(item["channel"]),
                            self.serde.loads_typed((item["type"], bytes(item["value"])))))
         return writes
@@ -233,23 +247,32 @@ class DynamoDBSaver(BaseCheckpointSaver):
             raise ValueError("listing every thread is not supported; pass a thread_id")
         thread_id, ns, _ = self._ids(config_)
 
-        resp = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"THREAD#{thread_id}")
-            & Key("sk").begins_with(f"CKPT#{ns}#"),
-            ScanIndexForward=False)
-
+        # Paginated, and lazily: `limit` and `before` are applied AFTER the
+        # metadata filter, so a truncated first page would silently under-report
+        # — `limit=5` returning 3 because two matches sat on page two is a wrong
+        # answer, not a short one. Pages are fetched only as the generator is
+        # consumed, so an early `return` on `limit` still costs one query.
         before_id = (before or {}).get("configurable", {}).get("checkpoint_id")
         count = 0
-        for item in resp.get("Items") or []:
-            if before_id and str(item["checkpoint_id"]) >= str(before_id):
-                continue
-            tup = self._tuple(thread_id, ns, item)
-            if filter and not all(tup.metadata.get(k) == v for k, v in filter.items()):
-                continue
-            yield tup
-            count += 1
-            if limit and count >= limit:
+        kwargs = {
+            "KeyConditionExpression": Key("pk").eq(f"THREAD#{thread_id}")
+            & Key("sk").begins_with(f"CKPT#{ns}#"),
+            "ScanIndexForward": False}
+        while True:
+            resp = self.table.query(**kwargs)
+            for item in resp.get("Items") or []:
+                if before_id and str(item["checkpoint_id"]) >= str(before_id):
+                    continue
+                tup = self._tuple(thread_id, ns, item)
+                if filter and not all(tup.metadata.get(k) == v for k, v in filter.items()):
+                    continue
+                yield tup
+                count += 1
+                if limit and count >= limit:
+                    return
+            if not (last := resp.get("LastEvaluatedKey")):
                 return
+            kwargs["ExclusiveStartKey"] = last
 
     # ---------------------------------------------------------------- writes
     def put(self, config_: dict, checkpoint: dict, metadata: dict,
@@ -300,17 +323,37 @@ class DynamoDBSaver(BaseCheckpointSaver):
                 })
 
     def delete_thread(self, thread_id: str) -> None:
-        """Drop every checkpoint and write for a thread.
+        """Drop every checkpoint, write and review item for a thread.
 
         Present because the base class declares it and a resume flow needs a way
         to close out a reviewed thread; TTL alone would leave answered reviews
         sitting in the table for a month.
+
+        Two defects fixed after security review, both of which meant this method
+        did not do what its own docstring promised:
+
+        1. UNPAGINATED. A `query` returns at most 1MB, and a checkpoint item
+           runs to the 380KB budget above, so two or three of them fill a page.
+           This graph writes one per superstep. `delete_thread` therefore
+           deleted page one, returned successfully, and left the rest — full
+           channel state, which includes `retrieved`, i.e. the question and the
+           regulatory passages retrieved for it — sitting until TTL.
+        2. IT NEVER DELETED THE REVIEW ITEM. `write_review_item` writes to
+           `pk=REVIEW#<thread_id>`; this only queried `pk=THREAD#<thread_id>`.
+           The one row carrying the human-facing question text, and the one this
+           docstring names as the reason the method exists, was the one row it
+           left behind.
         """
         from boto3.dynamodb.conditions import Key
 
-        resp = self.table.query(
-            KeyConditionExpression=Key("pk").eq(f"THREAD#{thread_id}"),
-            ProjectionExpression="pk, sk")
         with self.table.batch_writer() as batch:
-            for item in resp.get("Items") or []:
-                batch.delete_item(Key={"pk": item["pk"], "sk": item["sk"]})
+            for pk in (f"THREAD#{thread_id}", f"REVIEW#{thread_id}"):
+                kwargs = {"KeyConditionExpression": Key("pk").eq(pk),
+                          "ProjectionExpression": "pk, sk"}
+                while True:
+                    resp = self.table.query(**kwargs)
+                    for item in resp.get("Items") or []:
+                        batch.delete_item(Key={"pk": item["pk"], "sk": item["sk"]})
+                    if not (last := resp.get("LastEvaluatedKey")):
+                        break
+                    kwargs["ExclusiveStartKey"] = last
