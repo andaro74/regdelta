@@ -81,6 +81,33 @@ def retrieve(query: str, filters: Filters, k: int = 8) -> list[Chunk]:
     return retrieve_traced(query, filters, k)[0]
 
 
+def hydrate(chunk_ids: list[str]) -> list[Chunk]:
+    """chunk ids -> Chunks with text, through whichever tier is live.
+
+    Both tiers already hydrate ids for their exact-citation assist lane, but
+    both keep it private, so a caller outside retrieval had no way to turn an
+    id into text. `crossref_agent` was that caller: it resolved cross-references
+    to `chunk_ids` and stored the ids, which no prompt can read. Resolving a
+    reference and handing on an identifier is not resolving it.
+
+    Falls back to the always-on tier on an AOSS error, for the same reason
+    `retrieve_traced` does — a deployed-but-broken hot tier must not remove
+    context the other tier can supply.
+    """
+    if not chunk_ids:
+        return []
+    endpoint = active_endpoint()
+    if endpoint:
+        from retrieval import aoss_client
+        from retrieval.aoss_tier import _hydrate as _hydrate_aoss
+        try:
+            return _hydrate_aoss(endpoint, chunk_ids)
+        except aoss_client.AossError:
+            pass
+    from retrieval.s3vectors_tier import _hydrate as _hydrate_s3v
+    return _hydrate_s3v(chunk_ids)
+
+
 def retrieve_traced(query: str, filters: Filters,
                     k: int = 8) -> tuple[list[Chunk], Resolution]:
     filters = filters or Filters()

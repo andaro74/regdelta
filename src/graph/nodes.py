@@ -343,43 +343,69 @@ def _facts_for(timeline: ag.DocTimeline) -> list[dict]:
 
 
 # ----------------------------------------------------------- crossref agent
-def crossref_agent(state: RegDeltaState, lookup=None) -> dict:
+def crossref_agent(state: RegDeltaState, lookup=None, hydrate=None) -> dict:
     """Resolve CFR sections the retrieved text points at but did not return.
 
     "As defined in § X" is only answerable if X is in front of the model, and
     the retrieved page is selected by similarity to the QUESTION, not by what
-    the page then cross-references. This closes that gap using the registry's
-    `citations` GSI — an exact lookup, not a second similarity search.
+    the page then cross-references.
 
-    Only sections NOT already on the page are added, so a hit here is always
-    new context rather than a duplicate that would crowd the prompt.
+    THIS NODE WAS BROKEN IN FOUR INDEPENDENT WAYS and produced nothing usable.
+    All four had to go; fixing any one alone would not have moved q14.
+
+    1. ITS OUTPUT WAS NEVER READ. `crossrefs` went into state and no node,
+       prompt or response touched it — found by security review and by q14
+       failing, from opposite directions. `verdict` now fences it in.
+    2. IT RESOLVED TO IDENTIFIERS, NOT TEXT. It stored `chunk_ids`. A prompt
+       cannot read an id, so even a wired-up consumer would have received
+       nothing. It now hydrates through `router.hydrate`.
+    3. ITS EXTRACTOR COULD NOT SEE THE REFERENCES. `CFR_RE` requires a title
+       number and Federal Register prose writes bare "§ 101.13". Measured on
+       q14's actual retrieved page: the old extractor found two FR citations
+       and ZERO CFR sections, on a page naming both § 101.13 and § 101.65.
+    4. IT LOOKED UP THE WRONG THING. The citations GSI is keyed on the exact
+       `citation_path`, and the text answering a cross-reference sits under a
+       PARAGRAPH path — "21 CFR 101.65(a)" carries the § 101.13(h) carve-out
+       while "21 CFR 101.65" does not. Section lookup replaces exact lookup.
+
+    Only sections NOT already on the page are added, so a hit is always new
+    context rather than a duplicate crowding the prompt.
     """
-    from retrieval import expansion
+    from retrieval import expansion, router
 
-    lookup = lookup or expansion.lookup_citation
-    on_page = {c.citation_path for c in state.get("retrieved") or []}
-    have_docs = {c.chunk_id for c in state.get("retrieved") or []}
+    lookup = lookup or expansion.lookup_section
+    hydrate = hydrate or router.hydrate
 
-    wanted: dict[str, None] = {}
-    for chunk in state.get("retrieved") or []:
-        for cite in citations.extract_citations(chunk.text or ""):
-            if cite.startswith(tuple(f"{t} CFR" for t in ("21", "7", "9"))) \
-                    and cite not in on_page:
-                wanted.setdefault(cite, None)
+    retrieved = state.get("retrieved") or []
+    have_ids = {c.chunk_id for c in retrieved}
+    on_page_sections = {citations.section_of(c.citation_path or "")
+                        for c in retrieved} - {None}
 
-    found = []
-    for cite in list(wanted)[:config.CROSSREF_MAX]:
+    wanted: dict[tuple[str, str], None] = {}
+    for chunk in retrieved:
+        for cite in citations.extract_section_refs(chunk.text or ""):
+            sec = citations.section_of(cite)
+            if sec and sec not in on_page_sections:
+                wanted.setdefault(sec, None)
+
+    found, new_chunks = [], []
+    for title, section in list(wanted)[:config.CROSSREF_MAX]:
+        cite = f"{title} CFR {section}"
         try:
-            ids = lookup(cite, config.CROSSREF_MAX)
+            ids = [i for i in lookup(title, section, config.CROSSREF_MAX)
+                   if i not in have_ids]
+            hydrated = hydrate(ids) if ids else []
         except Exception as e:  # noqa: BLE001 — a missing cross-reference degrades, never fails
             found.append({"citation": cite, "status": "lookup_failed",
                           "detail": f"{type(e).__name__}: {e}"[:200]})
             continue
-        fresh = [i for i in ids if i not in have_docs]
-        found.append({"citation": cite, "status": "resolved" if fresh else "already_on_page",
-                      "chunk_ids": fresh})
+        new_chunks.extend(hydrated)
+        have_ids.update(c.chunk_id for c in hydrated)
+        found.append({"citation": cite,
+                      "status": "resolved" if hydrated else "already_on_page",
+                      "chunk_ids": [c.chunk_id for c in hydrated]})
 
-    return {"crossrefs": found}
+    return {"crossrefs": found, "crossref_chunks": new_chunks}
 
 
 # ------------------------------------------------------------- applicability
@@ -479,7 +505,19 @@ def verdict(state: RegDeltaState, invoke=None) -> dict:
     rows_in = state.get("retrieved") or []
     facts = state.get("timeline_facts") or []
 
-    passages = _passages([(c.chunk_id, c.text) for c in rows_in]) or "(none)"
+    # THE CROSS-REFERENCED SECTIONS GO IN, APPENDED. `crossref_agent` resolved
+    # them and, until 2026-08-16, nothing read the result — so "as defined in
+    # § X" was unanswerable however well retrieval had done, because X was
+    # never on the page. Appended rather than interleaved so the similarity
+    # ranking of the retrieved page is left exactly as retrieval produced it;
+    # these are additional context, not a re-ranking.
+    #
+    # They go through the same `_passages` fence as everything else. eCFR
+    # regtext is no more trusted than FR prose — both are text this project did
+    # not author — and a second, unfenced path into the verdict prompt is the
+    # defect security review found in the reranker at M02.
+    context = list(rows_in) + list(state.get("crossref_chunks") or [])
+    passages = _passages([(c.chunk_id, c.text) for c in context]) or "(none)"
     raw = (invoke or _converse)(
         config.MODEL_VERDICT, _VERDICT_SYSTEM,
         _VERDICT_PROMPT.format(

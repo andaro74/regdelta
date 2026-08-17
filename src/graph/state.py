@@ -34,6 +34,12 @@ class RegDeltaState(TypedDict, total=False):
     #: Set by `timeline_agent`, read by `_needs_review`.
     timeline_degraded: bool
     crossrefs: list[dict]
+    #: The cross-referenced sections as TEXT, ready to fence into the verdict
+    #: prompt. Separate from `crossrefs` because that field is the audit trail —
+    #: which citation resolved, to what, or why it did not — and this is the
+    #: payload. Until 2026-08-16 only the audit trail existed and nothing read
+    #: it, so the node resolved references and threw the answer away.
+    crossref_chunks: list
 
     # --- synthesis
     applicability: dict
