@@ -12,3 +12,14 @@
 # version fixes what the rules mean, ruff.toml fixes which rules apply.
 ruff==0.16.2
 pytest==9.1.1
+
+# Drives the SPEC/04 FastAPI app in-process — `fastapi.testclient.TestClient`
+# is an httpx transport over the ASGI app, with no server and no socket.
+# TEST-ONLY, which is why it is here and not in requirements.txt: nothing in
+# the deployed path makes an outbound HTTP request through it.
+#
+# Pinned after checking it is not transitive: none of fastapi, starlette,
+# mangum, langgraph or boto3 requires httpx, so it was present on the laptop by
+# accident and tests/test_api.py would have imported fine here and failed in
+# CI. That is the drift this file was created at M03 to end.
+httpx==0.28.1
