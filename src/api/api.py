@@ -25,7 +25,7 @@ import uuid
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from api import resume_token as rt
+from api import response_cache as cache, resume_token as rt
 
 log = logging.getLogger("regdelta.api")
 
@@ -126,13 +126,33 @@ def query(payload: dict, request: Request) -> dict:
                             content={"detail": "question is required",
                                      "trace_id": trace_id})
 
+    profile = payload.get("company_profile") or {}
+    bypass = cache.bypass_requested(payload, request.headers)
+
+    # THE CACHE IS CONSULTED BEFORE ANY MODEL CALL, and its status is on every
+    # response whether it hit, missed, was bypassed or is switched off.
+    # `make demo-parity` records that field per scenario per tier, and SPEC/04's
+    # control 1 exists because the two tier runs are minutes apart inside a 1h
+    # TTL: uncontrolled, the second tier's request is a hit returning the first
+    # tier's answer, citations and dates agree by construction, and the
+    # criterion measures the cache instead of the tiers.
+    if not bypass:
+        hit = cache.get(question, profile)
+        if hit is not None:
+            hit["cache"] = cache.HIT
+            hit["trace_id"] = trace_id
+            return hit
+
     thread_id = str(uuid.uuid4())
     state = _app().invoke(
-        {"query": question, "company_profile": payload.get("company_profile") or {}},
+        {"query": question, "company_profile": profile},
         _config(thread_id))
 
     body = _shape(state, thread_id)
     body["trace_id"] = trace_id
+    body["cache"] = (cache.BYPASS if bypass
+                     else cache.MISS if cache.enabled()
+                     else cache.DISABLED)
 
     # The capability is minted ONLY for a run that actually paused, and returned
     # exactly once. A token on every response would be a credential handed out
@@ -157,6 +177,14 @@ def query(payload: dict, request: Request) -> dict:
                   "checkpointed)").strip()
     else:
         body.pop("thread_id", None)
+        # Stored only on the way OUT, and only for a completed answer.
+        # `cacheable()` re-checks the body rather than trusting this branch,
+        # because a paused response carries thread_id and resume_token — a
+        # capability bound to one caller — and caching one would hand the next
+        # caller someone else's thread and the credential to resume it. That is
+        # worse than the IDOR the /resume amendment closed: it needs no guessing.
+        if not bypass:
+            cache.put(question, profile, body)
     return body
 
 

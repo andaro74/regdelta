@@ -301,3 +301,72 @@ def test_resumable_is_derived_from_the_checkpointer_not_asserted(monkeypatch):
     monkeypatch.setattr(shared_config, "STATE_TABLE", "")
     monkeypatch.setattr(gg, "build_graph", lambda checkpointer=None: object())
     assert m._config("t-1")["configurable"]["resumable"] is False
+
+
+# ------------------------------------------------------- the response cache
+def test_a_cache_hit_short_circuits_the_graph(client, monkeypatch):
+    """The hit must be served without invoking the graph at all — otherwise the
+    cache is a write-through log and buys nothing."""
+    c, _ = client
+    stored = {"status": "ok", "answer": "cached", "citations": ["90 FR 4628"]}
+    monkeypatch.setattr(m.cache, "get", lambda q, p: dict(stored))
+
+    class _NeverCalled:
+        def invoke(self, *a, **k):
+            raise AssertionError("the graph was invoked on a cache hit")
+
+    monkeypatch.setattr(m, "_compiled", {"app": _NeverCalled(), "resumable": True})
+    body = c.post("/query", json={"question": "when?"}).json()
+    assert body["answer"] == "cached"
+    assert body["cache"] == m.cache.HIT
+    assert body["trace_id"]
+
+
+def test_every_response_reports_its_cache_status(client, monkeypatch):
+    """`make demo-parity` records this field per scenario per tier; a response
+    that does not say whether it was cached cannot be part of that evidence."""
+    c, _ = client
+    _stub_graph(monkeypatch, _answered())
+    monkeypatch.setattr(m.cache, "get", lambda q, p: None)
+    monkeypatch.setattr(m.cache, "put", lambda *a: None)
+
+    monkeypatch.setattr(m.cache, "enabled", lambda: True)
+    assert c.post("/query", json={"question": "when?"}).json()["cache"] == m.cache.MISS
+
+    monkeypatch.setattr(m.cache, "enabled", lambda: False)
+    assert c.post("/query", json={"question": "when?"}).json()["cache"] == m.cache.DISABLED
+
+
+def test_bypass_skips_the_read_and_the_write(client, monkeypatch):
+    """SPEC/04 control 1. Without this `make demo-parity` measures the cache:
+    the two tier runs are minutes apart inside a 1h TTL, so the second is a hit
+    returning the first tier's answer and the citations agree by construction."""
+    c, _ = client
+    _stub_graph(monkeypatch, _answered())
+    reads, writes = [], []
+    monkeypatch.setattr(m.cache, "get", lambda q, p: reads.append(q) or None)
+    monkeypatch.setattr(m.cache, "put", lambda q, p, b: writes.append(q))
+
+    body = c.post("/query", json={"question": "when?", "no_cache": True}).json()
+    assert body["cache"] == m.cache.BYPASS
+    assert reads == [] and writes == []
+
+    body = c.post("/query", json={"question": "when?"},
+                  headers={"x-regdelta-no-cache": "1"}).json()
+    assert body["cache"] == m.cache.BYPASS
+    assert reads == [] and writes == []
+
+
+def test_a_paused_response_is_never_written_to_the_cache(client, monkeypatch):
+    """It carries thread_id and resume_token — a capability bound to one caller.
+    Caching it hands the next caller someone else's thread and the credential
+    to resume it."""
+    c, _ = client
+    _stub_graph(monkeypatch, _paused())
+    writes = []
+    monkeypatch.setattr(m.cache, "get", lambda q, p: None)
+    monkeypatch.setattr(m.cache, "put", lambda q, p, b: writes.append(b))
+
+    body = c.post("/query", json={"question": "are we affected?"}).json()
+    assert body["status"] == "needs_input" and body["resume_token"]
+    assert writes == [], "a paused response reached the cache"
