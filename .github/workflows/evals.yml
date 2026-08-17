@@ -95,6 +95,20 @@ jobs:
     # That is exactly what happened when the per-job scoping landed: the
     # workflow level was lowered and this block was not added in the same
     # commit. Caught by reading the parsed YAML rather than the diff.
+    #
+    # A TEST GUARDING THIS WAS CONSIDERED AND DECLINED, 2026-08-16. It would
+    # parse this file and assert each job holds exactly the permissions its
+    # steps need, which needs a YAML parser; PyYAML is not transitive from
+    # boto3, langgraph, fastapi, starlette, mangum or ruff, so it would have had
+    # to become a dependency. Declined because the guard protects a job that
+    # currently never runs — `if: vars.EVAL_GATE_ENABLED` is false — and a guard
+    # for a job nobody runs is a guard against a hypothetical. The comment above
+    # is the control instead.
+    #
+    # REVERSAL CONDITION, so this is a decision rather than a shrug: when
+    # EVAL_GATE_ENABLED goes true, this job starts running and a silent
+    # permissions regression becomes a live failure with a misleading cause.
+    # Add the guard then, in the same change that flips the flag.
     permissions:
       contents: read
       pull-requests: write
