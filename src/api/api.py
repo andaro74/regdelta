@@ -75,11 +75,50 @@ def health() -> dict:
     return {"status": "ok", "tier": tier}
 
 
+_compiled: dict = {}
+
+
+def _app():
+    """The graph, compiled ONCE, with a checkpointer when there is one.
+
+    Two defects this fixes, both found by running the API against the real
+    graph rather than a stub — every test in tests/test_api.py stubs
+    `build_graph`, so neither was visible there.
+
+    1. `build_graph()` with no argument compiles WITHOUT a checkpointer.
+       `/query` still pauses and still returns an `__interrupt__`, so the
+       response looked correct — but nothing was persisted, and `/resume` then
+       built a SECOND graph that found no checkpoint and raised. The end-to-end
+       run returned 404 on a resume holding the correct token.
+    2. It recompiled the graph on every request. The shim has compiled once
+       since M03; this had not.
+
+    `resumable` is false when STATE_TABLE is unset. That is not an error — the
+    graph still runs and still reports `needs_input` — it simply cannot be
+    resumed, and `/query` must not hand out a token promising otherwise.
+    """
+    if "app" not in _compiled:
+        from graph.graph import build_graph
+        from shared import config
+
+        saver = None
+        if config.STATE_TABLE:
+            from graph.checkpoint import DynamoDBSaver
+            saver = DynamoDBSaver()
+        _compiled["app"] = build_graph(checkpointer=saver)
+        _compiled["resumable"] = saver is not None
+        log.info("graph compiled, resumable=%s", _compiled["resumable"])
+    return _compiled["app"]
+
+
+def _resumable() -> bool:
+    _app()
+    return bool(_compiled.get("resumable"))
+
+
 @router.post("/query")
 def query(payload: dict, request: Request) -> dict:
     """Answer a question. Mints a resume capability if the run pauses."""
-    from graph.graph import build_graph
-
     trace_id = _trace_id(request)
     question = str(payload.get("question") or "").strip()
     if not question:
@@ -88,7 +127,7 @@ def query(payload: dict, request: Request) -> dict:
                                      "trace_id": trace_id})
 
     thread_id = str(uuid.uuid4())
-    state = build_graph().invoke(
+    state = _app().invoke(
         {"query": question, "company_profile": payload.get("company_profile") or {}},
         _config(thread_id))
 
@@ -99,10 +138,23 @@ def query(payload: dict, request: Request) -> dict:
     # exactly once. A token on every response would be a credential handed out
     # for nothing, and SPEC/04's contract says these fields are present only
     # when status is needs_input or pending_review.
+    #
+    # And only when the run is actually RESUMABLE. With no STATE_TABLE there is
+    # no checkpoint behind the pause, so a token would be a promise the next
+    # request cannot keep — the caller would hold a credential and get a 404
+    # that looks like a refusal rather than a missing capability. Say so in the
+    # body instead.
     if body.get("status") in ("needs_input", "pending_review"):
-        token, stored = rt.mint()
-        _store_token(thread_id, stored)
-        body["resume_token"] = token
+        if _resumable():
+            token, stored = rt.mint()
+            _store_token(thread_id, stored)
+            body["resume_token"] = token
+        else:
+            body["resumable"] = False
+            body["review_reason"] = (
+                (body.get("review_reason") or "")
+                + " (not resumable: STATE_TABLE is unset, so this run was never "
+                  "checkpointed)").strip()
     else:
         body.pop("thread_id", None)
     return body
@@ -112,8 +164,6 @@ def query(payload: dict, request: Request) -> dict:
 def resume(thread_id: str, payload: dict, request: Request):
     """Continue a paused run. Refuses identically for every reason it can refuse."""
     from langgraph.types import Command
-
-    from graph.graph import build_graph
 
     trace_id = _trace_id(request)
 
@@ -125,7 +175,7 @@ def resume(thread_id: str, payload: dict, request: Request):
 
     decision = {k: v for k, v in payload.items() if k != "resume_token"}
     try:
-        state = build_graph().invoke(Command(resume=decision), _config(thread_id))
+        state = _app().invoke(Command(resume=decision), _config(thread_id))
     except Exception as e:                      # noqa: BLE001 — see below
         # A thread that never existed reaches LangGraph as an empty checkpoint
         # and surfaces however that library chooses to surface it. It must not
@@ -149,7 +199,26 @@ def _trace_id(request: Request) -> str:
 
 
 def _config(thread_id: str) -> dict:
-    return {"configurable": {"thread_id": thread_id}}
+    """Run-time configuration for one invocation.
+
+    `resumable` is NOT decoration. `hitl_gate` reads it out of `configurable`
+    and, when it is absent or false, takes the branch that reports the review
+    status and STOPS — it never calls `interrupt()`. Omitting it therefore
+    produces a response that looks entirely correct (`status: needs_input`,
+    with a reason) while no checkpoint is ever written and nothing is actually
+    pausable. The resume then re-runs from the top and pauses again in the same
+    way, returning 200 with the same body, which reads like success.
+
+    That is what the first end-to-end run against the real graph did, and no
+    unit test could see it: the tests stub the graph, and a stub does not care
+    what is in `configurable`.
+
+    It is derived from whether a checkpointer exists rather than passed in,
+    because the two must not be able to disagree — a run configured resumable
+    against a graph with nowhere to checkpoint is the failure `hitl_gate`'s own
+    docstring describes.
+    """
+    return {"configurable": {"thread_id": thread_id, "resumable": _resumable()}}
 
 
 def _shape(state: dict, thread_id: str) -> dict:

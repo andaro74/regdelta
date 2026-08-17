@@ -22,22 +22,33 @@ TRACE = "trace-fixed-for-comparison"
 
 @pytest.fixture
 def client(monkeypatch):
-    """A client whose graph is stubbed and whose token store is in memory."""
+    """A client whose graph is stubbed and whose token store is in memory.
+
+    `m._compiled` is cleared per test. The app caches its compiled graph — it
+    used to rebuild one per request, which is how the real end-to-end run
+    resumed against a graph that had never checkpointed anything — so a stub
+    left in that cache would leak into the next test.
+    """
     store: dict[str, str] = {}
     monkeypatch.setattr(m, "_store_token", lambda tid, dig: store.__setitem__(tid, dig))
     monkeypatch.setattr(m, "_load_token", lambda tid: store.get(tid))
+    monkeypatch.setattr(m, "_compiled", {})
     return TestClient(m.app), store
 
 
-def _stub_graph(monkeypatch, state: dict):
-    """Point the app's late-bound `build_graph` at a fixed final state."""
-    import graph.graph as gg
+def _stub_graph(monkeypatch, state: dict, *, resumable: bool = True):
+    """Put a fixed final state into the app's compiled-graph cache.
 
+    Stubs at `_compiled` rather than at `build_graph`, because that is the seam
+    the request path actually reads. Stubbing the builder passed while the app
+    was rebuilding per request and stopped meaning anything once it cached —
+    the test would have kept passing against a stale stub.
+    """
     class _App:
         def invoke(self, *a, **k):
             return state
 
-    monkeypatch.setattr(gg, "build_graph", lambda *a, **k: _App())
+    monkeypatch.setattr(m, "_compiled", {"app": _App(), "resumable": resumable})
 
 
 def _paused(reason="no product or label claim to apply a rule to"):
@@ -156,11 +167,10 @@ def test_all_four_refusals_are_byte_identical(client, monkeypatch):
     responses.append(c.post(f"/resume/{mine['thread_id']}", json={},
                             headers=headers))
     # 4. a thread that was never created
-    import graph.graph as gg
-
     class _Boom:
         invoke = explode
-    monkeypatch.setattr(gg, "build_graph", lambda *a, **k: _Boom())
+
+    monkeypatch.setattr(m, "_compiled", {"app": _Boom(), "resumable": True})
     responses.append(c.post("/resume/00000000-0000-0000-0000-000000000000",
                             json={"resume_token": mine["resume_token"]},
                             headers=headers))
@@ -215,3 +225,79 @@ def test_enforcement_can_be_disabled_for_the_offline_shim(client, monkeypatch):
     _stub_graph(monkeypatch, _answered())
     r = c.post(f"/resume/{mine['thread_id']}", json={})
     assert r.status_code == 200
+
+
+def test_a_pause_with_no_checkpointer_gets_no_token(client, monkeypatch):
+    """A token for an unresumable run is a promise the next request cannot keep.
+
+    With STATE_TABLE unset the graph still runs and still pauses, but nothing is
+    checkpointed. Handing out a capability there would leave the caller holding
+    a credential and receiving a 404 that reads as a refusal rather than as a
+    missing capability — so the body says `resumable: false` instead.
+    """
+    c, store = client
+    _stub_graph(monkeypatch, _paused(), resumable=False)
+    body = c.post("/query", json={"question": "are we affected?"}).json()
+    assert body["status"] == "needs_input"
+    assert "resume_token" not in body
+    assert body["resumable"] is False
+    assert "not resumable" in body["review_reason"]
+    assert store == {}
+
+
+def test_the_graph_is_compiled_once_not_per_request(monkeypatch):
+    """It rebuilt per request, which is why the real end-to-end resume ran
+    against a graph that had never checkpointed anything."""
+    import graph.graph as gg
+
+    monkeypatch.setattr(m, "_compiled", {})
+    monkeypatch.setattr(m, "_store_token", lambda *a: None)
+    monkeypatch.setattr(m, "_load_token", lambda *a: None)
+
+    builds = []
+
+    def counting_build(checkpointer=None):
+        builds.append(checkpointer)
+
+        class _App:
+            def invoke(self, *a, **k):
+                return _answered()
+        return _App()
+
+    monkeypatch.setattr(gg, "build_graph", counting_build)
+    c = TestClient(m.app)
+    for _ in range(3):
+        c.post("/query", json={"question": "when?"})
+    assert len(builds) == 1, f"compiled {len(builds)} times for 3 requests"
+
+
+def test_the_run_config_carries_resumable_not_just_thread_id(monkeypatch):
+    """`hitl_gate` reads `configurable.resumable` and, without it, reports the
+    review status and STOPS instead of calling `interrupt()`.
+
+    Omitting it produced a response that looked entirely correct — 200,
+    `status: needs_input`, a reason — with no checkpoint written and nothing
+    actually pausable. The resume then re-ran from the top, paused the same
+    way, and returned 200 with the same body, which reads like success. Found
+    by running the real graph; invisible to every stubbed test in this file.
+    """
+    monkeypatch.setattr(m, "_compiled", {"app": object(), "resumable": True})
+    cfg = m._config("t-1")["configurable"]
+    assert cfg["thread_id"] == "t-1"
+    assert cfg["resumable"] is True
+
+    monkeypatch.setattr(m, "_compiled", {"app": object(), "resumable": False})
+    assert m._config("t-1")["configurable"]["resumable"] is False
+
+
+def test_resumable_is_derived_from_the_checkpointer_not_asserted(monkeypatch):
+    """A run configured resumable against a graph with nowhere to checkpoint is
+    the failure hitl_gate's own docstring describes, so the two must not be
+    able to disagree."""
+    import graph.graph as gg
+    from shared import config as shared_config
+
+    monkeypatch.setattr(m, "_compiled", {})
+    monkeypatch.setattr(shared_config, "STATE_TABLE", "")
+    monkeypatch.setattr(gg, "build_graph", lambda checkpointer=None: object())
+    assert m._config("t-1")["configurable"]["resumable"] is False
