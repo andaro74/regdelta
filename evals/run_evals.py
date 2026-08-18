@@ -48,7 +48,7 @@ def git_sha() -> str:
         return "nogit"
 
 
-def git_dirty() -> bool:
+def git_dirty(exclude: tuple[str, ...] = ()) -> bool:
     """True if the working tree differs from HEAD.
 
     MOVED HERE from run_retrieval.py, which is where it was written and where
@@ -74,10 +74,20 @@ def git_dirty() -> bool:
     The golden-set runner had NO such guard while its sibling did, which is how
     a 90% agent-mode run at M03 came within one flag of being filed under a
     commit containing none of the graph that produced it.
+
+    `exclude` takes further pathspecs on the same reasoning, for callers whose
+    output does not live in evals/history. `run_demo_parity.py` passes
+    `milestones/M04/answer-parity-*.json`: its two tier runs must happen at one
+    sha, the second cannot happen until `make up` has flipped the tier, and the
+    first run's artifact sits in the tree in between — so without this the
+    second run would refuse to record because the first one succeeded. The
+    pattern is the ARTIFACT, not the directory: an uncommitted edit to the
+    milestone's README is exactly the kind of drift this guard exists to catch.
     """
     try:
+        pathspecs = [":(exclude)evals/history"] + [f":(exclude){p}" for p in exclude]
         return bool(subprocess.check_output(
-            ["git", "status", "--porcelain", "--", ".", ":(exclude)evals/history"],
+            ["git", "status", "--porcelain", "--", ".", *pathspecs],
             text=True, cwd=HERE.parent).strip())
     except Exception:  # noqa: BLE001 — same policy as git_sha: never fail a run over provenance
         return False

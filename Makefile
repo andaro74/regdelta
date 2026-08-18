@@ -33,7 +33,7 @@ CDK          := cd infra && npx cdk
 RESOLVE_ENV = eval "$$(python evals/local_env.py)";
 
 .PHONY: help bootstrap core up down status smoke evals agent-evals discrimination replay-history lint test demo ingest-backfill synth diff \
-        retrieval-evals retrieval-parity preflight rebuild-vectors
+        retrieval-evals retrieval-parity preflight rebuild-vectors demo-parity
 
 help:
 	@echo "make core            - deploy/update persistent stack"
@@ -46,6 +46,8 @@ help:
 	@echo "make retrieval-evals - probe set vs the CURRENT tier (SPEC/02 A)"
 	@echo "make retrieval-parity- cross-tier gate; needs both runs recorded"
 	@echo "                       (ARGS=\"--rerank 1\" gates the RERANK=1 pair)"
+	@echo "make demo-parity     - answer-level cross-tier gate + Tier B latency"
+	@echo "                       (SPEC/04; run once per tier, then it judges)"
 	@echo "make preflight       - date-attribution check alone (cheap)"
 	@echo "make rebuild-vectors - rebuild S3 Vectors from the corpus (no re-embed)"
 	@echo "make lint            - ruff (same scope as the eval gate)"
@@ -150,6 +152,34 @@ retrieval-evals:
 # rebuild-vectors.
 retrieval-parity:
 	python evals/run_parity.py $(ARGS)
+
+# SPEC/04's answer-level comparability criterion, and the Tier B latency number
+# ADR-0001 asked for at M02. Writes milestones/M04/answer-parity-<sha>.json.
+#
+# Cross-run for the same reason retrieval-parity is: one invocation cannot see
+# the other tier, and the tier only changes when `make up` / `make down` moves
+# the SSM parameter. Run it with the hot tier DOWN, then UP, on the same
+# commit; each run merges its half into the one artifact and re-judges. Exit 2
+# means "only one tier recorded", which is not a pass.
+#
+# The tier is DERIVED from the live SSM parameter and then ASSERTED, copied
+# from retrieval-evals above including MSYS_NO_PATHCONV — Git Bash rewrites
+# `--name /regdelta/...` into a Windows path and the lookup returns
+# ParameterNotFound, which reads as "hot tier down" while it is up. An
+# unexpected error fails rather than defaulting, because defaulting to
+# s3vectors is what made that mangled path invisible.
+#
+# RESOLVE_ENV because this drives the real graph in-process: same buckets,
+# tables and search parameter the deployed function has.
+demo-parity:
+	@out=$$(MSYS_NO_PATHCONV=1 aws ssm get-parameter --name $(SSM_ENDPOINT) \
+	    --region $(REGION) --query Parameter.Value --output text 2>&1); \
+	  if echo "$$out" | grep -q '^https://'; then tier=aoss; \
+	  elif echo "$$out" | grep -q 'ParameterNotFound'; then tier=s3vectors; \
+	  else echo "cannot determine the search tier: $$out" >&2; exit 1; fi; \
+	  echo "→ hot tier $$tier"; \
+	  $(RESOLVE_ENV) \
+	  python evals/run_demo_parity.py --tier $$tier $(ARGS)
 
 preflight:
 	python evals/run_retrieval.py --tier s3vectors --preflight-only
