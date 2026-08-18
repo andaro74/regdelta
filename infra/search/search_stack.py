@@ -18,6 +18,7 @@ from pathlib import Path
 import aws_cdk as cdk
 from aws_cdk import (
     Duration,
+    IgnoreMode,
     aws_iam as iam,
     aws_lambda as _lambda,
     aws_opensearchserverless as aoss,
@@ -142,7 +143,33 @@ class RegDeltaSearchStack(cdk.Stack):
             # src/ contains no non-.py runtime file. Adding a data file to the
             # Lambda later means adding it here deliberately, which is the
             # intended cost.
-            code=_lambda.Code.from_asset(SRC, exclude=["*", "!**/*.py"]),
+            #
+            # IGNORE MODE IS LOAD-BEARING, and its default is wrong for an
+            # allowlist. Measured at M04, not reasoned about: the deploy failed
+            # with "No module named 'retrieval'", and the staged asset held
+            # exactly two files — src/__init__.py and .pytest_cache/.gitignore.
+            #
+            # The default (IgnoreMode.GLOB) runs these patterns through
+            # minimatch, where `*` matches every top-level ENTRY, directories
+            # included, and a pruned directory can never be re-entered by a
+            # later negation — so `!**/*.py` reached nothing below the root.
+            # Worse for the finding this list exists to answer: minimatch's `*`
+            # does not match a dot-prefixed name, so `.env`, `.aws/credentials`
+            # and `.git/` were never excluded at all. The allowlist shipped
+            # none of the source it was supposed to and all of the secrets it
+            # was written to stop.
+            #
+            # DOCKER is .dockerignore semantics: every path is tested on its
+            # own, so a negation re-includes files under an excluded directory,
+            # and `*` matches dotfiles. Verified by synthesising against a
+            # probe tree containing .env, .aws/credentials, dev.env,
+            # secrets.json and __pycache__: only **/*.py ships. GIT mode was
+            # also tried and prunes directories the same way GLOB does.
+            # tests/test_search_stack_access.py asserts the STAGED ASSET's file
+            # list, because the test that existed asserted only the handler
+            # string and passed throughout.
+            code=_lambda.Code.from_asset(SRC, exclude=["*", "!**/*.py"],
+                                         ignore_mode=IgnoreMode.DOCKER),
             timeout=Duration.minutes(15), memory_size=1024,
             environment=reindex_env)
         corpus_bucket.grant_read(reindex)

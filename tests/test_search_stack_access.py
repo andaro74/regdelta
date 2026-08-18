@@ -151,6 +151,74 @@ def test_the_reindex_lambda_ships_the_shared_source_tree():
     assert "retrieval.reindex.handler" in handlers
 
 
+def staged_asset_files() -> list[str]:
+    """The file list CDK actually stages for the reindex Lambda.
+
+    Synthesised into a real assembly directory, because the asset is copied at
+    synth time and the template records only a hash. Everything above reads the
+    TEMPLATE, and the template cannot say whether the module is in the zip.
+    """
+    import sys
+    import tempfile
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent.parent / "infra"))
+    import aws_cdk as cdk
+    from aws_cdk import aws_s3 as s3
+    from search.search_stack import RegDeltaSearchStack
+
+    app = cdk.App(outdir=tempfile.mkdtemp())
+    host = cdk.Stack(app, "host", env=cdk.Environment(
+        account="111122223333", region="us-west-2"))
+    bucket = s3.Bucket(host, "Corpus")
+    RegDeltaSearchStack(
+        app, "regdelta-search", corpus_bucket=bucket,
+        query_lambda_role_arn=QUERY_ROLE,
+        env=cdk.Environment(account="111122223333", region="us-west-2"))
+    assembly = app.synth()
+
+    # Located through the TEMPLATE's own S3 key rather than by picking a
+    # directory: the assembly stages a second asset for the CDK trigger
+    # provider, and "the first asset directory" would silently be that one.
+    template = assembly.get_stack_by_name("regdelta-search").template
+    key = next(r["Properties"]["Code"]["S3Key"]
+               for r in template["Resources"].values()
+               if r["Type"] == "AWS::Lambda::Function"
+               and r["Properties"]["Handler"] == "retrieval.reindex.handler")
+    root = Path(assembly.directory) / f"asset.{key.removesuffix('.zip')}"
+    assert root.is_dir(), f"no staged asset at {root}"
+    return sorted(str(f.relative_to(root)).replace("\\", "/")
+                  for f in root.rglob("*") if f.is_file())
+
+
+def test_the_reindex_asset_actually_contains_the_module_it_handles():
+    """The deploy failed on this, and the test above passed throughout.
+
+    "Handler is retrieval.reindex.handler" is a claim about the template; the
+    Lambda needs the MODULE. Under CDK's default GLOB ignore mode the asset's
+    exclude list pruned every directory under src/ and staged two files, so the
+    hot tier could not come up at all: "Unable to import module
+    'retrieval.reindex': No module named 'retrieval'".
+    """
+    files = staged_asset_files()
+    assert "retrieval/reindex.py" in files, files[:20]
+    assert "retrieval/aoss_client.py" in files, files[:20]
+
+
+def test_the_asset_allowlist_ships_python_and_nothing_else():
+    """Security review L4's finding, asserted rather than described.
+
+    The list is an ALLOWLIST so it holds against whatever lands in src/ later —
+    a scratch .env, a downloaded credential. Under the default ignore mode it
+    did the opposite: minimatch's `*` does not match dot-prefixed names, so
+    dotfiles were never excluded, and `.pytest_cache/` shipped from a real
+    synth. A denylist would have been honest about what it could not stop; this
+    was an allowlist that leaked.
+    """
+    leaked = [f for f in staged_asset_files() if not f.endswith(".py")]
+    assert leaked == [], f"non-Python files staged into the Lambda: {leaked}"
+
+
 def lambda_env(template: dict) -> dict:
     for res in template["Resources"].values():
         if res["Type"] == "AWS::Lambda::Function" and \
