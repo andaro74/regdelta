@@ -28,6 +28,22 @@ permissions:
 jobs:
   unit:
     runs-on: ubuntu-latest
+    # DO NOT WIDEN THIS. No `id-token: write`, no `pull-requests: write`, no
+    # secrets — and the reason changed at M04, so it is worth restating rather
+    # than inheriting.
+    #
+    # This job now installs aws-cdk-lib, without which
+    # tests/test_search_stack_access.py skipped in CI while passing locally
+    # (713 tests against 733) — including every AOSS data-access-policy test.
+    # Importing aws_cdk STARTS A NODE CHILD PROCESS and the install carries
+    # tens of MB of vendored third-party JavaScript, executed on every PR
+    # including forks. That is acceptable only because this job holds
+    # `contents: read`, assumes no AWS role and sees no secrets: a hostile
+    # transitive gets a read-only token and nothing else.
+    #
+    # The comment at the top of this file says the moment a job starts doing
+    # more is the moment to re-check what it is allowed to do. This was that
+    # moment; the scoping already covered it. security-reviewer L5, M04.
     permissions:
       contents: read
     steps:

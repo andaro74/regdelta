@@ -255,6 +255,21 @@ here: it is an eval-instrument and golden-set matter, which routes through
   than the ephemeral stack the fix closed, and `core_stack` has **no test
   coverage at all**. Not fixed here: it is a persistent-stack change needing
   `make core`, and SPEC/04's scope is the demo. For the human seat.
+- **The CDK pin does not cover its own transitives.** `aws-cdk-lib==2.263.0` is
+  now in `requirements-dev.txt` so CI runs the twenty infra tests it was
+  silently skipping — but it pulls eight unnamed packages, three of which float.
+  One is **`jsii`**, the Python-to-Node bridge that runs the bundled JavaScript
+  doing asset staging, which is exactly what the allowlist tests exercise. A
+  jsii release can move staging behaviour under a frozen `aws-cdk-lib` pin, and
+  then CI tests something the laptop does not — the drift `requirements-dev.txt`
+  exists to end. Only two jsii versions satisfy the range today, so the exposure
+  is this week's, not the constraint's. Pinning transitives is a dependency
+  decision and is **not taken**; `security-reviewer` M1.
+- **The deploy's CDK version is constrained by nothing.** `infra/requirements.txt`
+  is installed by no automated path — `cdk deploy` runs whatever is in the
+  operator's venv. So the floor is advisory, and `test_the_dev_pin_is_not_below_the_deploy_floor`
+  only stops the test pin dropping below it; it cannot make CI and a deploy
+  agree. `security-reviewer` L6.
 - **`dropped_citations` was recorded as `[]` on every response without ever
   being measured** — `src/api/api.py:_shape` did not emit the field the shim has
   emitted since q03, so the artifact read "nothing was dropped" where nothing
