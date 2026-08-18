@@ -19,7 +19,9 @@
 
 ## Evidence
 
-`evals/history/a7bd28c-s3vectors-full.json` — agent mode, 49-document corpus:
+`evals/history/a7bd28c-s3vectors-full.json` and `4296f04-s3vectors-full.json` —
+agent mode, 49-document corpus, two runs three days apart at the same corpus
+fingerprint `b70879d76cea`:
 
     overall            18/20  (90%)     was 16/20 before the crossref fix
     --subset retrieval   5/5            SPEC/04's Done-when clause: MET
@@ -27,8 +29,9 @@
     --subset smoke       5/5
     --subset timeline    6/7
 
-719 tests, ruff clean. **CI is RED on #11** — see "CI is red, and it is not
-Phase 4" below.
+746 tests, ruff clean, **CI green on #11** — see "CI was red because the system
+got better" below. The infra tests now run there too: they were skipping
+silently, 713 tests in CI against 733 locally.
 
 ### Phase 4 — `milestones/M04/answer-parity-3966b47.json`
 
@@ -209,22 +212,66 @@ passed vacuously in a clean checkout — green by construction, one level down,
 in the test written to close a green-by-construction defect. Five mutations now
 checked, all caught.
 
-## CI is red, and it is not Phase 4
+## CI was red because the system got better — ruled and fixed
 
-`gh pr checks 11` → `unit fail`, and it was red before this session started.
-`f060cea` added `evals/history/a7bd28c-s3vectors-full.json`, and
-`replay_history.py` now reports a gating finding:
+`gh pr checks 11` was `unit fail` before this session started. `f060cea` added
+`evals/history/a7bd28c-s3vectors-full.json` and `replay_history.py` began
+reporting a gating finding:
 
     FRAGILE  q14: agent answers disagree across runs —
              2cea737=FAIL a7bd28c=PASS e26d8ef=FAIL
              both failures on: missing required: '101.13(h)'
 
-Three `tests/test_replay_exit_codes.py` tests fail on it. Reproduced with this
-session's changes stashed, so it is not Phase 4's. **It is a determinism finding
-about the answer layer** — the same property `make demo-parity`'s control 2
-tests, which the three demo scenarios passed cleanly on both tiers. Untouched
-here: it is an eval-instrument and golden-set matter, which routes through
-`sme-eval-triage` and a human ruling, not an implementer.
+It read like a determinism finding about the answer layer. It was not.
+
+**`sme-eval-triage` classed the two failures (a) SYSTEM; the question stands and
+was not touched.** 21 CFR 101.65(a)(2) requires a 'healthy' claim to meet
+§ 101.13 *"with the exception of § 101.13(h) when the nutrient content claim is
+made in accordance with paragraph (d)"* — and paragraph (d) **is** the 'healthy'
+paragraph, most recently amended by 89 FR 106162, the rule itself. So
+`101.13(h)` is not one defensible citation among several; it is the only
+exception the section states. Both failing answers did worse than omit it: they
+**invented** a carve-out at § 101.13(b)(2)(ii) — one calling it a disclosure
+statement, the other a 10% DV "jelly bean" rule. (b)(2) is the definition of an
+implied nutrient content claim and is neither. Both self-flagged
+`pending_review` at confidence 0.75.
+
+**The defect was in the instrument.** `replay_history.py` pooled every recorded
+agent answer *regardless of commit* and flagged any mixed set, so a question
+that failed, was fixed, and now passes read as a gating defect. q14's cards span
+the commit that wired `crossref_agent` into the verdict prompt — the single
+feature q14 measures, and the fix that moved the set 16/20 → 18/20. History is
+append-only, so the pre-fix cards never age out: **CI would have stayed red
+forever, and every future fix to a failing question would repeat it.**
+
+Ruled by the human seat: **FRAGILE is now directional.** `pass → fail` still
+gates — that is how q05 passed at `2cea737` and failed at `e26d8ef` on identical
+tokens. `fail → pass` reports as `IMPROVED`. A `fail → pass → fail` sequence
+contains a `pass → fail` and still gates, so `IMPROVED` cannot launder an
+oscillating question.
+
+Direction is a claim about **time**, which exposed a second defect one line up:
+`recorded()` promised "oldest card first" while sorting by filename, i.e.
+alphabetically by sha. That is load-bearing rather than cosmetic — q14's cards
+sort `2cea737, a7bd28c, e26d8ef` by name against `FAIL, FAIL, PASS` in time, so
+by name the sequence reads `FAIL → PASS → FAIL`: a `pass → fail` transition that
+never happened, and the gate would still be red. Cards now sort by `at`.
+
+Five mutations checked, five caught. **CI is green** (`746 passed`, `0 skipped`).
+
+**The n=1 caveat is discharged.** `sme-eval-triage` would not treat one green
+card as proof of a fix, so a confirming run was recorded:
+`evals/history/4296f04-s3vectors-full.json` — 18/20, same corpus
+(`b70879d76cea`), **q14 passes again**. The sequence is now
+`FAIL FAIL PASS PASS`.
+
+One thing it flagged and nobody acted on, deliberately: q14's literal binds
+notation, so a correct answer written as "§ 101.13 applies except its paragraph
+(h)" would not contain the substring `101.13(h)`. That did **not** fire here —
+neither failing answer used any (h) notation — and loosening the token without
+first closing the hedge path in the `except/carve` group would turn q14 into a
+question both wrong answers pass. Hardening candidate for the SME seat, not a
+fix for this failure.
 
 ## Deferred, with evidence — not forgotten
 
