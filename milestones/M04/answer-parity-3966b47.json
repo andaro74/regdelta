@@ -1,0 +1,1154 @@
+{
+  "sha": "3966b47",
+  "kind": "answer-parity",
+  "spec": "SPEC/04 \u2014 answer-level cross-tier comparability (owed by ADR-0009); Tier B latency (owed by ADR-0001 at M02)",
+  "tiers": {
+    "s3vectors": {
+      "at": "2026-08-18T04:42:19+00:00",
+      "tier_requested": "s3vectors",
+      "tier_resolved_answers": [
+        "s3vectors"
+      ],
+      "tier_resolved_probes": [
+        "s3vectors"
+      ],
+      "health_before": {
+        "status": "ok",
+        "tier": "s3vectors"
+      },
+      "health_after": {
+        "status": "ok",
+        "tier": "s3vectors"
+      },
+      "fallbacks": [],
+      "repeats": 2,
+      "cache_bypass": {
+        "how": "x-regdelta-no-cache header on every request",
+        "statuses": [
+          "bypass"
+        ]
+      },
+      "transport": "in-process ASGI (fastapi.testclient over src/api/api.py, the object Mangum runs on Lambda) against real AWS",
+      "retrievals_during_answers": 6,
+      "config": {
+        "model_fast": "us.anthropic.claude-sonnet-4-6",
+        "model_verdict": "us.anthropic.claude-opus-4-6-v1",
+        "rerank": false,
+        "lexical_lane": false,
+        "per_doc_cap": 3,
+        "semantic_cache": false,
+        "k": 8
+      },
+      "corpus": {
+        "available": true,
+        "documents": 49,
+        "documents_sha": "b70879d76cea",
+        "newest_pub_date": "2026-08-17",
+        "oldest_pub_date": "2024-12-27"
+      },
+      "scenarios": [
+        {
+          "id": "healthy-claim",
+          "label": "'Healthy' claim \u2014 did the deadline move?",
+          "expected_status": "ok",
+          "input_sha256": "a32ec1d4f8fe324e2065104d2c948b8036a3c1822dba88dd737fe3e6368c8372",
+          "question_sha256": "ecf7dc28ab265e6e69ce31bc20a2f3213aa990146964737e8d79d14685250a3f",
+          "profile_sha256": "c0809ddf1377dfc20fb984572fdadf3c263dfc0c856b7ab95487ac875897f1b8",
+          "runs": [
+            {
+              "run_index": 0,
+              "cache": "bypass",
+              "status": "ok",
+              "citations": [
+                "89 FR 106064",
+                "90 FR 10592"
+              ],
+              "real_deadlines": [
+                "2028-02-25"
+              ],
+              "rows": [
+                {
+                  "product": "strawberry-frosted granola bar",
+                  "trigger": "Updated definition of 'healthy' implied nutrient content claim under 21 CFR 101.65(d)",
+                  "real_deadline": "2028-02-25",
+                  "confidence": 0.97,
+                  "citations": [
+                    "89 FR 106064",
+                    "90 FR 10592"
+                  ]
+                }
+              ],
+              "confidence": 0.97,
+              "answer_chars": 684,
+              "dropped_citations": [],
+              "trace_id": "38b33ec2-a0a8-48a3-8d82-7d1b5cfedd46",
+              "wall_s": 13.63
+            },
+            {
+              "run_index": 1,
+              "cache": "bypass",
+              "status": "ok",
+              "citations": [
+                "89 FR 106064",
+                "90 FR 10592"
+              ],
+              "real_deadlines": [
+                "2028-02-25"
+              ],
+              "rows": [
+                {
+                  "product": "strawberry-frosted granola bar",
+                  "trigger": "Updated definition of 'healthy' nutrient content claim under 21 CFR 101.65(d)",
+                  "real_deadline": "2028-02-25",
+                  "confidence": 0.97,
+                  "citations": [
+                    "89 FR 106064",
+                    "90 FR 10592"
+                  ]
+                }
+              ],
+              "confidence": 0.97,
+              "answer_chars": 587,
+              "dropped_citations": [],
+              "trace_id": "5a02e4fd-feda-43b2-bcaa-b36813a967e4",
+              "wall_s": 10.84
+            }
+          ],
+          "deterministic": true
+        },
+        {
+          "id": "red-no-3",
+          "label": "FD&C Red No. 3 \u2014 when exactly must we stop?",
+          "expected_status": "ok",
+          "input_sha256": "d7131e2345d7ada1d56d07d79699bc62cabf9c1d580644772188d2092fa67c15",
+          "question_sha256": "8035348407bb26d2c43f922b3eb1a88161053b941e2e5699fc2b3c2d2664f511",
+          "profile_sha256": "a6e36d6705756bc0f5ae53fc844c16c7db02d91e7b2aa1eb6ef7f29e38255fb2",
+          "runs": [
+            {
+              "run_index": 0,
+              "cache": "bypass",
+              "status": "ok",
+              "citations": [
+                "21 CFR 74.303",
+                "21 CFR 80.32(h)",
+                "90 FR 4628",
+                "91 FR 50475"
+              ],
+              "real_deadlines": [
+                "2027-01-15"
+              ],
+              "rows": [
+                {
+                  "product": "strawberry frosting",
+                  "trigger": "Revocation of 21 CFR 74.303 (FD&C Red No. 3 listing for food use) per 90 FR 4628, confirmed by 91 FR 50475",
+                  "real_deadline": "2027-01-15",
+                  "confidence": 0.97,
+                  "citations": [
+                    "21 CFR 74.303",
+                    "21 CFR 80.32(h)",
+                    "90 FR 4628",
+                    "91 FR 50475"
+                  ]
+                }
+              ],
+              "confidence": 0.97,
+              "answer_chars": 1446,
+              "dropped_citations": [],
+              "trace_id": "53705fcf-80af-4cb6-8547-edb55afd2dc3",
+              "wall_s": 12.89
+            },
+            {
+              "run_index": 1,
+              "cache": "bypass",
+              "status": "ok",
+              "citations": [
+                "21 CFR 74.303",
+                "21 CFR 80.32(h)",
+                "90 FR 4628",
+                "91 FR 50475"
+              ],
+              "real_deadlines": [
+                "2027-01-15"
+              ],
+              "rows": [
+                {
+                  "product": "strawberry frosting",
+                  "trigger": "Revocation of 21 CFR 74.303 (FD&C Red No. 3 listing for food use)",
+                  "real_deadline": "2027-01-15",
+                  "confidence": 0.97,
+                  "citations": [
+                    "21 CFR 74.303",
+                    "21 CFR 80.32(h)",
+                    "90 FR 4628",
+                    "91 FR 50475"
+                  ]
+                }
+              ],
+              "confidence": 0.97,
+              "answer_chars": 1490,
+              "dropped_citations": [],
+              "trace_id": "93aeef22-495f-4f28-822f-7538c1b3014e",
+              "wall_s": 13.33
+            }
+          ],
+          "deterministic": true
+        },
+        {
+          "id": "needs-review",
+          "label": "Are we affected? \u2014 the question that pauses",
+          "expected_status": "needs_input",
+          "input_sha256": "495f19f22b03bb3d974c9151d16990cadcba2aa73b9c1fac5924c8cf0666bfb7",
+          "question_sha256": "283027bdd0154a2dfb11d0499ba733139af6f1cda563c17bdd33d9bccb29e406",
+          "profile_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "runs": [
+            {
+              "run_index": 0,
+              "cache": "bypass",
+              "status": "needs_input",
+              "citations": [
+                "2024-29957",
+                "2025-03118",
+                "89 FR 106064"
+              ],
+              "real_deadlines": [
+                "2028-02-25"
+              ],
+              "rows": [
+                {
+                  "product": "All products bearing a 'healthy' (or derivative) nutrient content claim",
+                  "trigger": "Updated definition of 'healthy' implied nutrient content claim under 21 CFR 101.65(d)",
+                  "real_deadline": "2028-02-25",
+                  "confidence": 0.95,
+                  "citations": [
+                    "2024-29957",
+                    "2025-03118",
+                    "89 FR 106064"
+                  ]
+                }
+              ],
+              "confidence": 0.95,
+              "answer_chars": 1098,
+              "dropped_citations": [],
+              "trace_id": "0f6add9a-3e72-42dc-a630-9e1099ac588c",
+              "wall_s": 17.45
+            },
+            {
+              "run_index": 1,
+              "cache": "bypass",
+              "status": "needs_input",
+              "citations": [
+                "2024-29957",
+                "2025-03118",
+                "89 FR 106064"
+              ],
+              "real_deadlines": [
+                "2028-02-25"
+              ],
+              "rows": [
+                {
+                  "product": "All products bearing a 'healthy' claim",
+                  "trigger": "Updated definition of 'healthy' implied nutrient content claim under 21 CFR 101.65(d)",
+                  "real_deadline": "2028-02-25",
+                  "confidence": 0.95,
+                  "citations": [
+                    "2024-29957",
+                    "2025-03118",
+                    "89 FR 106064"
+                  ]
+                }
+              ],
+              "confidence": 0.95,
+              "answer_chars": 1231,
+              "dropped_citations": [],
+              "trace_id": "e8c5c2bb-db23-4cf8-8456-cd1ffb8e0619",
+              "wall_s": 17.88
+            }
+          ],
+          "deterministic": true
+        }
+      ],
+      "latency": {
+        "instrument": "router.retrieve(query, Filters, k=8), in-process, wall clock",
+        "includes": [
+          "query embedding (Bedrock)",
+          "engine round trip",
+          "client-side filter, rerank, per-doc cap and diversify",
+          "the memoised SSM endpoint lookup, on its 60s TTL expiry"
+        ],
+        "probe_set": "evals/retrieval_truth.json",
+        "probes": 9,
+        "repeats": 3,
+        "n": 27,
+        "warmup_ms": 819.7,
+        "warmup_excluded": true,
+        "median_ms": 354.1,
+        "p95_ms": 621.2,
+        "p95_method": "nearest-rank over n=27",
+        "min_ms": 320.8,
+        "max_ms": 630.4,
+        "per_probe_median_ms": {
+          "r01": 333.4,
+          "r02": 329.4,
+          "r03": 349.7,
+          "r04": 354.1,
+          "r05": 373.0,
+          "r06": 364.2,
+          "r07": 568.8,
+          "r08": 621.2,
+          "r09": 353.3
+        },
+        "samples_ms": {
+          "r01": [
+            320.8,
+            349.4,
+            333.4
+          ],
+          "r02": [
+            337.1,
+            329.4,
+            327.8
+          ],
+          "r03": [
+            384.4,
+            331.4,
+            349.7
+          ],
+          "r04": [
+            354.1,
+            345.5,
+            386.1
+          ],
+          "r05": [
+            347.5,
+            373.0,
+            390.2
+          ],
+          "r06": [
+            391.9,
+            337.5,
+            364.2
+          ],
+          "r07": [
+            571.2,
+            568.8,
+            555.9
+          ],
+          "r08": [
+            617.2,
+            621.2,
+            630.4
+          ],
+          "r09": [
+            362.8,
+            326.5,
+            353.3
+          ]
+        },
+        "tier_resolved": [
+          "s3vectors"
+        ],
+        "target": null,
+        "target_note": "SPEC/04 sets no latency target, deliberately; this number gates its own existence, not a threshold.",
+        "concurrency_note": "sequential, single stream. Concurrent load is M06's (SPEC/04 Out of scope), so this licenses no throughput claim."
+      }
+    },
+    "aoss": {
+      "at": "2026-08-18T11:06:40+00:00",
+      "tier_requested": "aoss",
+      "tier_resolved_answers": [
+        "aoss"
+      ],
+      "tier_resolved_probes": [
+        "aoss"
+      ],
+      "health_before": {
+        "status": "ok",
+        "tier": "aoss"
+      },
+      "health_after": {
+        "status": "ok",
+        "tier": "aoss"
+      },
+      "fallbacks": [],
+      "repeats": 2,
+      "cache_bypass": {
+        "how": "x-regdelta-no-cache header on every request",
+        "statuses": [
+          "bypass"
+        ]
+      },
+      "transport": "in-process ASGI (fastapi.testclient over src/api/api.py, the object Mangum runs on Lambda) against real AWS",
+      "retrievals_during_answers": 6,
+      "config": {
+        "model_fast": "us.anthropic.claude-sonnet-4-6",
+        "model_verdict": "us.anthropic.claude-opus-4-6-v1",
+        "rerank": false,
+        "lexical_lane": false,
+        "per_doc_cap": 3,
+        "semantic_cache": false,
+        "k": 8
+      },
+      "corpus": {
+        "available": true,
+        "documents": 49,
+        "documents_sha": "b70879d76cea",
+        "newest_pub_date": "2026-08-17",
+        "oldest_pub_date": "2024-12-27"
+      },
+      "scenarios": [
+        {
+          "id": "healthy-claim",
+          "label": "'Healthy' claim \u2014 did the deadline move?",
+          "expected_status": "ok",
+          "input_sha256": "a32ec1d4f8fe324e2065104d2c948b8036a3c1822dba88dd737fe3e6368c8372",
+          "question_sha256": "ecf7dc28ab265e6e69ce31bc20a2f3213aa990146964737e8d79d14685250a3f",
+          "profile_sha256": "c0809ddf1377dfc20fb984572fdadf3c263dfc0c856b7ab95487ac875897f1b8",
+          "runs": [
+            {
+              "run_index": 0,
+              "cache": "bypass",
+              "status": "ok",
+              "citations": [
+                "89 FR 106064",
+                "90 FR 10592"
+              ],
+              "real_deadlines": [
+                "2028-02-25"
+              ],
+              "rows": [
+                {
+                  "product": "strawberry-frosted granola bar",
+                  "trigger": "Updated definition of 'healthy' nutrient content claim under 21 CFR 101.65(d)",
+                  "real_deadline": "2028-02-25",
+                  "confidence": 0.97,
+                  "citations": [
+                    "89 FR 106064",
+                    "90 FR 10592"
+                  ]
+                }
+              ],
+              "confidence": 0.97,
+              "answer_chars": 587,
+              "dropped_citations": [],
+              "trace_id": "b5566d34-c295-4177-a570-9b8385034bd2",
+              "wall_s": 15.54
+            },
+            {
+              "run_index": 1,
+              "cache": "bypass",
+              "status": "ok",
+              "citations": [
+                "89 FR 106064",
+                "90 FR 10592"
+              ],
+              "real_deadlines": [
+                "2028-02-25"
+              ],
+              "rows": [
+                {
+                  "product": "strawberry-frosted granola bar",
+                  "trigger": "Updated definition of 'healthy' implied nutrient content claim under 21 CFR 101.65(d)",
+                  "real_deadline": "2028-02-25",
+                  "confidence": 0.97,
+                  "citations": [
+                    "89 FR 106064",
+                    "90 FR 10592"
+                  ]
+                }
+              ],
+              "confidence": 0.97,
+              "answer_chars": 684,
+              "dropped_citations": [],
+              "trace_id": "c9d6bbeb-74a8-45d9-bbac-847a088cc56a",
+              "wall_s": 12.32
+            }
+          ],
+          "deterministic": true
+        },
+        {
+          "id": "red-no-3",
+          "label": "FD&C Red No. 3 \u2014 when exactly must we stop?",
+          "expected_status": "ok",
+          "input_sha256": "d7131e2345d7ada1d56d07d79699bc62cabf9c1d580644772188d2092fa67c15",
+          "question_sha256": "8035348407bb26d2c43f922b3eb1a88161053b941e2e5699fc2b3c2d2664f511",
+          "profile_sha256": "a6e36d6705756bc0f5ae53fc844c16c7db02d91e7b2aa1eb6ef7f29e38255fb2",
+          "runs": [
+            {
+              "run_index": 0,
+              "cache": "bypass",
+              "status": "ok",
+              "citations": [
+                "21 CFR 74.303",
+                "21 CFR 80.32(h)",
+                "90 FR 4628",
+                "91 FR 50475"
+              ],
+              "real_deadlines": [
+                "2027-01-15"
+              ],
+              "rows": [
+                {
+                  "product": "strawberry frosting",
+                  "trigger": "Revocation of 21 CFR 74.303 (FD&C Red No. 3 listing for food use)",
+                  "real_deadline": "2027-01-15",
+                  "confidence": 0.97,
+                  "citations": [
+                    "21 CFR 74.303",
+                    "21 CFR 80.32(h)",
+                    "90 FR 4628",
+                    "91 FR 50475"
+                  ]
+                }
+              ],
+              "confidence": 0.97,
+              "answer_chars": 1390,
+              "dropped_citations": [],
+              "trace_id": "bc6431e6-f4f2-4801-90b0-2a4af7cf1b9c",
+              "wall_s": 13.55
+            },
+            {
+              "run_index": 1,
+              "cache": "bypass",
+              "status": "ok",
+              "citations": [
+                "21 CFR 74.303",
+                "21 CFR 80.32(h)",
+                "90 FR 4628",
+                "91 FR 50475"
+              ],
+              "real_deadlines": [
+                "2027-01-15"
+              ],
+              "rows": [
+                {
+                  "product": "strawberry frosting",
+                  "trigger": "Revocation of 21 CFR 74.303 (FD&C Red No. 3 listing for food use)",
+                  "real_deadline": "2027-01-15",
+                  "confidence": 0.97,
+                  "citations": [
+                    "21 CFR 74.303",
+                    "21 CFR 80.32(h)",
+                    "90 FR 4628",
+                    "91 FR 50475"
+                  ]
+                }
+              ],
+              "confidence": 0.97,
+              "answer_chars": 1474,
+              "dropped_citations": [],
+              "trace_id": "a5b61513-c19e-48ad-a812-934f5d4620c9",
+              "wall_s": 14.9
+            }
+          ],
+          "deterministic": true
+        },
+        {
+          "id": "needs-review",
+          "label": "Are we affected? \u2014 the question that pauses",
+          "expected_status": "needs_input",
+          "input_sha256": "495f19f22b03bb3d974c9151d16990cadcba2aa73b9c1fac5924c8cf0666bfb7",
+          "question_sha256": "283027bdd0154a2dfb11d0499ba733139af6f1cda563c17bdd33d9bccb29e406",
+          "profile_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "runs": [
+            {
+              "run_index": 0,
+              "cache": "bypass",
+              "status": "needs_input",
+              "citations": [
+                "2024-29957",
+                "2025-03118",
+                "89 FR 106064"
+              ],
+              "real_deadlines": [
+                "2028-02-25"
+              ],
+              "rows": [
+                {
+                  "product": "All products bearing a 'healthy' nutrient content claim",
+                  "trigger": "Updated definition of 'healthy' under 21 CFR 101.65(d) (final rule 2024-29957, 89 FR 106064)",
+                  "real_deadline": "2028-02-25",
+                  "confidence": 0.95,
+                  "citations": [
+                    "2024-29957",
+                    "2025-03118",
+                    "89 FR 106064"
+                  ]
+                }
+              ],
+              "confidence": 0.95,
+              "answer_chars": 1213,
+              "dropped_citations": [],
+              "trace_id": "7aa19e62-916c-494a-929e-7f460941b601",
+              "wall_s": 18.92
+            },
+            {
+              "run_index": 1,
+              "cache": "bypass",
+              "status": "needs_input",
+              "citations": [
+                "2024-29957",
+                "2025-03118",
+                "89 FR 106064"
+              ],
+              "real_deadlines": [
+                "2028-02-25"
+              ],
+              "rows": [
+                {
+                  "product": "All products bearing a 'healthy' (or derivative) nutrient content claim",
+                  "trigger": "Updated definition of 'healthy' implied nutrient content claim under 21 CFR 101.65(d)",
+                  "real_deadline": "2028-02-25",
+                  "confidence": 0.95,
+                  "citations": [
+                    "2024-29957",
+                    "2025-03118",
+                    "89 FR 106064"
+                  ]
+                }
+              ],
+              "confidence": 0.95,
+              "answer_chars": 1055,
+              "dropped_citations": [],
+              "trace_id": "bba241ce-1abc-452c-8476-5d1b89f00dc1",
+              "wall_s": 17.96
+            }
+          ],
+          "deterministic": true
+        }
+      ],
+      "latency": {
+        "instrument": "router.retrieve(query, Filters, k=8), in-process, wall clock",
+        "includes": [
+          "query embedding (Bedrock)",
+          "engine round trip",
+          "client-side filter, rerank, per-doc cap and diversify",
+          "the memoised SSM endpoint lookup, on its 60s TTL expiry"
+        ],
+        "probe_set": "evals/retrieval_truth.json",
+        "probes": 9,
+        "repeats": 3,
+        "n": 27,
+        "warmup_ms": 1019.6,
+        "warmup_excluded": true,
+        "median_ms": 889.3,
+        "p95_ms": 1300.7,
+        "p95_method": "nearest-rank over n=27",
+        "min_ms": 788.8,
+        "max_ms": 1328.5,
+        "per_probe_median_ms": {
+          "r01": 852.9,
+          "r02": 938.0,
+          "r03": 846.8,
+          "r04": 856.4,
+          "r05": 891.9,
+          "r06": 853.6,
+          "r07": 1221.2,
+          "r08": 1266.7,
+          "r09": 840.7
+        },
+        "samples_ms": {
+          "r01": [
+            978.8,
+            852.9,
+            813.5
+          ],
+          "r02": [
+            1016.6,
+            888.2,
+            938.0
+          ],
+          "r03": [
+            889.3,
+            846.8,
+            788.8
+          ],
+          "r04": [
+            856.4,
+            801.6,
+            891.3
+          ],
+          "r05": [
+            839.2,
+            891.9,
+            894.0
+          ],
+          "r06": [
+            853.6,
+            879.6,
+            826.5
+          ],
+          "r07": [
+            1300.7,
+            1221.2,
+            1199.2
+          ],
+          "r08": [
+            1266.7,
+            1163.5,
+            1328.5
+          ],
+          "r09": [
+            928.1,
+            840.1,
+            840.7
+          ]
+        },
+        "tier_resolved": [
+          "aoss"
+        ],
+        "target": null,
+        "target_note": "SPEC/04 sets no latency target, deliberately; this number gates its own existence, not a threshold.",
+        "concurrency_note": "sequential, single stream. Concurrent load is M06's (SPEC/04 Out of scope), so this licenses no throughput claim."
+      }
+    }
+  },
+  "dirty": false,
+  "scenarios_file": {
+    "path": "evals/scenarios.json",
+    "sha256": "f442eeb24ed61ec1ad0e5e271fa48f088f8d62daf00776357738b5e4c1a7d9c8",
+    "count": 3
+  },
+  "comparison": {
+    "at": "2026-08-18T11:06:40+00:00",
+    "tiers_present": [
+      "s3vectors",
+      "aoss"
+    ],
+    "criterion": "citations (as sets) and every real_deadline (exactly) must agree across tiers; confidence and prose may differ",
+    "scenarios": [
+      {
+        "id": "healthy-claim",
+        "input_sha256": {
+          "s3vectors": "a32ec1d4f8fe324e2065104d2c948b8036a3c1822dba88dd737fe3e6368c8372",
+          "aoss": "a32ec1d4f8fe324e2065104d2c948b8036a3c1822dba88dd737fe3e6368c8372"
+        },
+        "input_sha256_agree": true,
+        "determinism": {
+          "s3vectors": true,
+          "aoss": true
+        },
+        "status": {
+          "s3vectors": [
+            "ok",
+            "ok"
+          ],
+          "aoss": [
+            "ok",
+            "ok"
+          ]
+        },
+        "cache": {
+          "s3vectors": [
+            "bypass",
+            "bypass"
+          ],
+          "aoss": [
+            "bypass",
+            "bypass"
+          ]
+        },
+        "citations": {
+          "s3vectors": [
+            "89 FR 106064",
+            "90 FR 10592"
+          ],
+          "aoss": [
+            "89 FR 106064",
+            "90 FR 10592"
+          ],
+          "agree": true,
+          "only_in_s3vectors": [],
+          "only_in_aoss": []
+        },
+        "real_deadlines": {
+          "s3vectors": [
+            "2028-02-25"
+          ],
+          "aoss": [
+            "2028-02-25"
+          ],
+          "agree": true
+        },
+        "rows": {
+          "s3vectors": [
+            {
+              "product": "strawberry-frosted granola bar",
+              "trigger": "Updated definition of 'healthy' implied nutrient content claim under 21 CFR 101.65(d)",
+              "real_deadline": "2028-02-25",
+              "confidence": 0.97,
+              "citations": [
+                "89 FR 106064",
+                "90 FR 10592"
+              ]
+            }
+          ],
+          "aoss": [
+            {
+              "product": "strawberry-frosted granola bar",
+              "trigger": "Updated definition of 'healthy' nutrient content claim under 21 CFR 101.65(d)",
+              "real_deadline": "2028-02-25",
+              "confidence": 0.97,
+              "citations": [
+                "89 FR 106064",
+                "90 FR 10592"
+              ]
+            }
+          ]
+        },
+        "vacuous": false,
+        "verdict": "agree"
+      },
+      {
+        "id": "needs-review",
+        "input_sha256": {
+          "s3vectors": "495f19f22b03bb3d974c9151d16990cadcba2aa73b9c1fac5924c8cf0666bfb7",
+          "aoss": "495f19f22b03bb3d974c9151d16990cadcba2aa73b9c1fac5924c8cf0666bfb7"
+        },
+        "input_sha256_agree": true,
+        "determinism": {
+          "s3vectors": true,
+          "aoss": true
+        },
+        "status": {
+          "s3vectors": [
+            "needs_input",
+            "needs_input"
+          ],
+          "aoss": [
+            "needs_input",
+            "needs_input"
+          ]
+        },
+        "cache": {
+          "s3vectors": [
+            "bypass",
+            "bypass"
+          ],
+          "aoss": [
+            "bypass",
+            "bypass"
+          ]
+        },
+        "citations": {
+          "s3vectors": [
+            "2024-29957",
+            "2025-03118",
+            "89 FR 106064"
+          ],
+          "aoss": [
+            "2024-29957",
+            "2025-03118",
+            "89 FR 106064"
+          ],
+          "agree": true,
+          "only_in_s3vectors": [],
+          "only_in_aoss": []
+        },
+        "real_deadlines": {
+          "s3vectors": [
+            "2028-02-25"
+          ],
+          "aoss": [
+            "2028-02-25"
+          ],
+          "agree": true
+        },
+        "rows": {
+          "s3vectors": [
+            {
+              "product": "All products bearing a 'healthy' (or derivative) nutrient content claim",
+              "trigger": "Updated definition of 'healthy' implied nutrient content claim under 21 CFR 101.65(d)",
+              "real_deadline": "2028-02-25",
+              "confidence": 0.95,
+              "citations": [
+                "2024-29957",
+                "2025-03118",
+                "89 FR 106064"
+              ]
+            }
+          ],
+          "aoss": [
+            {
+              "product": "All products bearing a 'healthy' nutrient content claim",
+              "trigger": "Updated definition of 'healthy' under 21 CFR 101.65(d) (final rule 2024-29957, 89 FR 106064)",
+              "real_deadline": "2028-02-25",
+              "confidence": 0.95,
+              "citations": [
+                "2024-29957",
+                "2025-03118",
+                "89 FR 106064"
+              ]
+            }
+          ]
+        },
+        "vacuous": false,
+        "verdict": "agree"
+      },
+      {
+        "id": "red-no-3",
+        "input_sha256": {
+          "s3vectors": "d7131e2345d7ada1d56d07d79699bc62cabf9c1d580644772188d2092fa67c15",
+          "aoss": "d7131e2345d7ada1d56d07d79699bc62cabf9c1d580644772188d2092fa67c15"
+        },
+        "input_sha256_agree": true,
+        "determinism": {
+          "s3vectors": true,
+          "aoss": true
+        },
+        "status": {
+          "s3vectors": [
+            "ok",
+            "ok"
+          ],
+          "aoss": [
+            "ok",
+            "ok"
+          ]
+        },
+        "cache": {
+          "s3vectors": [
+            "bypass",
+            "bypass"
+          ],
+          "aoss": [
+            "bypass",
+            "bypass"
+          ]
+        },
+        "citations": {
+          "s3vectors": [
+            "21 CFR 74.303",
+            "21 CFR 80.32(h)",
+            "90 FR 4628",
+            "91 FR 50475"
+          ],
+          "aoss": [
+            "21 CFR 74.303",
+            "21 CFR 80.32(h)",
+            "90 FR 4628",
+            "91 FR 50475"
+          ],
+          "agree": true,
+          "only_in_s3vectors": [],
+          "only_in_aoss": []
+        },
+        "real_deadlines": {
+          "s3vectors": [
+            "2027-01-15"
+          ],
+          "aoss": [
+            "2027-01-15"
+          ],
+          "agree": true
+        },
+        "rows": {
+          "s3vectors": [
+            {
+              "product": "strawberry frosting",
+              "trigger": "Revocation of 21 CFR 74.303 (FD&C Red No. 3 listing for food use) per 90 FR 4628, confirmed by 91 FR 50475",
+              "real_deadline": "2027-01-15",
+              "confidence": 0.97,
+              "citations": [
+                "21 CFR 74.303",
+                "21 CFR 80.32(h)",
+                "90 FR 4628",
+                "91 FR 50475"
+              ]
+            }
+          ],
+          "aoss": [
+            {
+              "product": "strawberry frosting",
+              "trigger": "Revocation of 21 CFR 74.303 (FD&C Red No. 3 listing for food use)",
+              "real_deadline": "2027-01-15",
+              "confidence": 0.97,
+              "citations": [
+                "21 CFR 74.303",
+                "21 CFR 80.32(h)",
+                "90 FR 4628",
+                "91 FR 50475"
+              ]
+            }
+          ]
+        },
+        "vacuous": false,
+        "verdict": "agree"
+      }
+    ],
+    "latency": {
+      "s3vectors": {
+        "instrument": "router.retrieve(query, Filters, k=8), in-process, wall clock",
+        "includes": [
+          "query embedding (Bedrock)",
+          "engine round trip",
+          "client-side filter, rerank, per-doc cap and diversify",
+          "the memoised SSM endpoint lookup, on its 60s TTL expiry"
+        ],
+        "probe_set": "evals/retrieval_truth.json",
+        "probes": 9,
+        "repeats": 3,
+        "n": 27,
+        "warmup_ms": 819.7,
+        "warmup_excluded": true,
+        "median_ms": 354.1,
+        "p95_ms": 621.2,
+        "p95_method": "nearest-rank over n=27",
+        "min_ms": 320.8,
+        "max_ms": 630.4,
+        "per_probe_median_ms": {
+          "r01": 333.4,
+          "r02": 329.4,
+          "r03": 349.7,
+          "r04": 354.1,
+          "r05": 373.0,
+          "r06": 364.2,
+          "r07": 568.8,
+          "r08": 621.2,
+          "r09": 353.3
+        },
+        "samples_ms": {
+          "r01": [
+            320.8,
+            349.4,
+            333.4
+          ],
+          "r02": [
+            337.1,
+            329.4,
+            327.8
+          ],
+          "r03": [
+            384.4,
+            331.4,
+            349.7
+          ],
+          "r04": [
+            354.1,
+            345.5,
+            386.1
+          ],
+          "r05": [
+            347.5,
+            373.0,
+            390.2
+          ],
+          "r06": [
+            391.9,
+            337.5,
+            364.2
+          ],
+          "r07": [
+            571.2,
+            568.8,
+            555.9
+          ],
+          "r08": [
+            617.2,
+            621.2,
+            630.4
+          ],
+          "r09": [
+            362.8,
+            326.5,
+            353.3
+          ]
+        },
+        "tier_resolved": [
+          "s3vectors"
+        ],
+        "target": null,
+        "target_note": "SPEC/04 sets no latency target, deliberately; this number gates its own existence, not a threshold.",
+        "concurrency_note": "sequential, single stream. Concurrent load is M06's (SPEC/04 Out of scope), so this licenses no throughput claim."
+      },
+      "aoss": {
+        "instrument": "router.retrieve(query, Filters, k=8), in-process, wall clock",
+        "includes": [
+          "query embedding (Bedrock)",
+          "engine round trip",
+          "client-side filter, rerank, per-doc cap and diversify",
+          "the memoised SSM endpoint lookup, on its 60s TTL expiry"
+        ],
+        "probe_set": "evals/retrieval_truth.json",
+        "probes": 9,
+        "repeats": 3,
+        "n": 27,
+        "warmup_ms": 1019.6,
+        "warmup_excluded": true,
+        "median_ms": 889.3,
+        "p95_ms": 1300.7,
+        "p95_method": "nearest-rank over n=27",
+        "min_ms": 788.8,
+        "max_ms": 1328.5,
+        "per_probe_median_ms": {
+          "r01": 852.9,
+          "r02": 938.0,
+          "r03": 846.8,
+          "r04": 856.4,
+          "r05": 891.9,
+          "r06": 853.6,
+          "r07": 1221.2,
+          "r08": 1266.7,
+          "r09": 840.7
+        },
+        "samples_ms": {
+          "r01": [
+            978.8,
+            852.9,
+            813.5
+          ],
+          "r02": [
+            1016.6,
+            888.2,
+            938.0
+          ],
+          "r03": [
+            889.3,
+            846.8,
+            788.8
+          ],
+          "r04": [
+            856.4,
+            801.6,
+            891.3
+          ],
+          "r05": [
+            839.2,
+            891.9,
+            894.0
+          ],
+          "r06": [
+            853.6,
+            879.6,
+            826.5
+          ],
+          "r07": [
+            1300.7,
+            1221.2,
+            1199.2
+          ],
+          "r08": [
+            1266.7,
+            1163.5,
+            1328.5
+          ],
+          "r09": [
+            928.1,
+            840.1,
+            840.7
+          ]
+        },
+        "tier_resolved": [
+          "aoss"
+        ],
+        "target": null,
+        "target_note": "SPEC/04 sets no latency target, deliberately; this number gates its own existence, not a threshold.",
+        "concurrency_note": "sequential, single stream. Concurrent load is M06's (SPEC/04 Out of scope), so this licenses no throughput claim."
+      }
+    },
+    "failures": [],
+    "latency_note": "No target, by SPEC/04. Reported per tier; nothing here gates on the value. Sequential single-stream in-process measurement \u2014 not a concurrency or throughput result.",
+    "substantive_scenarios": 3,
+    "verdict": "pass"
+  },
+  "verdict": "pass"
+}
