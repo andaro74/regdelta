@@ -14,7 +14,7 @@
 | 2 — response cache + bypass | **done**, verified against real DynamoDB |
 | crossref wiring (M03 carryover, M04-blocking) | **done**, SPEC/04's retrieval gate now passes |
 | 3 — UI | not started |
-| 4 — `make demo-parity` + Tier B latency | **done**, both tiers measured against real AWS |
+| 4 — `make demo-parity` + Tier B latency | **done** for the artifact; the latency criterion's **UI conjunct is outstanding** (see below) |
 | 5 — golden set vs deployed API, both tiers | not started |
 
 ## Evidence
@@ -84,6 +84,54 @@ direction.
 **This is a PM-seat call and is NOT decided here.** SPEC/04: "Deciding what to
 do with it is a PM-seat call once it exists." What is decided is that CLAUDE.md's
 "do not say faster" now has a measurement behind it rather than an absence.
+
+**The latency criterion is a conjunction and only half of it is met.** SPEC/04
+gates on the artifact recording median and p95 **and** on "the UI readout
+populated from a real per-query measurement through the deployed API on both
+tiers". The artifact half is done; the UI half is Phase 3 and is not started, so
+this criterion must not be read as closed at milestone close. Raised by
+`eng-code-reviewer`, which found the phase table said "done" against a
+conjunction.
+
+### The gate was reviewed, and it had holes
+
+`eng-code-reviewer` on the Phase 4 diff found **two HIGH and four MEDIUM**
+defects in `compare()` — each reproduced by running it, not argued:
+
+- **It returned `pass` having compared nothing.** Both tiers present, zero
+  scenarios, no failures generated, exit 0. A truncated `evals/scenarios.json`
+  would have produced a green gate that asked no questions.
+- **Three of the four guards read fields the writer declared** rather than
+  re-deriving them: `repeats: 2` beside one run per scenario passed control 2;
+  `deterministic: true` beside two visibly disagreeing runs passed the
+  determinism guard; a scenario with no `expected_status` made guard 3 inert.
+  All three were `.get()` calls, so a rename in the writers would have disabled
+  a guard **silently, with no test failing**.
+- **`compare()` never checked tier identity**, so an artifact whose `aoss` half
+  recorded `tier_resolved_answers: ["s3vectors"]` and a fallback still passed —
+  a tier compared against itself, reported as perfect agreement.
+- **Nothing asserted "only the infrastructure changed."** The two halves are
+  6.5 hours apart and the poller moves the corpus unattended; a document landing
+  between them would have been read as a tier difference.
+- **`vacuous` counted `["", ""]` as content**, so an uncited answer with no
+  deadline scored as substantive evidence.
+- **`normalise_citation` erased secondary references** — `"21 CFR 101.65 and
+  101.13"` normalised to just `101.65`, so that tier compared *equal* to one
+  citing only `101.65`. Agreement by erasure, in the branch whose docstring
+  refuses to do it.
+
+All are fixed, each with a test that fails against the unfixed code: **ten
+mutations re-introduced, ten caught.** `compare()` now re-derives every gated
+quantity from `runs`, and one round-trip test builds a tier half through
+`run_scenarios`' own recording path so a field rename cannot leave the guards
+inert while the fixtures stay green.
+
+**The recorded artifact was re-judged under the hardened gate and still
+passes** (`--compare-only`, `judged_by_sha: 8ab53a8`, exit 0), with the
+strengthened checks live: `documents_sha` identical across both halves
+(`b70879d76cea`), configs identical, two real runs per scenario, correct tier
+resolution, no fallbacks, three of three scenarios substantive. Its answers were
+measured at `3966b47`; the file records who judged them and when.
 
 ## What Phase 4 required — and how the harness answers each part
 
@@ -207,6 +255,12 @@ here: it is an eval-instrument and golden-set matter, which routes through
   than the ephemeral stack the fix closed, and `core_stack` has **no test
   coverage at all**. Not fixed here: it is a persistent-stack change needing
   `make core`, and SPEC/04's scope is the demo. For the human seat.
+- **`dropped_citations` was recorded as `[]` on every response without ever
+  being measured** — `src/api/api.py:_shape` did not emit the field the shim has
+  emitted since q03, so the artifact read "nothing was dropped" where nothing
+  was asked. The field is now in `_shape` (the two mappings are meant to be the
+  same one), but **the recorded artifact predates that**: its
+  `dropped_citations: []` entries mean *not measured*, not *none dropped*.
 - **`router.hydrate` reports no `Resolution`.** `run_demo_parity.py` observes
   every retrieval to prove which tier answered, but hydration has its own
   AOSS→S3-Vectors fallback and is invisible to that check. A crossref hydration

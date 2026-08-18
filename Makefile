@@ -171,14 +171,23 @@ retrieval-parity:
 #
 # RESOLVE_ENV because this drives the real graph in-process: same buckets,
 # tables and search parameter the deployed function has.
+#
+# RERANK and LEXICAL_LANE are PASSED EXPLICITLY, exactly as retrieval-evals
+# passes them. The criterion says a citation that changes "when only the
+# infrastructure changed" is a bug, which is only a statement about the tiers
+# if the retrieval configuration is held equal across the two halves — and
+# those halves are minutes-to-hours apart across a `make up`, with an exported
+# RERANK able to reach one and not the other. The harness also gates on it: the
+# recorded configs must match or the comparison fails.
 demo-parity:
 	@out=$$(MSYS_NO_PATHCONV=1 aws ssm get-parameter --name $(SSM_ENDPOINT) \
 	    --region $(REGION) --query Parameter.Value --output text 2>&1); \
 	  if echo "$$out" | grep -q '^https://'; then tier=aoss; \
 	  elif echo "$$out" | grep -q 'ParameterNotFound'; then tier=s3vectors; \
 	  else echo "cannot determine the search tier: $$out" >&2; exit 1; fi; \
-	  echo "→ hot tier $$tier"; \
+	  echo "→ hot tier $$tier (RERANK=$(RERANK) LEXICAL_LANE=$(LEXICAL_LANE))"; \
 	  $(RESOLVE_ENV) \
+	  RERANK=$(RERANK) RETRIEVAL_LEXICAL_LANE=$(LEXICAL_LANE) \
 	  python evals/run_demo_parity.py --tier $$tier $(ARGS)
 
 preflight:

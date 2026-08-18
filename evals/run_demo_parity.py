@@ -40,11 +40,13 @@ while measuring nothing — the defect class SPEC/04's own blockquote records:
  3. THE SCENARIO'S STATUS MUST MATCH `expected_status`. A scenario that
     unexpectedly ends `needs_input` returns no rows and no citations on both
     tiers, so empty agrees with empty and the scenario passes by construction.
- 4. A COMPARISON WITH NOTHING IN IT IS MARKED `vacuous`. The `needs-review`
-    scenario legitimately carries no citations and no deadlines, so its
-    agreement is real but empty; the artifact says so rather than letting
-    three scenarios' worth of "agree" read as three scenarios' worth of
-    evidence.
+ 4. A COMPARISON WITH NOTHING IN IT IS MARKED `vacuous`, and a run in which
+    EVERY scenario is vacuous is not a pass. A scenario that ends `needs_input`
+    could carry no citations and no deadlines, and empty agrees with empty.
+    (Measured: all three scenarios are substantive — `needs-review` pauses
+    with a verdict row and three citations already on it. The guard is for the
+    case that does not, and for the truncated scenarios.json that compares
+    nothing at all.)
 
 TRANSPORT. The app object is driven in-process (`fastapi.testclient`, an httpx
 transport over ASGI — no server, no socket), which is the same `src/api/api.py`
@@ -146,20 +148,29 @@ def file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def normalise_citation(raw) -> str:
-    """Canonical citation form where one exists; VERBATIM where none does.
+def normalise_citation(raw) -> list[str]:
+    """One `citations[]` entry -> every regulatory identity in it.
 
-    `shared.citations.extract_citations` emits "21 CFR 101.65" / "89 FR 106064"
-    regardless of how the text spelled it, so two tiers writing "21 CFR § 101.65"
-    and "21 CFR 101.65" are not read as disagreeing about a citation — that is
-    typography, and the criterion is about regulatory identity.
+    A LIST, not a string, and that is the correction. `shared.citations
+    .extract_citations` emits "21 CFR 101.65" / "89 FR 106064" regardless of how
+    the text spelled it, so two tiers writing "21 CFR § 101.65" and
+    "21 CFR 101.65" are not read as disagreeing — that is typography, and the
+    criterion is about regulatory identity.
 
-    Anything it does not recognise is kept as its own whitespace-collapsed
-    string rather than dropped. Dropping would silently shrink both sets toward
-    each other, which is agreement by erasure — the failure mode this whole
-    file exists to avoid. It is not hypothetical: the `needs-review` scenario
-    cites "2024-29957" and "2025-03118", FR DOCUMENT NUMBERS, which this regex
-    does not match and which SPEC/04 names as citations in their own right.
+    The first version returned `found[0] if len(found) == 1 else text`, which
+    DROPPED every reference after the first whenever an entry carried more than
+    one recognisable citation and exactly one matched. "21 CFR 101.65 and
+    101.13" normalised to "21 CFR 101.65" — CFR_RE requires a title number, so
+    the bare `101.13` never matched — and that tier then compared EQUAL to a
+    tier citing only 101.65. Agreement by erasure, which the paragraph below
+    says this function refuses to do, in the branch meant to implement it.
+    Engineering review.
+
+    Anything with no recognisable citation in it is kept as its own
+    whitespace-collapsed string rather than dropped, for the same reason. It is
+    not hypothetical: the `needs-review` scenario cites "2024-29957" and
+    "2025-03118", FR DOCUMENT NUMBERS, which this regex does not match and which
+    SPEC/04 names as citations in their own right.
 
     KNOWN LIMIT, recorded rather than papered over: "2024-29957" and
     "89 FR 106064" are the same document in two notations, and this treats them
@@ -172,8 +183,7 @@ def normalise_citation(raw) -> str:
     from shared import citations as cit
 
     text = " ".join(str(raw or "").split())
-    found = cit.extract_citations(text)
-    return found[0] if len(found) == 1 else text
+    return cit.extract_citations(text) or ([text] if text else [])
 
 
 def citation_set(body: dict) -> list[str]:
@@ -187,7 +197,7 @@ def citation_set(body: dict) -> list[str]:
     raw = list(body.get("citations") or [])
     for row in body.get("answer_rows") or []:
         raw += list((row or {}).get("citations") or [])
-    return sorted({normalise_citation(c) for c in raw if str(c or "").strip()})
+    return sorted({c for entry in raw for c in normalise_citation(entry)})
 
 
 def deadline_list(body: dict) -> list[str]:
@@ -218,8 +228,8 @@ def rows_digest(body: dict) -> list[dict]:
                     "trigger": row.get("trigger"),
                     "real_deadline": row.get("real_deadline"),
                     "confidence": row.get("confidence"),
-                    "citations": sorted({normalise_citation(c)
-                                         for c in (row.get("citations") or [])})})
+                    "citations": sorted({c for entry in (row.get("citations") or [])
+                                         for c in normalise_citation(entry)})})
     return out
 
 
@@ -435,14 +445,24 @@ def measure_latency(repeats: int) -> dict:
 def compare(artifact: dict) -> dict:
     """Judge whatever tiers the artifact holds. Pure — no AWS, no API.
 
-    Recomputed on every write rather than appended to, so the verdict in the
-    file is always about the runs in the file.
+    EVERYTHING GATED HERE IS RE-DERIVED FROM `runs`. Nothing reads a summary
+    field the writer declared — not `repeats`, not `deterministic`, not the
+    per-tier resolution — because a gate that trusts the writer's own summary
+    is not a gate on the runs, it is a gate on a claim about them. Engineering
+    review found three guards reading declared fields: an artifact could carry
+    `repeats: 2` beside one run per scenario, or `deterministic: true` beside
+    two runs that visibly disagree, and pass. Both were reproduced.
+
+    That also fixes the refactor hazard underneath it: every one of those reads
+    was a `.get()`, so renaming a field in the writers would have disabled a
+    guard silently, with no test failing.
     """
     tiers = artifact.get("tiers") or {}
     present = [t for t in TIERS if t in tiers]
     failures: list[str] = []
     out: dict = {
         "at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "judged_by_sha": git_sha(),
         "tiers_present": present,
         "criterion": "citations (as sets) and every real_deadline (exactly) "
                      "must agree across tiers; confidence and prose may differ",
@@ -458,16 +478,81 @@ def compare(artifact: dict) -> dict:
             "comparison needs both. Run the other tier on this commit.")
         return out
 
-    # Control 2. At least one tier must have answered every scenario more than
-    # once, or a disagreement below cannot be attributed to the tier.
-    if not any((tiers[t].get("repeats") or 0) >= 2 for t in present):
-        failures.append("control 2 unmet: no tier answered scenarios twice, so "
-                        "a disagreement cannot be attributed (--repeats)")
+    # Control 2, counted from the runs themselves. `repeats` is the writer's
+    # word for it and is not read.
+    def _runs(tier: str, scenario: dict) -> list[dict]:
+        return scenario.get("runs") or []
+
+    max_runs = {t: max((len(_runs(t, s)) for s in tiers[t].get("scenarios") or []),
+                       default=0) for t in present}
+    out["runs_per_scenario"] = {
+        t: sorted({len(_runs(t, s)) for s in tiers[t].get("scenarios") or []})
+        for t in present}
+    if not any(n >= 2 for n in max_runs.values()):
+        failures.append(
+            f"control 2 unmet: no tier answered a scenario twice ({max_runs} "
+            "runs recorded), so a disagreement cannot be attributed (--repeats)")
+
+    # SPEC/02 criterion 2, one layer up, and gated here rather than only at
+    # record time for the same reason control 1 is: an artifact written by
+    # another harness version, or edited, must not be able to compare a tier
+    # against itself and report perfect agreement. A silent AOSS→S3 Vectors
+    # fallback is the documented way that happens.
+    for tier in present:
+        half = tiers[tier]
+        resolved = half.get("tier_resolved_answers")
+        probes = half.get("tier_resolved_probes")
+        if resolved != [tier] or probes != [tier]:
+            failures.append(
+                f"{tier}: answers resolved to {resolved} and probes to "
+                f"{probes} — this half is not evidence about {tier!r}")
+        if half.get("fallbacks"):
+            failures.append(
+                f"{tier}: {len(half['fallbacks'])} tier fallback(s) during the "
+                f"run: {half['fallbacks'][:2]}")
+
+    # "A citation or a date that changes when ONLY THE INFRASTRUCTURE CHANGED
+    # is a bug" — SPEC/04. That sentence is the whole criterion, and it is only
+    # true if the infrastructure is in fact the only thing that changed. The
+    # two halves are minutes-to-hours apart across a `make up`, and the daily
+    # poller moves the corpus unattended: it went from 4 documents to 34 between
+    # 2026-07-30 and 2026-08-12 with nobody editing anything (see
+    # corpus_fingerprint in run_evals.py). A document landing between the halves
+    # would be read as a tier difference. Same argument as the input sha256,
+    # applied to the other input.
+    fingerprints = {t: (tiers[t].get("corpus") or {}).get("documents_sha")
+                    for t in present}
+    out["corpus"] = {t: tiers[t].get("corpus") for t in present}
+    out["corpus_agree"] = len(set(fingerprints.values())) == 1 and \
+        all(fingerprints.values())
+    if not out["corpus_agree"]:
+        failures.append(
+            f"the two halves answered from different corpora: {fingerprints}. "
+            "Only the infrastructure may differ between them")
+
+    # Retrieval configuration, on the same argument. `make demo-parity` pins
+    # RERANK and RETRIEVAL_LEXICAL_LANE, but a hand-run half can carry either.
+    configs = {t: tiers[t].get("config") for t in present}
+    out["config_agree"] = configs[present[0]] == configs[present[1]]
+    if not out["config_agree"]:
+        differing = {k: {t: (configs[t] or {}).get(k) for t in present}
+                     for k in set().union(*[set(c or {}) for c in configs.values()])
+                     if len({json.dumps((configs[t] or {}).get(k), sort_keys=True)
+                             for t in present}) > 1}
+        failures.append(f"the two halves ran different configurations: {differing}")
 
     by_id: dict[str, dict] = {}
+    duplicates: list[str] = []
     for tier in present:
         for scenario in tiers[tier].get("scenarios") or []:
-            by_id.setdefault(scenario["id"], {})[tier] = scenario
+            side = by_id.setdefault(scenario["id"], {})
+            if tier in side:
+                # Two entries with one id collapse to the last, silently, and
+                # the count check below would still pass.
+                duplicates.append(f"{tier}:{scenario['id']}")
+            side[tier] = scenario
+    if duplicates:
+        failures.append(f"duplicate scenario ids in the artifact: {duplicates}")
 
     for sid, sides in sorted(by_id.items()):
         entry: dict = {"id": sid}
@@ -485,11 +570,16 @@ def compare(artifact: dict) -> dict:
         entry["input_sha256_agree"] = (
             sides[a]["input_sha256"] == sides[b]["input_sha256"])
 
-        entry["determinism"] = {t: sides[t].get("deterministic") for t in present}
+        # RE-DERIVED, not read. `_stable` runs once at record time and its
+        # answer is recorded for a reader; the gate recomputes it from the runs
+        # in the file, so a `deterministic: true` sitting beside two runs that
+        # disagree cannot pass.
+        entry["determinism"] = {t: _stable(sides[t]["runs"]) for t in present}
         entry["status"] = {t: [r["status"] for r in sides[t]["runs"]]
                            for t in present}
         entry["cache"] = {t: [r["cache"] for r in sides[t]["runs"]]
                           for t in present}
+        entry["runs"] = {t: len(sides[t]["runs"]) for t in present}
 
         # The two tiers must have been asked the SAME question. If
         # evals/scenarios.json moved between the runs, this compares two
@@ -504,7 +594,7 @@ def compare(artifact: dict) -> dict:
 
         # Control 2's finding. A tier that disagreed with itself makes the
         # cross-tier reading unattributable — SPEC/04 says so in terms.
-        unstable = [t for t in present if sides[t].get("deterministic") is False]
+        unstable = [t for t in present if entry["determinism"][t] is False]
         if unstable:
             entry["verdict"] = "void"
             entry["void_reason"] = (
@@ -516,10 +606,38 @@ def compare(artifact: dict) -> dict:
 
         # Guard 3. Empty agrees with empty, so a scenario that pauses when it
         # should answer would pass this criterion while demonstrating nothing.
-        expected = sides[a].get("expected_status")
+        #
+        # A MISSING expected_status is a failure, not a skip. `if expected and
+        # ...` made the guard silently inert for any scenario added to
+        # scenarios.json without that key — and an inert guard on a scenario
+        # that then pauses on both tiers is exactly the hole the guard exists
+        # to close. Engineering review.
+        #
+        # Both halves' copies must agree, too: `scenarios.json` is PM-owned and
+        # ROLES.md gates edits to expectations, so a value that changed between
+        # the two runs is the "edit the eval until it passes" shape and the
+        # input sha256 does not cover it.
+        expectations = {t: sides[t].get("expected_status") for t in present}
+        entry["expected_status"] = expectations
+        expected = expectations[a]
+        if not expected:
+            entry["verdict"] = "void"
+            entry["void_reason"] = (
+                "no expected_status on this scenario, so 'the run did what the "
+                "scenario says' cannot be checked and an empty answer would "
+                "agree with an empty answer")
+            failures.append(f"{sid}: no expected_status recorded")
+            continue
+        if expectations[a] != expectations[b]:
+            entry["verdict"] = "void"
+            entry["void_reason"] = (
+                f"the halves disagree about what this scenario expects: "
+                f"{expectations}. evals/scenarios.json changed between them")
+            failures.append(f"{sid}: expected_status differs between halves")
+            continue
         wrong = {t: [r["status"] for r in sides[t]["runs"]
                      if r["status"] != expected] for t in present}
-        if expected and any(wrong.values()):
+        if any(wrong.values()):
             entry["verdict"] = "void"
             entry["void_reason"] = (
                 f"expected_status {expected!r} not met: {wrong}. A scenario "
@@ -560,7 +678,15 @@ def compare(artifact: dict) -> dict:
 
         # Guard 4. Real agreement, but on nothing — recorded so three "agree"
         # verdicts are not read as three scenarios' worth of evidence.
-        entry["vacuous"] = not (cites[a] or dates[a] or cites[b] or dates[b])
+        #
+        # CONTENT MEANS A NON-EMPTY STRING. `deadline_list` emits "" for a row
+        # whose real_deadline is null, so `["", ""]` is truthy and an UNCITED
+        # answer carrying no deadline was counted as substantive evidence —
+        # against a repo rule that an uncited answer is a bug, not a style
+        # issue. Engineering review reproduced it.
+        entry["vacuous"] = not any(
+            str(v or "").strip()
+            for side in (cites[a], dates[a], cites[b], dates[b]) for v in side)
 
         agree = entry["citations"]["agree"] and entry["real_deadlines"]["agree"]
         entry["verdict"] = "agree" if agree else "disagree"
@@ -581,6 +707,34 @@ def compare(artifact: dict) -> dict:
     out["substantive_scenarios"] = sum(
         1 for s in out["scenarios"] if s.get("verdict") == "agree"
         and not s.get("vacuous"))
+
+    # THE FLOOR. Without it the gate passes having compared nothing: an empty
+    # `scenarios` list produces no failures, and `pass if not failures` is
+    # green. Reproduced by engineering review — both tiers present, zero
+    # scenarios, exit 0, and `make demo-parity` gates on the exit code, not on
+    # the prose beside it.
+    #
+    # `evals/scenarios.json` is PM-owned and CODEOWNERS-gated; a truncation or
+    # a bad merge that empties it is exactly the kind of change this gate must
+    # not silently absorb. So the count is checked against the file's own
+    # recorded length, and a run where every scenario agreed about nothing is
+    # not a pass either.
+    declared = (artifact.get("scenarios_file") or {}).get("count")
+    out["scenarios_compared"] = len(out["scenarios"])
+    out["scenarios_declared"] = declared
+    if not out["scenarios"]:
+        failures.append("no scenarios were compared — the artifact holds none, "
+                        "so nothing was measured")
+    elif declared is not None and len(out["scenarios"]) != declared:
+        failures.append(
+            f"compared {len(out['scenarios'])} scenarios but "
+            f"evals/scenarios.json declared {declared}")
+    elif not out["substantive_scenarios"]:
+        failures.append(
+            "every compared scenario was vacuous: the tiers agreed, but about "
+            "no citation and no deadline, which is not evidence of "
+            "comparability")
+
     out["verdict"] = "pass" if not failures else "fail"
     return out
 
@@ -685,13 +839,22 @@ def run(tier_requested: str, repeats: int, latency_repeats: int,
     path = artifact_path(sha)
     artifact = load_artifact(path, sha)
     artifact["dirty"] = bool(artifact.get("dirty")) or dirty
-    artifact["scenarios_file"] = {
+    scenarios_file = {
         "path": "evals/scenarios.json",
         "sha256": file_sha256(SCENARIOS),
         "count": len(scenarios),
     }
+    # Top level for the count check, and PER TIER because the second run
+    # overwrote the first's copy — so a scenarios.json that moved between the
+    # halves left no trace. The per-tier copies are what a reader diffs.
+    artifact["scenarios_file"] = scenarios_file
     artifact["tiers"][tier_requested] = {
         "at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        # The commit this HALF was measured at. The filename carries a sha and
+        # `--sha` is free-form, so without this a half measured at another
+        # commit could be merged into the pack with nothing showing it.
+        "measured_at_sha": git_sha(),
+        "scenarios_file": scenarios_file,
         "tier_requested": tier_requested,
         "tier_resolved_answers": answer_tiers,
         "tier_resolved_probes": latency["tier_resolved"],
@@ -764,6 +927,11 @@ def main() -> int:
             ap.error("--tier is required unless --compare-only")
         if args.repeats < 1:
             ap.error("--repeats must be at least 1")
+        if args.latency_repeats < 1:
+            # Refused here rather than dying in statistics.median on an empty
+            # sample, which exits 3 — "the harness crashed, nothing was
+            # measured" — for what is simply a bad argument.
+            ap.error("--latency-repeats must be at least 1")
         return run(args.tier, args.repeats, args.latency_repeats,
                    args.allow_dirty, sha)
     except Exception:  # noqa: BLE001 — the point is that ANY crash is not a measurement

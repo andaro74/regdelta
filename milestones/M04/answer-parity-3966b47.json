@@ -709,7 +709,8 @@
     "count": 3
   },
   "comparison": {
-    "at": "2026-08-18T11:06:40+00:00",
+    "at": "2026-08-18T11:57:13+00:00",
+    "judged_by_sha": "8ab53a8",
     "tiers_present": [
       "s3vectors",
       "aoss"
@@ -746,6 +747,14 @@
             "bypass",
             "bypass"
           ]
+        },
+        "runs": {
+          "s3vectors": 2,
+          "aoss": 2
+        },
+        "expected_status": {
+          "s3vectors": "ok",
+          "aoss": "ok"
         },
         "citations": {
           "s3vectors": [
@@ -828,6 +837,14 @@
             "bypass",
             "bypass"
           ]
+        },
+        "runs": {
+          "s3vectors": 2,
+          "aoss": 2
+        },
+        "expected_status": {
+          "s3vectors": "needs_input",
+          "aoss": "needs_input"
         },
         "citations": {
           "s3vectors": [
@@ -914,6 +931,14 @@
             "bypass",
             "bypass"
           ]
+        },
+        "runs": {
+          "s3vectors": 2,
+          "aoss": 2
+        },
+        "expected_status": {
+          "s3vectors": "ok",
+          "aoss": "ok"
         },
         "citations": {
           "s3vectors": [
@@ -1146,8 +1171,36 @@
       }
     },
     "failures": [],
+    "runs_per_scenario": {
+      "s3vectors": [
+        2
+      ],
+      "aoss": [
+        2
+      ]
+    },
+    "corpus": {
+      "s3vectors": {
+        "available": true,
+        "documents": 49,
+        "documents_sha": "b70879d76cea",
+        "newest_pub_date": "2026-08-17",
+        "oldest_pub_date": "2024-12-27"
+      },
+      "aoss": {
+        "available": true,
+        "documents": 49,
+        "documents_sha": "b70879d76cea",
+        "newest_pub_date": "2026-08-17",
+        "oldest_pub_date": "2024-12-27"
+      }
+    },
+    "corpus_agree": true,
+    "config_agree": true,
     "latency_note": "No target, by SPEC/04. Reported per tier; nothing here gates on the value. Sequential single-stream in-process measurement \u2014 not a concurrency or throughput result.",
     "substantive_scenarios": 3,
+    "scenarios_compared": 3,
+    "scenarios_declared": 3,
     "verdict": "pass"
   },
   "verdict": "pass"

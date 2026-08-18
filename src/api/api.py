@@ -271,6 +271,13 @@ def _shape(state: dict, thread_id: str) -> dict:
         "confidence": state.get("confidence"),
         "status": request.get("status") or state.get("status", "degraded"),
         "review_reason": request.get("reason") or state.get("review_reason", ""),
+        # A model that reached for authority the sources did not carry is a
+        # finding about the answer, not noise — the shim has surfaced this
+        # since q03 and this mapping is meant to be the same one. It was not:
+        # `make demo-parity` recorded `dropped_citations: []` on every response
+        # because the field never left the graph, which reads as "nothing was
+        # dropped" when nothing was asked. Engineering review of M04 Phase 4.
+        "dropped_citations": state.get("dropped_citations") or [],
     }
 
 
