@@ -102,3 +102,9 @@ milestone. It is out of SPEC/04's scope and blocks nothing M04 gates on; the
 argument for pulling it in is that `make demo-parity`'s artifact would otherwise
 describe a system that changes shortly after. That argument is weak — artifacts
 here are sha-stamped by design — so the default is: **leave it deferred.**
+
+**This default holds until the human seat overturns it.** It is a scope
+decision, not an engineering one: q15 is outside SPEC/04, blocks nothing M04
+gates on, and pulling it in would widen a milestone in flight. An implementer
+noticing that q15 still fails is not grounds to fix it here — that is exactly
+how a milestone's boundary erodes. Raise it, cite the cost, and wait.
