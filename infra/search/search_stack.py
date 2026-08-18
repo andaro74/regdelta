@@ -28,6 +28,44 @@ from aws_cdk import (
 )
 from constructs import Construct
 
+# WHAT THE REINDEX LAMBDA IS ALLOWED TO SHIP, and the mode that decides what
+# these patterns mean. Both are module constants because
+# tests/test_search_stack_access.py imports them and synthesises a planted
+# fixture tree through them: a test carrying its own copy of the patterns
+# asserts a duplicate and passes while the stack ships something else.
+#
+# IGNORE MODE IS LOAD-BEARING, and the default is wrong for an allowlist.
+# Measured at M04, not reasoned about: the deploy failed with "No module named
+# 'retrieval'" and the staged asset held two files — src/__init__.py and
+# .pytest_cache/.gitignore.
+#
+# Under the default (IgnoreMode.GLOB) these patterns go through minimatch,
+# where `*` matches every top-level ENTRY including directories, and a pruned
+# directory can never be re-entered by a later negation — so `!**/*.py` reached
+# nothing below the root. And minimatch's `*` does not match a dot-prefixed
+# name, so a ROOT-LEVEL `.env` was staged. (Only root level: the same pruning
+# that dropped the source tree also kept the walker out of `.aws/`. The first
+# version of this comment said `.aws/credentials` and `.git/` leaked too, which
+# the security review measured and refuted — an allowlist's rationale is a
+# security claim and has to be exactly as true as it says it is.)
+#
+# DOCKER is .dockerignore semantics: every path is tested on its own, so a
+# negation re-includes files under an excluded directory, and `*` matches
+# dotfiles. Verified against a tree containing .env, .aws/credentials, dev.env,
+# secrets.json, a `credentials` file with no extension and __pycache__: only
+# **/*.py ships, at every depth. GIT mode prunes directories the way GLOB does.
+#
+# The third pattern closes the one hole the review found in the second: `*`
+# excludes a DIRECTORY named `keys.py`, `!**/*.py` then matches that directory
+# and re-includes its whole subtree, so `keys.py/secret.txt` shipped. Last
+# match wins, so re-excluding anything BELOW a `.py` path component costs one
+# pattern and cannot affect a real module, which has nothing below it.
+#
+# Symlinks are not a hole here: follow_symlinks defaults to
+# SymlinkFollowMode.NEVER, so a link is copied as a link and never dereferenced.
+ASSET_EXCLUDE = ["*", "!**/*.py", "**/*.py/**"]
+ASSET_IGNORE_MODE = IgnoreMode.DOCKER
+
 COLLECTION_NAME = "regdelta"
 SSM_ENDPOINT_PARAM = "/regdelta/search/endpoint"
 
@@ -143,33 +181,13 @@ class RegDeltaSearchStack(cdk.Stack):
             # src/ contains no non-.py runtime file. Adding a data file to the
             # Lambda later means adding it here deliberately, which is the
             # intended cost.
-            #
-            # IGNORE MODE IS LOAD-BEARING, and its default is wrong for an
-            # allowlist. Measured at M04, not reasoned about: the deploy failed
-            # with "No module named 'retrieval'", and the staged asset held
-            # exactly two files — src/__init__.py and .pytest_cache/.gitignore.
-            #
-            # The default (IgnoreMode.GLOB) runs these patterns through
-            # minimatch, where `*` matches every top-level ENTRY, directories
-            # included, and a pruned directory can never be re-entered by a
-            # later negation — so `!**/*.py` reached nothing below the root.
-            # Worse for the finding this list exists to answer: minimatch's `*`
-            # does not match a dot-prefixed name, so `.env`, `.aws/credentials`
-            # and `.git/` were never excluded at all. The allowlist shipped
-            # none of the source it was supposed to and all of the secrets it
-            # was written to stop.
-            #
-            # DOCKER is .dockerignore semantics: every path is tested on its
-            # own, so a negation re-includes files under an excluded directory,
-            # and `*` matches dotfiles. Verified by synthesising against a
-            # probe tree containing .env, .aws/credentials, dev.env,
-            # secrets.json and __pycache__: only **/*.py ships. GIT mode was
-            # also tried and prunes directories the same way GLOB does.
-            # tests/test_search_stack_access.py asserts the STAGED ASSET's file
-            # list, because the test that existed asserted only the handler
-            # string and passed throughout.
-            code=_lambda.Code.from_asset(SRC, exclude=["*", "!**/*.py"],
-                                         ignore_mode=IgnoreMode.DOCKER),
+            # The allowlist and the mode it is read under are module
+            # constants (ASSET_EXCLUDE / ASSET_IGNORE_MODE, above) so the test
+            # can assert the POLICY rather than a copy of it. A test carrying
+            # its own copy of these patterns passes while the stack ships
+            # something else.
+            code=_lambda.Code.from_asset(SRC, exclude=ASSET_EXCLUDE,
+                                         ignore_mode=ASSET_IGNORE_MODE),
             timeout=Duration.minutes(15), memory_size=1024,
             environment=reindex_env)
         corpus_bucket.grant_read(reindex)

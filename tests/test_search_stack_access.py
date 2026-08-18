@@ -151,7 +151,7 @@ def test_the_reindex_lambda_ships_the_shared_source_tree():
     assert "retrieval.reindex.handler" in handlers
 
 
-def staged_asset_files() -> list[str]:
+def staged_asset_files(monkeypatch=None) -> list[str]:
     """The file list CDK actually stages for the reindex Lambda.
 
     Synthesised into a real assembly directory, because the asset is copied at
@@ -166,6 +166,13 @@ def staged_asset_files() -> list[str]:
     import aws_cdk as cdk
     from aws_cdk import aws_s3 as s3
     from search.search_stack import RegDeltaSearchStack
+
+    if monkeypatch is not None:
+        # The same delenv every other test in this file performs. A leftover
+        # export is the invisible-widening path this file documents, and here
+        # an assume-role or cross-account value fails synth on an unrelated
+        # ValueError — a red test about the wrong thing.
+        monkeypatch.delenv("REGDELTA_DEV_PRINCIPAL_ARN", raising=False)
 
     app = cdk.App(outdir=tempfile.mkdtemp())
     host = cdk.Stack(app, "host", env=cdk.Environment(
@@ -191,7 +198,7 @@ def staged_asset_files() -> list[str]:
                   for f in root.rglob("*") if f.is_file())
 
 
-def test_the_reindex_asset_actually_contains_the_module_it_handles():
+def test_the_reindex_asset_actually_contains_the_module_it_handles(monkeypatch):
     """The deploy failed on this, and the test above passed throughout.
 
     "Handler is retrieval.reindex.handler" is a claim about the template; the
@@ -200,23 +207,104 @@ def test_the_reindex_asset_actually_contains_the_module_it_handles():
     hot tier could not come up at all: "Unable to import module
     'retrieval.reindex': No module named 'retrieval'".
     """
-    files = staged_asset_files()
+    files = staged_asset_files(monkeypatch)
     assert "retrieval/reindex.py" in files, files[:20]
     assert "retrieval/aoss_client.py" in files, files[:20]
 
 
-def test_the_asset_allowlist_ships_python_and_nothing_else():
-    """Security review L4's finding, asserted rather than described.
+def stage(tmp_path, tree: dict) -> list[str]:
+    """Stage `tree` through the STACK'S OWN asset policy. Returns the file list.
+
+    Imports ASSET_EXCLUDE and ASSET_IGNORE_MODE rather than restating them: a
+    test carrying its own copy of the patterns asserts a duplicate, and stays
+    green while the stack ships something else entirely.
+    """
+    import sys
+    import tempfile
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent.parent / "infra"))
+    import aws_cdk as cdk
+    from aws_cdk import aws_lambda as _lambda
+    from search.search_stack import ASSET_EXCLUDE, ASSET_IGNORE_MODE
+
+    src = tmp_path / "src"
+    for rel, body in tree.items():
+        path = src / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+
+    app = cdk.App(outdir=tempfile.mkdtemp())
+    stack = cdk.Stack(app, "s", env=cdk.Environment(account="111122223333",
+                                                    region="us-west-2"))
+    _lambda.Function(stack, "F", runtime=_lambda.Runtime.PYTHON_3_14,
+                     handler="retrieval.reindex.handler",
+                     code=_lambda.Code.from_asset(
+                         str(src), exclude=ASSET_EXCLUDE,
+                         ignore_mode=ASSET_IGNORE_MODE))
+    assembly = app.synth()
+    root = next(p for p in Path(assembly.directory).glob("asset.*") if p.is_dir())
+    return sorted(str(f.relative_to(root)).replace("\\", "/")
+                  for f in root.rglob("*") if f.is_file())
+
+
+# The shapes security review finding L4 named, plus the ones the M04 review
+# found this list still let through. PLANTED rather than hoped for: asserting
+# over the real src/ is an assertion about whatever happens to be in the tree
+# today, and it passes vacuously in a clean checkout — under the BUGGY ignore
+# mode a clean src/ stages one file and leaks nothing. That is the same
+# green-by-construction defect this repo keeps finding, one level down: the
+# first version of this test was green for the wrong reason and would have
+# stayed green against `exclude=[]`. Security review of the M04 fix.
+HOSTILE_TREE = {
+    "retrieval/reindex.py": "handler = 1",
+    "retrieval/__init__.py": "",
+    "nested/deep/deeper/mod.py": "",
+    ".env": "SECRET=1",
+    ".aws/credentials": "[default]",
+    "retrieval/.env": "SECRET=2",
+    "data/.env.local": "SECRET=3",
+    "dev.env": "X=1",
+    "secrets.json": "{}",
+    "credentials": "no extension at all",
+    "service-account.json": "{}",
+    "key.p12": "",
+    "keys.py/secret.txt": "a DIRECTORY whose name ends in .py",
+    "retrieval/__pycache__/reindex.cpython-314.pyc": "",
+}
+
+
+def test_the_asset_allowlist_ships_python_and_nothing_else(tmp_path):
+    """Security review L4's finding, asserted against a hostile tree.
 
     The list is an ALLOWLIST so it holds against whatever lands in src/ later —
-    a scratch .env, a downloaded credential. Under the default ignore mode it
-    did the opposite: minimatch's `*` does not match dot-prefixed names, so
-    dotfiles were never excluded, and `.pytest_cache/` shipped from a real
-    synth. A denylist would have been honest about what it could not stop; this
-    was an allowlist that leaked.
+    a scratch .env, a downloaded credential, a key file. Under the default
+    ignore mode it did the opposite: minimatch's `*` does not match
+    dot-prefixed names, so a root-level `.env` shipped from a real synth while
+    the source tree did not.
+
+    Case-insensitive on the suffix deliberately: the DOCKER and GLOB matchers
+    disagree about `UPPER.PY`, so an exact `.py` comparison would report a
+    source file as a leak on one platform and not the other.
     """
-    leaked = [f for f in staged_asset_files() if not f.endswith(".py")]
+    leaked = [f for f in stage(tmp_path, HOSTILE_TREE)
+              if not f.lower().endswith(".py")]
     assert leaked == [], f"non-Python files staged into the Lambda: {leaked}"
+
+
+def test_the_allowlist_still_ships_every_module_at_every_depth(tmp_path):
+    """The other half, and the half the failed deploy was missing. An allowlist
+    that ships nothing also leaks nothing."""
+    files = stage(tmp_path, HOSTILE_TREE)
+    assert "retrieval/reindex.py" in files, files
+    assert "nested/deep/deeper/mod.py" in files, files
+
+
+def test_a_directory_named_like_a_module_does_not_re_include_its_subtree(tmp_path):
+    """`*` excludes the DIRECTORY `keys.py`; `!**/*.py` then matches that
+    directory and re-includes everything beneath it. Found by security review
+    of the first fix, which shipped keys.py/secret.txt."""
+    assert "keys.py/secret.txt" not in stage(tmp_path, HOSTILE_TREE)
 
 
 def lambda_env(template: dict) -> dict:
