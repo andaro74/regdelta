@@ -1,10 +1,14 @@
 # SPEC/04 — API + Demo UI
 
 ## API (src/api/api.py — FastAPI + Mangum on Lambda)
-- POST /query {question, company_profile?} → {answer_rows[], citations[],
-  confidence, status, trace_id, thread_id?, resume_token?} — the last two
-  present only when status is `needs_input` or `pending_review`, and together
-  they are the only way to resume that run.
+- POST /query {question, company_profile?, no_cache?} → {answer_rows[],
+  citations[], confidence, status, trace_id, **cache**, thread_id?,
+  resume_token?} — `cache` is exactly one of `hit | miss | bypass | disabled`
+  (`disabled` = the response cache is off by configuration; `bypass` =
+  suppressed for this request, via `no_cache` or the `x-regdelta-no-cache`
+  header, which is what `milestones/M04/answer-parity-3966b47.json` records).
+  `thread_id` and `resume_token` are present only when status is `needs_input`
+  or `pending_review`, and together they are the only way to resume that run.
 - POST /resume/{thread_id} {reviewer_decision, resume_token} → final answer.
   The path segment is the thread id; LangGraph keys checkpoints by thread, so
   there is no separate checkpoint identifier (evals/serve_local.py:69-73).
@@ -19,14 +23,28 @@
 Single page: question box; one canned-scenario button per entry in
 `evals/scenarios.json`; verdict table with
 citation links (federalregister.gov / ecfr.gov); confidence badges;
-"needs human review" state; active-tier indicator + retrieval latency
-readout (the live tier-switch demo moment).
+"needs human review" state; an active-tier indicator that visibly flips across
+`make up` / `make down`; a per-response cache-state label reading exactly one of
+`hit | miss | bypass | disabled`, and a cache-bypass control; a retrieval latency
+readout (reported, not a claim — ADR-0012); and a cross-tier comparison panel
+retaining the previous tier's `citations[]` and every `real_deadline` beside the
+current tier's, stating an explicit **equal / differs** verdict computed on
+`citations[]` **as sets** and `real_deadline` **exactly** — the live tier-switch
+demo moment, which demonstrates that the answer does not change when the
+infrastructure does.
 
 ## Done when
 The scenario with id `healthy-claim` renders the full Nordvale table in a
 browser against the
 deployed stack; /health reports the correct tier before and after
 `make up`; a cached repeat query returns < 500ms.
+
+The tier-switch panel is exercised end to end: with the bypass control on, the
+`healthy-claim` scenario is answered on each tier across a `make up`, every
+response labelled `bypass`, and the panel reports **equal**. This is the UI
+counterpart of `make demo-parity`; the artifact gates, the panel is what a viewer
+sees. Evidence is a screenshot of the panel recorded in `milestones/M04/` — a
+browser procedure with no record is rehearsal, not a criterion.
 
 Plus — **the prose assertions SPEC/02 relocated here**:
 `python evals/run_evals.py --subset retrieval` passes against the deployed
@@ -131,14 +149,14 @@ oracle.
 
 ### Tier B's latency claim (owed by ADR-0009 Ruling 3(a))
 Ruling 3(a) retired Tier B's relevance justification: with the lexical lane off
-it runs the same algorithm as Tier A, so its only remaining candidate
-justification is **latency**. (An earlier draft said "latency and concurrent
-load"; concurrent load is homed in no milestone before M06 and is struck here and
-declared out of scope below — half a justification no criterion will ever check is
-worse than none.) The UI above already displays a retrieval-latency readout;
-displaying a number is not asserting one, and **retiring an unmeasured hybrid
-claim in favour of an unmeasured performance claim would be the same defect in
-new clothes.**
+it runs the same algorithm as Tier A. Its remaining candidate justification was
+**latency**, and M04 measured it: Tier A 354.1 ms median / 621.2 ms p95 against
+Tier B's 889.3 ms / 1300.7 ms, n=27 each
+(`milestones/M04/answer-parity-3966b47.json`). **Tier B is slower, so the latency
+justification is retired** (ADR-0012). What remains is the availability contract
+(ADR-0001 leg 1) and an untested concurrency case whose keep-or-retire bar is now
+written into SPEC/06. The UI readout displays a number; displaying one is not
+asserting one.
 
 **Done when:** the UI readout is populated from a real per-query measurement
 through the deployed API on both tiers, and `make demo-parity`'s artifact records
@@ -157,10 +175,10 @@ PM-seat call once it exists.
 
 **This obligation is older than this milestone.** ADR-0001's Evidence line asked
 for "retrieval p50 per tier" recorded at **M02**. M02 closed without it, recorded
-as deferred rather than met — see SPEC/02 "The lexical lane". The only
-latency-adjacent number in the repo is whole-run `wall_s`, which has AOSS slower
-in every recorded pair; that is not per-query latency, but it is the reason this
-claim must not be narrated before it is measured.
+as deferred rather than met — see SPEC/02 "The lexical lane". M04 supplied it
+(`milestones/M04/answer-parity-3966b47.json`) and the claim was **retired, not
+narrated** (ADR-0012); the whole-run `wall_s` proxy, which had AOSS slower in
+every recorded pair, agrees in direction.
 
 ## Out of scope
 Added at `pm-spec-reviewer`'s request (B9): this file gained two gating criteria
@@ -168,12 +186,15 @@ while having no scope boundary at all, so each omission below was a judgement
 buried in prose rather than a declared exclusion.
 
 - **Any latency *target*.** The criterion above gates that a real number exists
-  and is recorded, not that it beats a threshold. Setting one is a PM call once
-  the number exists, and inventing one first would fit it to nothing.
+  and is recorded, not that it beats a threshold. The number now exists and the
+  PM call was made: the claim was **retired**, not given a target (ADR-0012). The
+  only threshold in play is SPEC/06's keep-or-retire bar for Tier B, which is a
+  disposition condition and not a figure the system is tuned against.
 - **Concurrent-load and throughput evidence.** M06's (SPEC/00, "load test &
   observability"). The latency criterion times sequential probes in a single
-  stream and cannot become concurrency evidence — so **until M06, Tier B's
-  claim is latency only**, never "handles load".
+  stream and cannot become concurrency evidence — so **until M06, Tier B has no
+  performance claim at all**: latency was measured and retired (ADR-0012), and
+  concurrency is M06's to measure.
 - **Prose- and confidence-level cross-tier comparability.** Explicitly excluded
   by the comparability criterion: only citations and `real_deadline` must match.
 - **Comparability for anything but the scenarios in `evals/scenarios.json`.**

@@ -59,18 +59,20 @@ is 0.05, at which the lane has stopped affecting the outcome.
 **Consequently the two tiers now run the same algorithm on different
 infrastructure**, and their scorecards agree to sixteen digits of MRR.
 
-Tier B's remaining **candidate** justification is **latency**, and it is
-**unmeasured**. Say "same algorithm, different infrastructure"; do not say
-"hybrid" and do not say "faster". The criterion is owed to SPEC/04's "Done when",
-not invented here after the fact.
+Tier B's candidate latency justification was **measured at M04 and retired**: it
+is ~2.5x slower at the median and ~2.1x at p95
+(`milestones/M04/answer-parity-3966b47.json`, ADR-0012). Say "same algorithm,
+different infrastructure"; do not say "hybrid" and do not say "faster". The
+criterion was owed to SPEC/04's "Done when" and was met there at M04.
 
-> **The only proxy currently in the repo runs the other way.** `wall_s` has AOSS
+> **The wall-clock proxy, recorded before the per-query measurement existed.**
+> `wall_s` has AOSS
 > slower in every recorded pair — 11.6 vs 6.7 at `b16f596`, 13.3 vs 6.5 at
 > `9e47ce7`, 7.9 vs 5.8 at `e596166`. That is whole-run wall clock over nine
 > sequential probes including embedding calls, **not** per-query
 > `router.retrieve()` latency, so it does not establish that Tier B is slower
-> either. It establishes only that nothing here supports the claim, which is why
-> the claim is hedged rather than asserted. An earlier draft of this section, and
+> either. M04's per-query measurement now settles it directly (ADR-0012), so the
+> claim above is retired rather than hedged. An earlier draft of this section, and
 > of `CLAUDE.md`, stated it as settled architecture with a "say that" instruction
 > attached — committing in the repo's highest-traffic document the exact defect
 > ADR-0009 named as "the same defect in new clothes". `pm-spec-reviewer` caught
