@@ -231,7 +231,12 @@ def retrieval_agent(state: RegDeltaState, retrieve=None) -> dict:
         state.get("query", ""), Filters(), config.NAIVE_TOP_K)
     return {"retrieved": list(chunks),
             "retrieval_tier": resolution.tier,
-            "retrieval_fallback": resolution.fallback_reason}
+            "retrieval_fallback": resolution.fallback_reason,
+            # Timed by the router, not here. A stopwatch around this call would
+            # be a second measurement of the same thing that could disagree
+            # with the one `make demo-parity` records, and the point of the UI
+            # readout is that it is the same quantity from a different vantage.
+            "retrieval_ms": resolution.elapsed_ms}
 
 
 # ------------------------------------------------------------ timeline agent

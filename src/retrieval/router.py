@@ -11,7 +11,7 @@ cross-tier drift, which is what SPEC/02 criterion 3 gates on — and a gate
 cannot distinguish real drift from two engines disagreeing about the contract.
 """
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import boto3
 
@@ -54,6 +54,23 @@ class Resolution:
     # the ordering, not the reranker. Carried out rather than logged so a
     # scorecard cannot claim a reranked run that did not happen.
     rerank: str = "off"
+    #: How long the whole router call took, in milliseconds — the SAME span
+    #: `make demo-parity` times for the artifact (`router.retrieve()`, which is
+    #: `retrieve_traced` plus a tuple index), so the two numbers are the same
+    #: quantity from two vantages: an in-process harness on a laptop against a
+    #: Lambda round trip. SPEC/04 calls those "different instruments" and gates
+    #: on the artifact; the UI readout shows this one.
+    #:
+    #: It spans the WHOLE call, so on a fallback it includes the failed AOSS
+    #: attempt while `tier` reads `s3vectors`. That is deliberate: the artifact
+    #: measures `router.retrieve()` the same way, and `fallback_reason` is on
+    #: the same object to say why the number is large. Timing only the attempt
+    #: that succeeded would report a fast Tier A for a request that spent most
+    #: of its time failing at Tier B.
+    #:
+    #: None only when a Resolution is constructed outside `retrieve_traced`
+    #: (tests, hand-built fixtures) — a zero would read as "instant".
+    elapsed_ms: float | None = None
 
 
 def active_endpoint() -> str | None:
@@ -126,6 +143,21 @@ def hydrate(chunk_ids: list[str]) -> list[Chunk]:
 
 def retrieve_traced(query: str, filters: Filters,
                     k: int = 8) -> tuple[list[Chunk], Resolution]:
+    """The router call, timed. See `_resolve` for what it does.
+
+    The timing lives here rather than in `_resolve` so that every return path
+    is timed by construction — the fallback path returns from a different
+    place than the hot path, and a stopwatch written at each `return` is one
+    a later branch can forget.
+    """
+    t0 = time.perf_counter()
+    chunks, resolution = _resolve(query, filters, k)
+    elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
+    return chunks, replace(resolution, elapsed_ms=elapsed_ms)
+
+
+def _resolve(query: str, filters: Filters,
+             k: int = 8) -> tuple[list[Chunk], Resolution]:
     filters = filters or Filters()
     width = k * 3           # fuse wide, filter, then cut — see below
     fallback_reason = None

@@ -126,6 +126,11 @@ def _shape(state: dict, thread_id: str) -> dict:
         # demo-parity response when nothing had been asked.
         "tier": state.get("retrieval_tier"),
         "fallback_reason": state.get("retrieval_fallback"),
+        # Same field, same name, same reason as the two above: SPEC/04's UI
+        # readout reads `retrieval_ms` off the deployed API, and a field that
+        # exists on one _shape only is how `dropped_citations` came to read as
+        # "nothing was dropped" where nothing had been asked.
+        "retrieval_ms": state.get("retrieval_ms"),
         "provenance": {
             "model_fast": config.MODEL_FAST,
             "model_verdict": config.MODEL_VERDICT,

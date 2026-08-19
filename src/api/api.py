@@ -292,6 +292,20 @@ def _shape(state: dict, thread_id: str) -> dict:
         # this field, and it must be able to show "no retrieval" as itself.
         "tier": state.get("retrieval_tier"),
         "fallback_reason": state.get("retrieval_fallback"),
+        # RETRIEVAL latency, measured by the router inside this request — the
+        # number SPEC/04's UI readout displays. The browser already knows the
+        # round trip; what it cannot see is how much of it was retrieval, and
+        # on a miss that is a small fraction of a response dominated by
+        # generation. Reported, not asserted (ADR-0012).
+        #
+        # ON A CACHE HIT THIS FIELD IS NOT PRESENT-TENSE. `/query` returns the
+        # STORED body on a hit, so `tier`, `fallback_reason` and this field all
+        # describe the request that populated the cache — possibly on the other
+        # tier, up to an hour ago. Nothing is re-measured, because nothing was
+        # retrieved. The UI must read `cache` first and present all three as
+        # provenance of the stored answer; treating them as live is the same
+        # substitution as reporting `active_tier()` for what answered.
+        "retrieval_ms": state.get("retrieval_ms"),
     }
 
 

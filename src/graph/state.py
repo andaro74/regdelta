@@ -38,6 +38,13 @@ class RegDeltaState(TypedDict, total=False):
     #: Why the hot tier did not answer, when it was configured and did not.
     #: None on a clean run; a silent fallback is the thing being made loud.
     retrieval_fallback: str | None
+    #: How long the router call took, in ms, from `router.Resolution`. SPEC/04's
+    #: UI readout reads this — a real per-query retrieval measurement through
+    #: the deployed API. NOT the request's wall time: the browser can measure
+    #: that for itself, and it is dominated by generation, so displaying it as
+    #: "retrieval latency" would be a number about Bedrock wearing a retrieval
+    #: label. Absent on a run that never reached retrieval, like `retrieval_tier`.
+    retrieval_ms: float | None
     timeline_facts: list[dict]   # from the amendment graph, never from prose
     #: True when documents WERE in play and the graph produced no dated fact for
     #: any of them. `timeline_facts == []` cannot express this: it is also what

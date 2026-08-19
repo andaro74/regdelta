@@ -46,9 +46,44 @@ from shared import config
 # asset_policy.SRC, and the reason `../src` was wrong here.
 JANITOR_SRC = str(Path(__file__).resolve().parent.parent / "lambdas" / "janitor")
 UI_SRC = str(Path(__file__).resolve().parents[2] / "ui")
+# THE CANNED SCENARIOS THE DEMO PAGE PUTS A BUTTON ON. SPEC/04 says "one canned
+# scenario button per entry in evals/scenarios.json", so the page fetches this
+# file rather than carrying a transcribed copy — a list hand-copied into the
+# HTML is a criterion whose subject can move without a diff, which is the
+# trap-census defect class `evals/scenarios.json` itself was created to close.
+SCENARIOS_SRC = Path(__file__).resolve().parents[2] / "evals" / "scenarios.json"
+# The fields the page needs, and only those. The source file also carries the
+# PM- and SME-seat commentary that justifies each scenario (`_meta`,
+# `demonstrates`, `grounded_in`, `note`); CloudFront serves this bucket to
+# anonymous callers, and internal review prose is not part of the demo.
+SCENARIO_PUBLIC_FIELDS = ("id", "label", "question", "company_profile")
 # Built by `make layer`, not committed: ~101MB of wheels reproducible from a
 # pinned requirements.txt. See the LayerVersion below for why it has to exist.
 LAYER_SRC = Path(__file__).resolve().parents[2] / "build" / "lambda-layer"
+
+def _public_scenarios() -> str:
+    """`evals/scenarios.json`, projected to the fields the demo page renders.
+
+    Read at synth from the canonical file, so a scenario added, removed or
+    reworded reaches the page on the next deploy with no second edit. The
+    projection is a whitelist rather than a blacklist: a field added to the
+    source for the SME or PM seat does not become public by default.
+
+    Raises rather than shipping an empty list. A page with no buttons still
+    renders, and "one button per entry" is then satisfied by a file with no
+    entries — the vacuous-green shape this milestone has already found four
+    times.
+    """
+    import json
+
+    data = json.loads(SCENARIOS_SRC.read_text(encoding="utf-8"))
+    scenarios = [{k: s[k] for k in SCENARIO_PUBLIC_FIELDS if k in s}
+                 for s in data.get("scenarios") or []]
+    if not scenarios:
+        raise ValueError(f"{SCENARIOS_SRC} defines no scenarios; the demo page "
+                         "would deploy with no buttons and no error")
+    return json.dumps({"scenarios": scenarios}, indent=1, sort_keys=False)
+
 
 SSM_ENDPOINT_PARAM = "/regdelta/search/endpoint"
 # The HTTP API stage name, which is also the first path segment the API answers
@@ -438,7 +473,8 @@ class RegDeltaCoreStack(cdk.Stack):
         # holding a different commit's page than the API it talks to.
         s3deploy.BucketDeployment(
             self, "DemoUi",
-            sources=[s3deploy.Source.asset(UI_SRC)],
+            sources=[s3deploy.Source.asset(UI_SRC),
+                     s3deploy.Source.data("scenarios.json", _public_scenarios())],
             destination_bucket=ui_bucket,
             distribution=self.demo_distribution,
             distribution_paths=["/*"],
