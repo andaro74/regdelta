@@ -103,16 +103,36 @@ const SCENARIOS = {
 // mistaken for the `retrieval_ms` values above, in either direction.
 const API_DELAY_MS = 1200;
 
+// THE DEPLOYED POLICY, sent by the test server on every response.
+//
+// Without it this spec proved "the page works" and not "the page works under
+// the policy", which are two claims — and the second is the one the split into
+// index.html + app.css + app.js was for. `security-reviewer` raised it.
+//
+// Kept byte-identical to `core_stack.CSP` by
+// `tests/test_api_hosting.py::test_the_dom_spec_serves_the_policy_the_stack_sends`,
+// because a copy that drifts is a test passing under a policy nobody deploys.
+const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; "
+          + "connect-src 'self'; img-src 'self'; base-uri 'none'; "
+          + "form-action 'none'; frame-ancestors 'none'";
+
 let served = 0;
 
 function startServer() {
+  // `.css` IS LOAD-BEARING. A stylesheet served as text/plain is rejected by
+  // the browser in standards mode, and the page then renders unstyled — which
+  // here means the instrument labels lose `text-transform: uppercase` and every
+  // assertion below reads a differently-cased string. The first run after the
+  // page was split into index.html + app.css + app.js failed exactly that way.
   const types = { ".html": "text/html", ".js": "text/javascript",
-                  ".json": "application/json" };
+                  ".css": "text/css", ".json": "application/json" };
   const server = http.createServer((req, res) => {
     const url = req.url.split("?")[0];
     const json = (code, obj, delay) => setTimeout(() => {
       const body = JSON.stringify(obj);
-      res.writeHead(code, { "content-type": "application/json" });
+      res.writeHead(code, { "content-type": "application/json",
+                            "content-security-policy": CSP,
+                            "x-content-type-options": "nosniff" });
       res.end(body);
     }, delay || 0);
 
@@ -129,7 +149,9 @@ function startServer() {
     if (!file.startsWith(UI) || !fs.existsSync(file)) {
       res.writeHead(404); return res.end("no");
     }
-    res.writeHead(200, { "content-type": types[path.extname(file)] || "text/plain" });
+    res.writeHead(200, { "content-type": types[path.extname(file)] || "text/plain",
+                         "content-security-policy": CSP,
+                         "x-content-type-options": "nosniff" });
     res.end(fs.readFileSync(file));
   });
   return new Promise(r => server.listen(0, "127.0.0.1", () => r(server)));
@@ -235,6 +257,17 @@ async function main() {
     // ---- 1. Tier A answers. The readout must be the SERVER's number.
     let t = await load(origin + "/?scenario=healthy-claim&run=1",
                        x => x.includes("2028-02-25"));
+
+    // The stylesheet has to have applied before anything below is meaningful:
+    // the labels these assertions match are uppercased by CSS, so an unstyled
+    // page would fail them for a reason that has nothing to do with the page's
+    // behaviour — and a *rewritten* assertion would then pass against a page
+    // whose stylesheet never loaded.
+    check("the stylesheet loaded", () => {
+      assert.match(t, /RETRIEVAL LATENCY/,
+        "labels are not uppercased — app.css did not apply, so nothing below "
+        + "is testing what it reads as");
+    });
 
     check("the retrieval readout shows retrieval_ms, not the round trip", () => {
       assert.match(t, /RETRIEVAL LATENCY\s*\n\s*111 ms/,

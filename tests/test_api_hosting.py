@@ -244,8 +244,12 @@ def test_only_the_two_files_the_page_is_reach_the_public_bucket(tmp_path):
 
     ui = tmp_path / "ui"
     ui.mkdir()
-    (ui / "index.html").write_text("<!doctype html>", encoding="utf-8")
-    (ui / "verdict.js").write_text("// judgement", encoding="utf-8")
+    for name, body in (("index.html", "<!doctype html>"),
+                       ("app.css", "body{}"),
+                       ("app.js", "// page"),
+                       ("verdict.js", "// judgement"),
+                       ("favicon.svg", "<svg/>")):
+        (ui / name).write_text(body, encoding="utf-8")
     # Everything below is a plausible accident, and each would be readable by
     # anyone with the distribution URL.
     (ui / ".env").write_text("AWS_SECRET_ACCESS_KEY=hunter2", encoding="utf-8")
@@ -271,7 +275,8 @@ def test_only_the_two_files_the_page_is_reach_the_public_bucket(tmp_path):
     ours = [names for names in staged_files(app.synth()).values()
             if names & {"index.html", "verdict.js", "notes.md", ".env"}]
     assert len(ours) == 1, ours
-    assert ours[0] == {"index.html", "verdict.js"}, sorted(ours[0])
+    assert ours[0] == {"index.html", "app.css", "app.js", "verdict.js",
+                       "favicon.svg"}, sorted(ours[0])
 
 
 def test_the_stack_applies_that_allowlist_to_the_ui_bucket(tmp_path):
@@ -294,8 +299,12 @@ def test_the_stack_applies_that_allowlist_to_the_ui_bucket(tmp_path):
 
     ui = tmp_path / "ui"
     ui.mkdir()
-    (ui / "index.html").write_text("<!doctype html>", encoding="utf-8")
-    (ui / "verdict.js").write_text("// judgement", encoding="utf-8")
+    for name, body in (("index.html", "<!doctype html>"),
+                       ("app.css", "body{}"),
+                       ("app.js", "// page"),
+                       ("verdict.js", "// judgement"),
+                       ("favicon.svg", "<svg/>")):
+        (ui / name).write_text(body, encoding="utf-8")
     (ui / ".env").write_text("AWS_SECRET_ACCESS_KEY=hunter2", encoding="utf-8")
     (ui / "index.old.html").write_text("<!-- last week -->", encoding="utf-8")
     (ui / "notes.md").write_text("internal", encoding="utf-8")
@@ -319,4 +328,105 @@ def test_the_stack_applies_that_allowlist_to_the_ui_bucket(tmp_path):
         if names & {"index.html", "verdict.js", "scenarios.json",
                     "notes.md", ".env", "index.old.html"}:
             published |= names
-    assert published == {"index.html", "verdict.js", "scenarios.json"}, sorted(published)
+    assert published == {"index.html", "app.css", "app.js", "verdict.js",
+                         "favicon.svg", "scenarios.json"}, sorted(published)
+
+
+# ------------------------------------------------------ the security headers
+def _csp(template) -> str:
+    """The Content-Security-Policy as the distribution will actually send it."""
+    policies = resources(template, "AWS::CloudFront::ResponseHeadersPolicy")
+    assert len(policies) == 1, f"expected one response headers policy, got {len(policies)}"
+    config = policies[0]["ResponseHeadersPolicyConfig"]
+    return config["SecurityHeadersConfig"]["ContentSecurityPolicy"]["ContentSecurityPolicy"]
+
+
+def test_the_csp_has_no_unsafe_inline_anywhere(template):
+    """THE ONE EDIT THAT MAKES THE WHOLE HEADER DECORATION.
+
+    With `'unsafe-inline'`, `script-src` permits exactly the injected `<script>`
+    the policy exists to stop, and the header goes on reading as protection.
+    It is also the ordinary way somebody repairs a page that stopped rendering
+    under the policy — which is why `ui/` carries no inline script, no inline
+    style and no `style=` attribute, pinned separately in
+    `tests/test_ui_verdict.py`, so that repair is never the tempting one.
+
+    `'unsafe-eval'` for the same reason, one step further out.
+    """
+    csp = _csp(template)
+    for forbidden in ("unsafe-inline", "unsafe-eval", "unsafe-hashes"):
+        assert forbidden not in csp, f"the CSP contains {forbidden}: {csp}"
+
+
+def test_the_csp_fails_closed(template):
+    """`default-src 'none'`, so a directive nobody thought to write denies.
+
+    The alternative — enumerating what to block — means every new capability a
+    browser gains is permitted by default until someone notices, which is the
+    same shape as the allowlist-vs-blocklist argument in `asset_policy`.
+    """
+    csp = _csp(template)
+    assert "default-src 'none'" in csp, csp
+    # Every directive in the string, not the three most obvious. Silent
+    # deletion of one is exactly what this test exists to catch, and
+    # `base-uri` / `form-action` / `img-src` were unpinned until
+    # `security-reviewer` said so.
+    for directive in ("script-src 'self'", "style-src 'self'", "connect-src 'self'",
+                      "img-src 'self'", "base-uri 'none'", "form-action 'none'",
+                      "frame-ancestors 'none'"):
+        assert directive in csp, f"missing {directive}: {csp}"
+
+
+def test_the_dom_spec_serves_the_policy_the_stack_sends():
+    """The browser test's CSP must be the deployed one, byte for byte.
+
+    `tests/ui_dom_spec.js` serves the page from a temporary local server and now
+    sends a Content-Security-Policy with it, so that it proves "the page works
+    UNDER the policy" rather than only "the page works" — two claims, and the
+    second is what the index.html/app.css/app.js split was for.
+
+    That header is a copy, because node cannot import a Python constant. A copy
+    that drifts is worse than no copy at all: the spec would go on passing under
+    a policy nobody deploys, which is this milestone's defect class with the
+    instrument one step removed from the claim.
+    """
+    import re
+
+    sys.path.insert(0, str(ROOT / "infra"))
+    from core.core_stack import CSP
+
+    spec = (ROOT / "tests" / "ui_dom_spec.js").read_text(encoding="utf-8")
+    m = re.search(r'const CSP = ((?:"[^"]*"\s*\+?\s*)+);', spec)
+    assert m, "ui_dom_spec.js no longer declares a CSP constant"
+    served = "".join(re.findall(r'"([^"]*)"', m.group(1)))
+    assert served == CSP, (
+        "the DOM spec serves a different policy than the stack deploys\n"
+        f"  spec:  {served}\n"
+        f"  stack: {CSP}")
+
+
+def test_the_headers_reach_the_page_and_the_api(template):
+    """Both behaviours carry the policy.
+
+    The CSP is inert over JSON, but `nosniff` is not: it stops a browser
+    deciding for itself that an API response is HTML, which is the one way a
+    JSON endpoint becomes an XSS sink. A policy on the static behaviour only
+    would look complete in the console.
+    """
+    config = resources(template, "AWS::CloudFront::Distribution")[0]["DistributionConfig"]
+    policy_ids = [config["DefaultCacheBehavior"].get("ResponseHeadersPolicyId")]
+    policy_ids += [b.get("ResponseHeadersPolicyId")
+                   for b in config.get("CacheBehaviors") or []]
+    assert all(pid is not None for pid in policy_ids), \
+        f"a behaviour sends no security headers: {policy_ids}"
+    assert len(set(map(str, policy_ids))) == 1, \
+        "the two behaviours send different headers, which is a divergence to keep honest"
+
+    headers = resources(template, "AWS::CloudFront::ResponseHeadersPolicy")[0][
+        "ResponseHeadersPolicyConfig"]["SecurityHeadersConfig"]
+    assert headers["ContentTypeOptions"]["Override"] is True
+    assert headers["FrameOptions"]["FrameOption"] == "DENY"
+    assert headers["ReferrerPolicy"]["ReferrerPolicy"] == "no-referrer"
+    # The CSP's OWN override, which was the one not asserted: without it an
+    # origin-set header wins and the policy above is advisory.
+    assert headers["ContentSecurityPolicy"]["Override"] is True

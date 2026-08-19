@@ -86,7 +86,7 @@ def test_the_page_behaves_as_it_renders():
         + (r.stdout or "") + (r.stderr or ""))
 
 
-def test_both_ui_files_parse():
+def test_both_ui_scripts_parse():
     """A syntax error in the page is a blank demo, and nothing else would say so.
 
     `ruff check` covers `src evals infra tests`; nothing in this repo looks at
@@ -95,18 +95,65 @@ def test_both_ui_files_parse():
     node = shutil.which("node")
     if not node:
         pytest.skip("node not on PATH")
-    inline = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>",
-                        (UI / "index.html").read_text(encoding="utf-8"), re.DOTALL)
-    assert len(inline) == 1, f"expected one inline <script>, found {len(inline)}"
+    for target in (UI / "verdict.js", UI / "app.js"):
+        r = subprocess.run([node, "--check", str(target)],
+                           capture_output=True, text=True)
+        assert r.returncode == 0, f"{target.name} does not parse:\n{r.stderr}"
 
-    import tempfile
-    with tempfile.TemporaryDirectory() as tmp:
-        page = Path(tmp) / "page.js"
-        page.write_text(inline[0], encoding="utf-8")
-        for target in (UI / "verdict.js", page):
-            r = subprocess.run([node, "--check", str(target)],
-                               capture_output=True, text=True)
-            assert r.returncode == 0, f"{target.name} does not parse:\n{r.stderr}"
+
+def test_the_page_carries_nothing_the_csp_forbids():
+    """THE POLICY AND THE PAGE MUST NOT DRIFT APART.
+
+    `core_stack.CSP` is `default-src 'none'` with `script-src 'self'` and
+    `style-src 'self'` and NO `'unsafe-inline'` — which is the whole point of
+    it, since with `'unsafe-inline'` the script directive permits exactly the
+    injected `<script>` the policy exists to stop.
+
+    That makes three things unusable in `ui/`: an inline `<script>`, an inline
+    `<style>`, and a literal `style=` attribute in markup — CSP treats the last
+    of those exactly as it treats the second. Any of them silently stops
+    rendering under the deployed policy while looking correct in a file, and
+    the usual repair is to add `'unsafe-inline'` and lose the protection. So
+    the page is pinned instead.
+
+    NOT pinned, because CSP does not govern it: `element.style.x = y` from
+    `app.js`. That is CSSOM, not markup.
+    """
+    html = (UI / "index.html").read_text(encoding="utf-8")
+    inline_script = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>", html)
+    assert not inline_script, f"inline <script> in the page: {inline_script}"
+    assert "<style" not in html, "inline <style> in the page"
+    assert 'style="' not in html, \
+        "literal style= attribute: " + str(re.findall(r'style="[^"]*"', html))
+    # THE FOURTH THING, and the one this test did not have. `script-src 'self'`
+    # blocks an `onclick="..."` exactly as it blocks an inline <script>; both
+    # need `'unsafe-inline'`. `security-reviewer` reproduced it — an
+    # `onclick="ask()"` on the Ask button with the JS wiring removed passed
+    # every test in the suite and shipped a button that does nothing on the
+    # deployed page, because no check clicks it. Same failure shape as the
+    # three above, same tempting repair.
+    handlers = re.findall(r"<[a-zA-Z][^>]*\s(on[a-z]+)\s*=", html)
+    assert not handlers, f"inline event handler attribute: {handlers}"
+
+    # And every script/stylesheet it does load is same-origin and shipped.
+    srcs = re.findall(r'<(?:script|link)[^>]*(?:src|href)="([^"]+)"', html)
+    assert srcs, "the page loads no script at all"
+    for src in srcs:
+        assert "//" not in src, f"{src} is not same-origin; script-src 'self' blocks it"
+        assert (UI / src).is_file(), f"{src} is referenced but not in ui/"
+
+
+def test_every_file_the_page_loads_is_allowlisted_for_the_bucket():
+    """`UI_ASSET_EXCLUDE` is an explicit allowlist, so a new file the page
+    references reaches CloudFront only if someone added it there too. Missed,
+    the page 403s on its own stylesheet in the region and nowhere else."""
+    sys.path.insert(0, str(ROOT / "infra"))
+    import asset_policy
+
+    html = (UI / "index.html").read_text(encoding="utf-8")
+    allowed = {p[1:] for p in asset_policy.UI_ASSET_EXCLUDE if p.startswith("!")}
+    for src in re.findall(r'<(?:script|link)[^>]*(?:src|href)="([^"]+)"', html):
+        assert src in allowed, f"the page loads {src}, which the bucket allowlist drops"
 
 
 def test_the_page_uses_the_judgement_it_is_tested_on():
@@ -117,14 +164,18 @@ def test_the_page_uses_the_judgement_it_is_tested_on():
     class wearing a green check. So: the page loads the file, and the two
     decisions with their own spec are reached through it.
     """
-    page = (UI / "index.html").read_text(encoding="utf-8")
-    assert '<script src="verdict.js"></script>' in page
-    for call in ("V.observationFrom(", "V.compareObservations(", "V.citationUrl("):
-        assert call in page, f"the page does not call {call}"
+    html = (UI / "index.html").read_text(encoding="utf-8")
+    app = (UI / "app.js").read_text(encoding="utf-8")
+    assert '<script src="verdict.js"></script>' in html
+    # Order matters: verdict.js defines what app.js reads at load.
+    assert html.index('src="verdict.js"') < html.index('src="app.js"')
+    for call in ("V.observationFrom(", "V.compareObservations(", "V.citationUrl(",
+                 "V.latencyReadout(", "V.cacheReadout("):
+        assert call in app, f"the page does not call {call}"
     # And it does not carry a second copy under the same names.
     for redefined in ("function observationFrom", "function compareObservations",
-                      "function citationUrl"):
-        assert redefined not in page, f"the page redefines {redefined}"
+                      "function citationUrl", "function latencyReadout"):
+        assert redefined not in app, f"the page redefines {redefined}"
 
 
 # ------------------------------------------------------------- the scenarios

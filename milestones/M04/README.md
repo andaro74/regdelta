@@ -859,7 +859,7 @@ showing the retained Tier A observation on a cold browser start.
 
 | file | shows |
 |---|---|
-| `01-healthy-claim-and-cross-tier-equal.png` | **both Done-when clauses in one page**: the full Nordvale table answered live against the deployed stack (`s3vectors`, `bypass`, retrieval **302 ms** against a 14.05 s round trip), and beneath it the cross-tier panel — retained `aoss` beside live `s3vectors`, both `bypass`, verdict **EQUAL** |
+| `01-healthy-claim-and-cross-tier-equal.png` | **both Done-when clauses in one page**: the full Nordvale table answered live against the deployed stack (`s3vectors`, `bypass`, retrieval **368 ms** against a 12.94 s round trip), and beneath it the cross-tier panel — retained `aoss` beside live `s3vectors`, both `bypass`, verdict **EQUAL**. Taken **under the deployed CSP**, in the run that reported zero console errors and zero violations |
 | `02-needs-human-review.png` | the `needs_input` state, its reason, and a minted capability that is not displayed |
 | `03-cache-hit.png` | `cache: hit`, a **178 ms** round trip, and tier and latency both labelled `stored` |
 
@@ -936,13 +936,15 @@ reviewer note nested inside a `company_profile` would publish. Harmless today;
 a recursive projection needs a schema for a field whose shape is the PM seat's
 to choose.
 
-**LOW, declined — for the human seat.** No `ResponseHeadersPolicy` (CSP,
-`nosniff`) on the distribution. Defence-in-depth with no sink found: every
-model-generated string goes through `textContent` or `createTextNode`, every
-`innerHTML` is a static literal or passes `escapeHtml`, and `citationUrl`
-returns only literal `federalregister.gov` / `ecfr.gov` prefixes concatenated
-with digit-only captures. A meaningful CSP would also mean moving the page's
-inline script into its own file. Named rather than left to be found.
+**LOW, declined and then TAKEN.** No `ResponseHeadersPolicy` (CSP, `nosniff`)
+on the distribution. Defence-in-depth with no sink found: every model-generated
+string goes through `textContent` or `createTextNode`, every `innerHTML` is a
+static literal or passes `escapeHtml`, and `citationUrl` returns only literal
+`federalregister.gov` / `ecfr.gov` prefixes concatenated with digit-only
+captures. Declined at review because a meaningful CSP means moving the page's
+inline script into its own file. **The human seat asked for that move, so the
+policy is now in place** — see "The page behind a Content-Security-Policy"
+below.
 
 
 ## The tier flip, in the browser — measured 2026-08-19
@@ -1179,3 +1181,183 @@ no longer puts the weight of the rendering on it.
 The reviewer's process note — that `milestones/` was absent from the diff under
 review — was true when it read the tree and is not now: the pack and the
 screenshots are committed at `e739c35`, which landed while it was running.
+
+
+## The page behind a Content-Security-Policy — measured 2026-08-19
+
+`security-reviewer` raised a `ResponseHeadersPolicy` as defence in depth and I
+declined it, for a real reason: a meaningful CSP needs the page's inline
+`<script>` in its own file, or the policy is written with `'unsafe-inline'` and
+protects nothing. The human seat asked for the move, so the policy is now in
+place and the reason for declining it no longer exists.
+
+### What moved, and why all of it had to
+
+`ui/index.html` is now three files — `index.html`, `ui/app.css`, `ui/app.js` —
+and `ui/verdict.js` is unchanged. The obvious half is the script. The half that
+is easy to miss is that **`style-src 'self'` blocks a literal `style=` attribute
+exactly as it blocks an inline `<style>` block**, so the eight `style="..."`
+attributes in the markup became classes too. Left in place they would have
+rendered an unstyled page under the deployed policy while looking correct in the
+file, and the ordinary repair for that is to add `'unsafe-inline'` and lose the
+protection.
+
+Not moved, because CSP does not govern it: the ten `element.style.x = y`
+assignments in `app.js`. That is CSSOM, not markup.
+
+### The policy
+
+    default-src 'none';
+    script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self';
+    base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+`default-src 'none'` so it **fails closed** — a directive nobody thought to
+write denies, which is the same argument `asset_policy` makes for an allowlist
+over a blocklist. `connect-src 'self'` is the page's own fetches to
+`/api/query`, `/api/health` and `scenarios.json`. The citation links are
+top-level navigations to another origin, which no fetch directive governs.
+Alongside it: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+`Referrer-Policy: no-referrer`.
+
+**Attached to both behaviours**, the page and `/api/*`. The CSP is inert over
+JSON; `nosniff` is not — it stops a browser deciding for itself that an API
+response is HTML, which is the one way a JSON endpoint becomes an XSS sink. A
+policy on the static behaviour only would have looked complete in the console.
+
+### Verified by running, not by reading the template
+
+Live on the deployed distribution, both behaviours:
+
+    Content-Security-Policy: default-src 'none'; script-src 'self'; style-src
+      'self'; connect-src 'self'; img-src 'self'; base-uri 'none';
+      form-action 'none'; frame-ancestors 'none'
+    X-Content-Type-Options: nosniff
+    X-Frame-Options: DENY
+    Referrer-Policy: no-referrer
+
+And then the question a header dump cannot answer — **does the page still
+work?** A CSP that blocks the page's own script produces a blank page; one that
+blocks something smaller produces a page that looks right and has quietly lost a
+feature. Neither is visible in a screenshot, so the screenshot driver now
+captures `Log.entryAdded` and `Runtime.exceptionThrown` beside the pixels. A
+real headless-Chrome run against the deployed page:
+
+    no console errors and no CSP violations
+    TIER THAT ANSWERED  s3vectors      RESPONSE CACHE  bypass
+    RETRIEVAL LATENCY   368 ms         ROUND TRIP      12.94 s
+    cross-tier panel    EQUAL
+
+**One real defect that check found**, on the first run: a 403 on every page
+load, for `/favicon.ico`. A browser asks for it unprompted and the private
+bucket answers 403 through OAC. Not a CSP violation and not new — it had been
+there since the distribution existed, and it took capturing the console to
+notice. `ui/favicon.svg` now ships. Its own file rather than a `data:` URI,
+because `img-src 'self'` is the policy and widening it to `data:` for a
+decoration is the wrong trade.
+
+### What holds it
+
+Eighteen mutations, eighteen caught, across three files — ten below, and eight
+more from the review that follows:
+
+| mutation | caught by |
+|---|---|
+| the CSP gains `'unsafe-inline'` | `test_the_csp_has_no_unsafe_inline_anywhere` |
+| `default-src 'none'` → `default-src *` | `test_the_csp_fails_closed` |
+| the page behaviour loses the policy | `test_the_headers_reach_the_page_and_the_api` |
+| the API behaviour loses `nosniff` | same |
+| `X-Frame-Options` weakens to `SAMEORIGIN` | same |
+| an inline `<script>` returns to the page | `test_the_page_carries_nothing_the_csp_forbids` |
+| an inline `<style>` returns | same |
+| a literal `style=` attribute returns | same |
+| the page loads a stylesheet from another origin | `test_the_page_behaves_as_it_renders` |
+| a file the page loads is not in `UI_ASSET_EXCLUDE` | `test_every_file_the_page_loads_is_allowlisted_for_the_bucket` |
+
+The first of those is the one that matters most and it is the one a first pass
+**missed**: five of six mutations were caught before it was written. With
+`'unsafe-inline'`, `script-src` permits exactly the injected `<script>` the
+policy exists to stop, and the header goes on reading as protection — the
+policy's own defect class, and it was living in a comment rather than a test.
+
+**A defect the split exposed in the test harness**, worth recording as the same
+shape as everything else here: `tests/ui_dom_spec.js` serves `ui/` from a
+temporary local server, and its MIME map had no entry for `.css`. A stylesheet
+served as `text/plain` is rejected by the browser in standards mode, so the
+first run after the split rendered an **unstyled** page — and the assertions,
+which match labels uppercased by CSS, failed on the casing. The tempting repair
+is to relax the assertions, which would then pass against a page whose
+stylesheet never loaded. Fixed at the server, and the spec now asserts the
+stylesheet applied *before* anything that depends on it.
+
+### Security review of the policy itself
+
+`security-reviewer`, second pass on this branch: **no HIGH, nothing
+merge-blocking.** It confirmed by running what the section above asserts — the
+synthesized CSP string, that `default-src 'none'` already covers `object-src`,
+`font-src`, `frame-src`, `worker-src`, `manifest-src`, that `app.css` has no
+`@import` or `url()`, and that the ten CSSOM writes in `app.js` survive the
+policy (it copied the DOM spec, added the deployed header, and got 12/12). It
+also confirmed the `/api/*` reasoning and found the one case that would have
+broken there — FastAPI's `/docs`, which needs `'unsafe-inline'` styles and a
+jsdelivr script — is unreachable, because the stack adds three explicit routes
+and no `$default`.
+
+**MEDIUM, fixed — an inline event-handler attribute is the FOURTH thing
+`script-src 'self'` forbids, and nothing pinned it.** The test pinned inline
+`<script>`, inline `<style>` and `style=`. It did not pin `on*=`, which CSP
+blocks exactly as it blocks inline script. Reproduced rather than argued: an
+`onclick="ask()"` on the Ask button with the JS wiring removed passed **26 of 26
+tests** and shipped a **dead button** on the deployed page — and the DOM spec
+passed too, even served the real CSP, because no check clicks that button. The
+same failure shape the other three pins exist to prevent, with the same tempting
+repair (`'unsafe-inline'`) waiting at the end of it. Now pinned; the reviewer's
+exact mutation is one of the eight below.
+
+**LOW, fixed — the only in-browser test ran without the policy.** "The page
+works" and "the page works under the policy" are two claims, and only the first
+was automated; the second is what the file split was *for*. `ui_dom_spec.js`
+now sends the deployed CSP and `nosniff` on every response it serves. The header
+is a copy — node cannot import a Python constant — so
+`test_the_dom_spec_serves_the_policy_the_stack_sends` holds it byte-identical to
+`core_stack.CSP`. A copy that drifts is worse than none: the spec would go on
+passing under a policy nobody deploys, which is this milestone's defect class
+with the instrument one step further from the claim.
+
+**LOW, fixed — three directives, the CSP's own `Override`, and the referrer
+value were unpinned.** `base-uri`, `form-action` and `img-src` were in the
+string and in no assertion, and `Override` was asserted for `nosniff` but not
+for the CSP — without it an origin-set header wins and the policy is advisory.
+
+**LOW, fixed — neither allowlist test planted the new files.** Both planted only
+`index.html` and `verdict.js`, so nothing proved `app.css` actually reaches the
+bucket; the deployment was correct, but that was luck rather than coverage.
+
+**LOW, fixed — the stack comment claimed more than `citationUrl` does.** It said
+"digit-only captures"; the CFR branch also captures a paragraph designator,
+which is not. Still safe — the scheme and host are literal and the result is
+assigned to `a.href` as a property, with no attribute-quote context — but that
+sentence is the stated basis for "no sink found", so it now says what the code
+does.
+
+**Eight mutations, eight caught**, including the reviewer's dead-button
+reproduction and a second inline handler on a different element.
+
+**One thing worth carrying forward**, from the review rather than from a
+finding: `app.js` and `app.css` are now separately cacheable objects, so
+`index.html` and `app.js` can be at different versions for a few minutes after a
+deploy. A demo-looks-wrong problem rather than a security one, and the
+`distribution_paths=["/*"]` invalidation already narrows the window.
+
+### Not taken: HSTS
+
+Deliberate, and named rather than omitted. `Strict-Transport-Security` is a
+browser-persistent commitment keyed to the host, and the host here is a shared
+`*.cloudfront.net` name. The viewer protocol policy already redirects HTTP to
+HTTPS, so the marginal gain is against an active downgrade on a first visit, and
+a wrong `max-age` cannot be withdrawn quickly. For the human seat, with a custom
+domain, rather than now.
+
+`security-reviewer` agreed and would not raise it even as a LOW, adding two
+reasons this write-up did not have: `cloudfront.net` is a **public suffix you do
+not control**, on a hostname AWS assigns and can reassign; and the URLs carry
+nothing secret — `?scenario=…&run=1&cache=1` is the whole of it.

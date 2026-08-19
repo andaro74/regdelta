@@ -65,7 +65,8 @@ ASSET_IGNORE_MODE = IgnoreMode.DOCKER
 # `!**/*.{html,js}` — a scratch `index.old.html` or a vendored script would
 # otherwise publish itself, and the whole point is that adding something to the
 # anonymous distribution should be a decision someone made.
-UI_ASSET_EXCLUDE = ["*", "!index.html", "!verdict.js"]
+UI_ASSET_EXCLUDE = ["*", "!index.html", "!app.css", "!app.js", "!verdict.js",
+                    "!favicon.svg"]
 
 
 def python_source(path: str | None = None) -> _lambda.Code:

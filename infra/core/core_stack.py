@@ -57,6 +57,30 @@ SCENARIOS_SRC = Path(__file__).resolve().parents[2] / "evals" / "scenarios.json"
 # `demonstrates`, `grounded_in`, `note`); CloudFront serves this bucket to
 # anonymous callers, and internal review prose is not part of the demo.
 SCENARIO_PUBLIC_FIELDS = ("id", "label", "question", "company_profile")
+
+# The demo page's Content-Security-Policy. Written as one string here, beside
+# the files it names, so that adding a script or a stylesheet to `ui/` and
+# forgetting the policy is a broken page in review rather than a silent
+# widening — `default-src 'none'` fails closed.
+#
+# NO 'unsafe-inline' ANYWHERE, which is the whole point: with it, `script-src`
+# permits exactly the injected <script> the policy exists to stop, and the
+# header becomes decoration. `ui/` carries no inline script, no inline style
+# and no `style=` attribute for that reason, and `tests/test_ui_verdict.py`
+# pins all three so the policy cannot quietly stop matching the page.
+CSP = "; ".join([
+    "default-src 'none'",
+    "script-src 'self'",
+    "style-src 'self'",
+    # The page's own fetches to /api/query, /api/health and scenarios.json.
+    "connect-src 'self'",
+    # No <img> anywhere; 'self' covers only the favicon a browser asks for
+    # unprompted.
+    "img-src 'self'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'none'",
+])
 # Built by `make layer`, not committed: ~101MB of wheels reproducible from a
 # pinned requirements.txt. See the LayerVersion below for why it has to exist.
 LAYER_SRC = Path(__file__).resolve().parents[2] / "build" / "lambda-layer"
@@ -448,12 +472,61 @@ class RegDeltaCoreStack(cdk.Stack):
             auto_delete_objects=True,
         )
 
+        # ------------------------------------------------------------------
+        # A SECOND LAYER UNDER THE PAGE'S OWN DISCIPLINE.
+        #
+        # The demo page renders LLM output derived from untrusted Federal
+        # Register and eCFR XML, to anonymous callers. Its XSS safety rests
+        # entirely on every model-generated string going through `textContent`
+        # and on `citationUrl` returning only literal federalregister.gov /
+        # ecfr.gov prefixes concatenated with captured citation text. Two of its
+        # three branches capture digits only; the CFR branch also captures a
+        # paragraph designator, which is not — safe, because the scheme and host
+        # are literal and the result is assigned to `a.href` as a property with
+        # no attribute-quote context to escape, but the stronger wording was
+        # this sentence's and it is the stated basis for "no sink found".
+        # `security-reviewer`, M04.
+        # `security-reviewer` found no sink and raised this as defence in
+        # depth: discipline that is not enforced by anything is one careless
+        # `innerHTML` away from being untrue, and nothing in this repo lints
+        # JavaScript.
+        #
+        # It was declined at the time for a real reason — a meaningful CSP
+        # needs the page's inline <script> in its own file, and `style-src`
+        # needs the inline <style> and every literal `style=` attribute out
+        # too, or the policy is written with 'unsafe-inline' and protects
+        # nothing. That split is done (ui/app.js, ui/app.css), so the honest
+        # policy is now available and this is it.
+        #
+        # `default-src 'none'` and then only what the page actually uses:
+        # its own two scripts and one stylesheet, and `connect-src 'self'` for
+        # the same-origin fetches to /api/*. The citation links are top-level
+        # navigations to another origin, which no fetch directive governs.
+        # `frame-ancestors` and `form-action` are 'none' because the page is
+        # neither framed nor a form.
+        # ------------------------------------------------------------------
+        security_headers = cloudfront.ResponseHeadersPolicy(
+            self, "SecurityHeaders",
+            security_headers_behavior=cloudfront.ResponseSecurityHeadersBehavior(
+                content_security_policy=cloudfront.ResponseHeadersContentSecurityPolicy(
+                    content_security_policy=CSP, override=True),
+                content_type_options=cloudfront.ResponseHeadersContentTypeOptions(
+                    override=True),
+                frame_options=cloudfront.ResponseHeadersFrameOptions(
+                    frame_option=cloudfront.HeadersFrameOption.DENY, override=True),
+                referrer_policy=cloudfront.ResponseHeadersReferrerPolicy(
+                    referrer_policy=cloudfront.HeadersReferrerPolicy.NO_REFERRER,
+                    override=True),
+            ),
+        )
+
         self.demo_distribution = cloudfront.Distribution(
             self, "Demo",
             default_root_object="index.html",
             default_behavior=cloudfront.BehaviorOptions(
                 origin=origins.S3BucketOrigin.with_origin_access_control(ui_bucket),
                 viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                response_headers_policy=security_headers,
             ),
             additional_behaviors={
                 "/api/*": cloudfront.BehaviorOptions(
@@ -472,6 +545,11 @@ class RegDeltaCoreStack(cdk.Stack):
                     # must see its own hostname to route. This is what carries
                     # `x-regdelta-no-cache` through to the Lambda.
                     origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+                    # The same headers on the API responses. The CSP is inert
+                    # over JSON; `nosniff` is not — it stops a browser deciding
+                    # for itself that an API response is HTML, which is the one
+                    # way a JSON endpoint becomes an XSS sink.
+                    response_headers_policy=security_headers,
                 ),
             },
         )
