@@ -1,11 +1,175 @@
-# M04 — API + Demo UI  **(IN PROGRESS)**
+# M04 — API + Demo UI
 
-- Branch: `m04-api-demo`   PR: **#11 (draft)**   Spec: `SPEC/04-api-and-demo.md`
+- Git tag: `m04`   Branch: `m04-api-demo`   PR: **#11**
+- Spec: `SPEC/04-api-and-demo.md`   ADRs touched: **ADR-0012** (new), ADR-0001
+  (Evidence line discharged), ADR-0009 (Ruling 3(a) consequences), ADR-0002
+  (control re-run, not modified)
 - Base: `main` at `f22b545` (M02 + M03 merged 2026-08-16)
-- This pack is written mid-milestone, not at close. Everything below is either
-  measured and cited, or named as not yet done. Nothing here is a projection.
+- Sessions: 4 Claude Code sessions across 2026-08-16 → 2026-08-19, 48 commits
+- **Everything below is either measured and cited, or named as not done.
+  Nothing here is a projection.** The pack was written mid-milestone and closed
+  at the end; where a claim was later corrected, the correction is kept beside
+  it rather than replacing it.
 
-## Where it stands
+## Scorecard
+
+| run | sha | tier | subset | pass | total | corpus |
+|-----|-----|------|--------|------|-------|--------|
+| naive control | `6fad8f6` | — | full | 4 | 20 | 52 docs `35a293e17117` |
+| agent | `1fa942a` | s3vectors | full | **18** | 20 | 52 docs `35a293e17117` |
+| agent | `1fa942a` | aoss | full | **18** | 20 | 52 docs `35a293e17117` |
+
+**Delta vs baseline (M00b): traps q01-q04 0/4 → 4/4, overall 20% → 90%.**
+
+| subset | naive control | Tier A | Tier B |
+|---|---|---|---|
+| **overall** | 4/20 | **18/20** | **18/20** |
+| trap | 2/8 | **8/8** | **8/8** |
+| smoke | 0/5 | **5/5** | **5/5** |
+| retrieval | 1/5 | **5/5** | **5/5** |
+| timeline | 2/7 | **6/7** | **6/7** |
+| honesty | 1/3 | **3/3** | **3/3** |
+| hitl | 0/2 | **2/2** | **2/2** |
+| crossref | 0/2 | **2/2** | **2/2** |
+| applicability | 0/3 | **2/3** | **2/3** |
+| verdict | 0/1 | **0/1** | **0/1** |
+
+The control was **re-run at this corpus and this question set**, per M03's
+precedent — a delta against the old 5/20 card would span both a corpus change
+and four question rewrites. `src/baseline/naive.py` is untouched (ADR-0002);
+re-running is not improving. The control card sits two commits later than the
+agent cards, and that gap changes only `evals/serve_local.py`, the offline shim,
+which the deployed API does not use — see "the baseline control had become
+unrecordable" below for why those two commits exist.
+
+Both tiers score identically, on the same corpus, with the Tier B card carrying
+`tier_source: observed`, all twenty questions resolved to `aoss`, `cache:
+bypass` throughout and **zero fallbacks** — so it is Tier B evidence and not a
+card named for a tier that did no work, which is a distinction this milestone
+had to learn the hard way.
+
+The two failures are `q12` and `q15`, both deferred by the human seat with
+evidence, neither in a gated subset.
+
+## What you can demo at this point (2-3 min)
+
+1. **Open `DemoUrl`.** Click **'Healthy' claim — did the deadline move?** The
+   verdict table fills in: the granola bar, the trigger, the required change,
+   **2028-02-25**, confidence 0.95, and two citations that link to
+   federalregister.gov. The prose quotes the delaying document saying *"the
+   compliance date remains unchanged at this time."* **That is the product** —
+   the effective date moved, the compliance date did not, and a naive reader
+   moves it.
+2. **Read the four instruments above the answer**, all from the `/query`
+   response body: `tier that answered`, `response cache`, `retrieval latency`
+   (~390 ms) and `round trip` (~12 s). Point at the gap between the last two:
+   retrieval is about 3% of the wait. Tick the cache box off and ask again —
+   `hit`, **178 ms**, with the tier and latency both greyed and labelled
+   `stored`, because nothing was retrieved for that request.
+3. **Click *Are we affected?*** — the question with no product and no claim in
+   it. The page renders **NEEDS HUMAN REVIEW**, the reason, and says a resume
+   capability was minted without printing it.
+4. *(if the hot tier is up)* **`make up`, ask the same question again.** The
+   tier badge flips to `aoss` and the **cross-tier panel reports EQUAL** — same
+   citations as sets, same `real_deadline` exactly. The answer did not change
+   when the infrastructure did; the panel says so without claiming to have
+   proved the corpus held still, which is `make demo-parity`'s job.
+
+## Evidence artifacts
+
+- `evals/history/1fa942a-{s3vectors,aoss}-full.json` — both tiers, one corpus
+- `evals/history/6fad8f6-naive-full.json` — the re-run control
+- `milestones/M04/answer-parity-3966b47.json` — cross-tier comparability +
+  Tier B's latency number (ADR-0012)
+- `milestones/M04/screenshots/` — three, all on the deployed distribution
+- CI green on #11: **859 passed, 0 skipped**, ruff clean
+
+## What broke / what I'd redo
+
+> Drafted by Claude at the human seat's request and **approved by the human
+> seat** on 2026-08-19. Every item under *what broke* is a defect recorded with
+> evidence elsewhere in this pack; the *what I'd redo* items are recommendations
+> the human seat accepted, not rulings issued by them.
+
+### One defect, eleven times
+
+M04's failures were not eleven different mistakes. They were one mistake in
+eleven costumes: **an instrument that measures something adjacent to the claim
+reads exactly like one that measures the claim.**
+
+| # | what it looked like | what it was |
+|---|---|---|
+| 1 | "verified end-to-end against real AWS" across three phases | the deployed function had **never been invoked**; it had failed on every invoke since it first deployed with `No module named 'fastapi'` |
+| 2 | a green parity gate | `compare()` returned `pass` having compared **nothing** — plus three guards reading fields the writer declared rather than re-deriving them |
+| 3 | a Tier B scorecard reading **5/5** | five cache hits on Tier A's answers; AOSS was reached **zero times**, proved by its own `SearchRequestRate` |
+| 4 | `/health` reporting `s3vectors` | `router._cache` asking *"has the machine been up 60 seconds?"* — always true on a laptop, never true for the first minute of a Lambda microVM |
+| 5 | a green asset-allowlist test | vacuously green in a clean checkout; the pattern it tested dropped the source tree **and leaked `.env`** |
+| 6 | CI red on a determinism finding | `replay_history` pooled answers across commits, so a question that failed, was fixed, and now passed read as a defect — and would have stayed red forever |
+| 7 | a UI allowlist test passing | it asserted over the real `ui/`, which has nothing to leak, so it **passed with its own fix deleted** |
+| 8 | a screenshot of the latency readout | `--virtual-time-budget` fakes the clock: it showed a **10 ms round trip for an 11-second request** |
+| 9 | a screenshot of the comparison panel | the wait predicate matched the panel's static `<h2>`, so it captured four em dashes 0.5 s after load |
+| 10 | a page that enforced cache control | nothing tested that the page *acted* on the refusal; `if (taken.ok)` → `if (true)` left every assertion green |
+| 11 | `make baseline` scoring the control | it could not **record** — a guard added earlier in this same milestone had silently disabled the one card ADR-0002 makes every other claim a delta against |
+
+The pattern is worth stating plainly because of where the last five sit: **items
+7, 8, 9, 10 and 11 are all in instruments built during this milestone to catch
+items 1–6.** The defect is not a property of careless code. It is what happens
+by default, including in the fix.
+
+### And three in the reasoning, not the code
+
+- **"The router change is behaviour-neutral — now measured."** It was not
+  measured. Code *and* corpus moved between the two cards being compared; the
+  poller added three documents in nine hours. The fingerprint that would have
+  shown this had been recorded on every card since M03 and **nothing ever read
+  it**. Corrected in place rather than edited away.
+- **A 4/5 read as a regression.** q05 had declined to answer, not answered
+  wrongly — `pending_review`, empty answer — and the card reported three
+  content-token misses against an empty string. Every reason true, none of them
+  the reason.
+- **A causal claim on the demo page.** The cross-tier panel printed *"The answer
+  did not change when the infrastructure did"* under two observations 5h42m
+  apart, with no corpus fingerprint on the response to support it.
+
+### What I'd redo
+
+1. **Invoke the deployed thing on day one, before claiming a phase.** This is
+   the single most expensive lesson here. Three phases were marked done and
+   later re-worded to *in-process* — accurate about the code, silent about the
+   fact that nothing had ever called the Lambda. One `curl` on the first day
+   would have found it.
+2. **When adding a guard, run everything the guard can refuse.** The cache
+   control was correct and necessary and it disabled the baseline control for
+   three days. The cost of checking would have been one `make baseline`.
+3. **Write the mutation before the test, not after.** Two tests this milestone
+   passed against the unfixed code, and both were found by re-introducing the
+   bug rather than by reading. Every mutation set recorded in this pack was
+   caught in full — but only where one was actually run, and the two that
+   slipped were exactly where none had been.
+4. **Read the fingerprint before claiming a delta.** The data was on the card
+   the whole time. M03 had already written the rule down; I still compared
+   across a corpus change twice in one day.
+5. **Do not leave the UI last.** It was the phase that discovered the response
+   had no retrieval measurement on it at all — four phases had shipped an API
+   contract nobody had to *read* from the outside. A consumer written earlier
+   exposes the contract earlier.
+6. **Stop fighting the shell.** Three Python strings were mangled by heredoc
+   escaping, each costing a repair cycle, and the environment notes in this pack
+   already warned about it. Write a file.
+
+### What I would keep
+
+- **Writing the pack mid-milestone rather than at close.** Most of what is above
+  would have been smoothed into "we fixed some bugs" if it had been written from
+  memory at the end.
+- **Keeping corrections beside the claims they correct**, rather than editing
+  the claim. The false Tier B card is still described in this pack, next to the
+  metric that disproved it. That is the record doing its job.
+- **Stopping at the role gates.** The q05 failure went to the SME seat, came
+  back *(a) SYSTEM, question sound, no change*, and the golden set was never
+  touched. The gate is what kept a 4/5 from becoming a tempting one-token edit.
+
+## Where it stands (phase by phase)
 
 | phase | state |
 |---|---|
@@ -1504,3 +1668,53 @@ cache: in compliance, refusing to answer and answering wrongly are not alike.
 It is an exit-criteria call in SPEC/03, not a ground-truth call, and it is not
 taken here. Gap 3 above is held pending it, because closing that gap is what
 would make the question bite.
+
+
+## The baseline control had become unrecordable — found at close, 2026-08-19
+
+Computing this pack's delta needed the naive control re-run at M04's corpus, per
+M03's precedent. `make baseline` scored it and then refused to file the card:
+
+    ❌ cache control failed on 20/20: q01, q02, q03, q04, … q20
+       These answers did not demonstrably bypass the response cache, so this
+       card would not measure the tier it names.
+
+`cache_control_violations` was added at `e9ba788` — earlier in this milestone —
+after a Tier B scorecard read 5/5 from Tier A's cached answers. It refuses any
+response whose cache state is not `bypass`, `disabled` or `uncacheable`.
+`evals/serve_local.py` emitted **no cache field at all**, so every shim response
+read `None`, and the guard rejected the whole run.
+
+**So no naive card could be written after `e9ba788`.** ADR-0002 makes
+`src/baseline/naive.py` the control every progress claim in this repo is a delta
+against; for three days there was no way to record one. Nothing noticed, because
+nothing re-ran the baseline in between — the last naive card, `2cea737`,
+predates the guard and carries `cache_statuses: null`.
+
+A guard written to stop a card that measured the cache instead of the tier had
+quietly disabled the card that measures everything else. The milestone's own
+defect, in the fix rather than in the defect.
+
+**Fixed in the shim, not in the control.** `src/baseline/naive.py` is untouched
+and must stay so. It does not belong there on the merits either: a cache status
+describes the serving path, not an answer — the deployed API sets it in the
+endpoint (`api.py:query`) and not in the graph, and the shim is the same seam
+one layer out. It now reports `disabled`, SPEC/04's own word for a response
+cache that is off, and one of the four legal values rather than a fifth invented
+for the shim. Silence was the only dishonest option: it left the guard unable to
+tell *"no cache on this path"* from *"cache not bypassed"*.
+
+**And the first fix was half a fix.** It went into `_shape`, which is the agent
+path; `make baseline` runs `--mode naive`, which returns
+`baseline.naive.answer_naive()` verbatim and never reaches `_shape`. The guard
+still rejected all twenty. One constant on the shim now covers both modes.
+
+Two tests, both failing against the unfixed shim, and one of them drives
+`cache_control_violations` itself rather than asserting the field — asserting
+the field alone would still pass if `_BYPASSED` were later narrowed.
+
+**One thing the re-run showed that is worth keeping:** the control is not
+deterministic either. It scored 4/8 on the traps subset at `2cea737` and 2/8
+here, on frozen code. The `q01-q04` column reads 0/4 both times. A single-run
+control delta is worth less than the direction it shows, and this pack reports
+the direction.
