@@ -1,7 +1,7 @@
 # M04 — API + Demo UI
 
 - Git tag: `m04`   Branch: `m04-api-demo`   PR: **#11**
-- Spec: `SPEC/04-api-and-demo.md`   ADRs touched: **ADR-0012** (new), ADR-0001
+- Spec: `SPEC/04-api-and-demo.md`   ADRs touched: **ADR-0012**, **ADR-0013** (both new), ADR-0001
   (Evidence line discharged), ADR-0009 (Ruling 3(a) consequences), ADR-0002
   (control re-run, not modified)
 - Base: `main` at `f22b545` (M02 + M03 merged 2026-08-16)
@@ -115,6 +115,13 @@ The pattern is worth stating plainly because of where the last five sit: **items
 7, 8, 9, 10 and 11 are all in instruments built during this milestone to catch
 items 1–6.** The defect is not a property of careless code. It is what happens
 by default, including in the fix.
+
+**A twelfth turned up while ADR-0013 was being written**, and it is the only one
+found by *stating* the rule rather than by running something: `latencyReadout`
+still took an unused `roundTripMs` parameter, which made the forbidden
+substitution a one-word edit **inside the tested function** instead of in the
+page. A seam that accepts the wrong source as an argument is a seam that invites
+it. Removed with that ADR.
 
 ### And three in the reasoning, not the code
 

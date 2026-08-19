@@ -215,7 +215,13 @@
   // reachable; `tests/ui_dom_spec.js` then checks the page renders what it
   // returns.
 
-  function latencyReadout(body, roundTripMs) {
+  // TAKES THE RESPONSE AND NOTHING ELSE, deliberately. It carried an unused
+  // `roundTripMs` parameter until ADR-0013 was written, which made
+  // `const ms = roundTripMs` a one-word edit INSIDE the tested function
+  // rather than in the page — the substitution this whole seam exists to
+  // prevent, pre-wired. The browser's stopwatch is rendered by the page, in
+  // its own box, and never enters here.
+  function latencyReadout(body) {
     const ms = body ? body.retrieval_ms : undefined;
     const tier = body ? body.tier : undefined;
     // `=== null || === undefined`, never falsiness: a legitimate 0 is a
