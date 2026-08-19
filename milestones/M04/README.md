@@ -859,10 +859,21 @@ showing the retained Tier A observation on a cold browser start.
 
 | file | shows |
 |---|---|
-| `01-healthy-claim-tier-a.png` | the full Nordvale table, Tier A, cache `bypass`, retrieval 256 ms against a 10.55 s round trip |
+| `01-healthy-claim-and-cross-tier-equal.png` | **both Done-when clauses in one page**: the full Nordvale table answered live against the deployed stack (`s3vectors`, `bypass`, retrieval **302 ms** against a 14.05 s round trip), and beneath it the cross-tier panel — retained `aoss` beside live `s3vectors`, both `bypass`, verdict **EQUAL** |
 | `02-needs-human-review.png` | the `needs_input` state, its reason, and a minted capability that is not displayed |
-| `03-cache-hit.png` | `cache: hit`, a **170 ms** round trip, and tier and latency both labelled `stored` |
-| `04-cross-tier-equal.png` | the tier-switch demo moment: `aoss` beside the retained `s3vectors` side, both `bypass`, verdict **EQUAL** |
+| `03-cache-hit.png` | `cache: hit`, a **178 ms** round trip, and tier and latency both labelled `stored` |
+
+All three are the SAME deployed build, re-taken after the engineering review
+below changed what the page says. Evidence assembled from two different builds
+would be a small version of the thing this milestone keeps finding.
+
+**One limitation, named rather than left to be inferred.** No screenshot shows
+the tier badge reading `aoss` *on this build*: the page was corrected after the
+hot tier came down, and re-shooting it costs another `make up`. The panel's
+retained `aoss` side is from the live Tier B run, and the Tier B badge itself is
+recorded in the table above and in the response body it was read from. A
+screenshot of the earlier build showing `aoss` exists and is deliberately **not**
+committed, because it carries the sentence F1 retracted.
 
 ### Tests
 
@@ -880,8 +891,9 @@ pins the template rather than the behaviour. The rendering's evidence is the
 screenshots above — SPEC/04: "a browser procedure with no record is rehearsal,
 not a criterion."
 
-**25 mutations re-introduced, 25 caught** — 7 for the latency measurement, 14
-for the UI, 4 for the asset allowlist below.
+**31 mutations re-introduced, 31 caught** — 7 for the latency measurement, 14
+for the UI judgement, 4 for the asset allowlist below, and 6 for the page's
+rendering (the engineering-review section names those six).
 
 ### Security review of Phase 3
 
@@ -1057,3 +1069,105 @@ evidence.
 Neither cost anything but time, and both are the milestone's recurring lesson
 pointed at the instrument rather than the system: *ask what the instrument
 cannot see.*
+
+
+## Engineering review of Phase 3 — and what it found in the panel
+
+`eng-code-reviewer`, fresh context, on the Phase 3 diff. It cleared the question
+that mattered most and then found two things worth more than the clearance.
+
+**Cleared, by reading both sides.** `Resolution.elapsed_ms` is the same span
+`measure_latency` records — `retrieve_traced` brackets `_resolve`,
+`measure_latency` brackets `router.retrieve`, and the delta is one
+`dataclasses.replace` and a tuple index. Both include the Titan embedding, the
+engine round trip and `_finish`; both run k=8. They are **independent
+stopwatches over that span** — the artifact does not read `retrieval_ms` — so
+this change does not make the artifact circular. Also cleared: the cache-hit
+provenance end to end, the `at`-string sort (both are `toISOString`, so
+lexicographic is chronological), and the hosting tests' non-vacuity.
+
+### F1 — the panel made a causal claim its own data cannot support
+
+On `equal` it printed:
+
+> citations agree as sets and every real_deadline matches exactly — s3vectors vs
+> aoss. **The answer did not change when the infrastructure did.**
+
+The second sentence asserts that infrastructure was the only variable. Nothing
+on the page checked that. `evals/run_demo_parity.py` refuses precisely this
+comparison when the two halves recorded a different `documents_sha` — *"Only the
+infrastructure may differ between them"* — because the daily poller once moved
+the corpus from 4 to 34 documents unattended between two halves. The `/query`
+response carries no corpus fingerprint, so the panel has nothing to check it
+with. And it was not hypothetical: the first committed evidence screenshot
+showed that sentence under two observations **5h42m apart**.
+
+SPEC/04 asks for an explicit equal / differs verdict. It does not ask for a
+cause, and the verdict was never the problem. The panel now states the verdict,
+reports **how far apart the two sides are**, and says which instrument does gate
+the corpus:
+
+> The two sides are 0h 22m apart. This panel compares two answers; it cannot
+> check that only the infrastructure changed between them — the corpus is not
+> pinned here. `make demo-parity` is what gates that, by refusing any comparison
+> whose halves recorded a different documents_sha.
+
+### F2 — control 1's enforcement was in the one file no test executed
+
+`ui_verdict_spec.js` proves `observationFrom` **returns** `ok: false` on a cache
+hit. Nothing proved the page **acts** on it. The reviewer named two one-line
+mutations that left every assertion in the diff green and the file parsing:
+
+| mutation | what ships |
+|---|---|
+| `if (taken.ok) {` → record unconditionally | a cache hit filed under `tier`; the panel then compares one tier's stored answer against the other tier's name and reports `equal` by construction — **SPEC/04 control 1 defeated in the browser**, the same substitution that made a Tier B scorecard read 5/5 having reached AOSS zero times |
+| `const ms = body.retrieval_ms` → `const ms = roundTripMs` | the browser's own stopwatch under the words "retrieval latency" — **the exact defect `retrieval_ms` was added to prevent**, undone in the render |
+
+Two changes close it. The decisions moved **into** `ui/verdict.js`
+(`latencyReadout`, `cacheReadout`, `uncitedRows`), so the page renders what they
+return and `roundTripMs` is not in scope for that box at all. And
+`tests/ui_dom_spec.js` now **runs the page** — a real headless browser against
+scripted API responses over a temporary local http server, reading the rendered
+text back. Real `fetch`, real same-origin paths, real `localStorage`, and
+127.0.0.1 is a secure context so `crypto.subtle` works.
+
+Its sequence is the test: Tier A bypassed, then Tier B **as a cache hit carrying
+deliberately different citations and a different deadline**, then Tier B
+bypassed and agreeing. If the page recorded the hit, the middle step reports a
+comparison instead of refusing one — visibly, as `differs`.
+
+**Six mutations, six caught**, including both of the reviewer's. It skips with a
+stated reason if no browser is found (exit 64 → pytest skip), never passes.
+
+On the reviewer's direct question about
+`test_the_page_uses_the_judgement_it_is_tested_on`: its verdict was "not
+theatre; a smaller test than it reads as", and that is right. It catches "the
+page kept its own copy", which is real, and nothing more. The module docstring
+no longer puts the weight of the rendering on it.
+
+### F3, F4, F5, F6 — four ways the page said nothing when it should have spoken
+
+- **F3.** The cache note's fallback branch read `"answered fresh and stored"`
+  for every non-`hit`/`bypass`/`disabled` value. A `miss` on a **paused** run is
+  not stored — `response_cache.cacheable()` refuses any body carrying a resume
+  capability — so the note asserted a write that never happened. It now says
+  which, from `status`.
+- **F4.** `saveStore` swallowed every exception, so a browser in private mode or
+  over quota lost the previous tier and the panel rendered the same "ask a
+  question" hint it shows when nothing was ever asked. A retention failure and a
+  fresh start were indistinguishable — and the demo beat depends on retention
+  across a `make up` and a page reload. It returns a boolean now and the panel
+  says the write was refused.
+- **F5.** `crypto.subtle` is undefined outside a secure context; the rejection
+  was unhandled in both callers, so on a plain `http://<lan-ip>` the answer and
+  instruments rendered normally while the panel silently never updated. Caught
+  and reported. Deployed exposure was nil (CloudFront is `REDIRECT_TO_HTTPS`);
+  it is listed because the failure mode was silence, the same as F4.
+- **F6.** The "no citations" guard fired only on the **response-level** list, so
+  a single uncited row inside an otherwise cited `ok` answer rendered a blank
+  cell and said nothing. Under this repo's rule that is a bug, not a style
+  issue. `uncitedRows` finds them and the page names them.
+
+The reviewer's process note — that `milestones/` was absent from the diff under
+review — was true when it read the tree and is not now: the pack and the
+screenshots are committed at `e739c35`, which landed while it was running.

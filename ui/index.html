@@ -381,8 +381,25 @@ function selectScenario(s) {
 async function showRetained() {
   const question = document.getElementById("question").value.trim();
   if (!question) return renderCompare(null, null);
-  const key = await inputKey(question, CURRENT_PROFILE);
-  renderCompare(loadStore()[key] || null, null);
+  try {
+    renderCompare(loadStore()[await inputKey(question, CURRENT_PROFILE)] || null, null);
+  } catch (e) {
+    renderCompare(null, keyFailure(e));
+  }
+}
+
+// `crypto.subtle` is undefined outside a secure context, so on a plain
+// `http://<lan-ip>` the key cannot be computed and every caller of it rejects.
+// Unhandled, that left the answer and the instruments rendering normally while
+// the panel silently never updated — the same silence as F4, and the reason
+// both are called out. CloudFront is REDIRECT_TO_HTTPS so the deployed page is
+// never in this state; a local dev server on a LAN address is.
+// `eng-code-reviewer`, M04 F5.
+function keyFailure(e) {
+  return "The comparison panel is unavailable: this page cannot compute the "
+       + "question key (" + String(e && e.message || e) + "). `crypto.subtle` "
+       + "needs a secure context — use https, localhost, or the deployed "
+       + "distribution.";
 }
 
 function renderProfileLine() {
@@ -489,7 +506,11 @@ async function ask() {
   }
   renderInstruments(body, roundTripMs, httpStatus);
   renderResult(body, httpStatus, question);
-  await recordAndCompare(question, CURRENT_PROFILE, body);
+  try {
+    await recordAndCompare(question, CURRENT_PROFILE, body);
+  } catch (e) {
+    renderCompare(null, keyFailure(e));
+  }
 }
 
 // ────────────────────────────────────────────────────────── instruments
@@ -500,7 +521,6 @@ function clearInstruments() {
   }
 }
 
-const CACHE_STATES = V.CACHE_STATES;
 
 function renderInstruments(body, roundTripMs, httpStatus) {
   const cache = body && body.cache;
@@ -514,16 +534,15 @@ function renderInstruments(body, roundTripMs, httpStatus) {
   cEl.textContent = cache === undefined || cache === null ? "—" : String(cache);
   cEl.parentElement.classList.toggle("dim", cache === undefined || cache === null);
   const cNote = document.getElementById("i-cache-note");
-  if (cache && !CACHE_STATES.includes(cache)) {
-    cNote.innerHTML = '<span class="pill bad">off-contract</span> not one of hit · miss · bypass · disabled';
-  } else if (cache === "hit") {
-    cNote.textContent = "stored answer replayed — nothing was retrieved";
-  } else if (cache === "bypass") {
-    cNote.textContent = "cache suppressed for this request";
-  } else if (cache === "disabled") {
-    cNote.textContent = "response cache is off by configuration";
-  } else {
-    cNote.textContent = "answered fresh and stored";
+  const cr = V.cacheReadout(body);
+  cNote.textContent = cr.note;
+  if (cr.offContract) {
+    cNote.textContent = "";
+    const pill = document.createElement("span");
+    pill.className = "pill bad";
+    pill.textContent = "off-contract";
+    cNote.appendChild(pill);
+    cNote.appendChild(document.createTextNode(" " + cr.note));
   }
 
   // -- tier. From the response. On a hit it describes the STORED answer.
@@ -551,22 +570,23 @@ function renderInstruments(body, roundTripMs, httpStatus) {
   // -- retrieval latency. Absent on a run that never retrieved; historical on
   //    a hit. Neither is a number about this request's retrieval, and neither
   //    is displayed as though it were.
+  // WHICH NUMBER GOES HERE IS DECIDED IN verdict.js, not here. The page
+  // renders what it returns and computes nothing — `roundTripMs` is not in
+  // scope for this box at all, which is the point (M04 F2).
   const rEl = document.getElementById("i-retrieval");
   const rNote = document.getElementById("i-retrieval-note");
-  const ms = body && body.retrieval_ms;
-  if (ms === null || ms === undefined) {
-    rEl.textContent = "—";
-    rEl.parentElement.classList.add("dim");
-    rNote.textContent = tier ? "not reported by this response" : "no retrieval happened";
-  } else if (servedFromCache) {
-    rEl.textContent = fmtMs(ms);
-    rEl.parentElement.classList.add("dim");
-    rNote.innerHTML = '<span class="pill warn">stored</span> measured when this answer was cached';
-  } else {
-    rEl.textContent = fmtMs(ms);
-    rEl.parentElement.classList.remove("dim");
-    rNote.textContent = "server, router.retrieve — reported, not a claim";
+  const lr = V.latencyReadout(body);
+  rEl.textContent = lr.value === null ? "—" : fmtMs(lr.value);
+  rEl.parentElement.classList.toggle("dim", !!lr.dim);
+  rNote.textContent = "";
+  if (lr.stored) {
+    const pill = document.createElement("span");
+    pill.className = "pill warn";
+    pill.textContent = "stored";
+    rNote.appendChild(pill);
+    rNote.appendChild(document.createTextNode(" "));
   }
+  rNote.appendChild(document.createTextNode(lr.note));
 
   const rt = document.getElementById("i-roundtrip");
   rt.textContent = fmtMs(roundTripMs);
@@ -684,6 +704,16 @@ function renderResult(body, httpStatus, question) {
       "Every claim must carry an FR document number and/or a CFR section."));
   }
 
+  // A ROW that cites nothing, inside an answer whose response-level list is
+  // not empty — the guard above cannot see it. "An answer without citations is
+  // a bug, not a style issue", and a blank cell said nothing at all.
+  const uncited = V.uncitedRows(body);
+  if (uncited.length && rows.length) {
+    card.appendChild(banner("bad", "a verdict row carries no citation",
+      "Every claim must carry an FR document number and/or a CFR section. "
+      + "Uncited: " + uncited.join(", ")));
+  }
+
   if ((body.dropped_citations || []).length) {
     card.appendChild(banner("warn", "citations dropped during synthesis",
       "The model reached for authority the retrieved sources did not carry: "
@@ -751,9 +781,22 @@ function loadStore() {
   try { return JSON.parse(localStorage.getItem(STORE_KEY) || "{}"); }
   catch (e) { return {}; }
 }
+// RETURNS WHETHER IT WORKED. It used to swallow the exception, so a browser
+// in private mode or over quota lost the previous tier and the panel rendered
+// the same "ask a question" hint it shows when nothing was ever asked — a
+// retention failure and a fresh start are indistinguishable, and the demo beat
+// depends on retention across a ~20-minute `make up` and a page reload.
+// `eng-code-reviewer`, M04 F4.
 function saveStore(s) {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); } catch (e) { /* private mode */ }
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(s));
+    return true;
+  } catch (e) {
+    STORE_ERROR = String(e && e.message || e);
+    return false;
+  }
 }
+let STORE_ERROR = null;
 
 function canonical(value) {
   // Stable JSON: object keys sorted, so a profile differing only in insertion
@@ -784,12 +827,17 @@ async function recordAndCompare(question, profile, body) {
   // and a run that never retrieved are BOTH declined as tier observations —
   // see that file for why the first one is the whole control.
   const taken = V.observationFrom(body, new Date().toISOString());
+  let refusal = taken.ok ? null : taken.refusal;
   if (taken.ok) {
     entry.tiers[taken.observation.tier] = taken.observation;
     store[key] = entry;
-    saveStore(store);
+    if (!saveStore(store)) {
+      refusal = "This tier was NOT retained: localStorage refused the write ("
+              + STORE_ERROR + "). The comparison cannot survive the page "
+              + "reload a `make up` requires.";
+    }
   }
-  renderCompare(entry, taken.ok ? null : taken.refusal);
+  renderCompare(entry, refusal);
 }
 
 function renderCompare(entry, refusal) {
@@ -846,10 +894,13 @@ function renderCompare(entry, refusal) {
   line.appendChild(big);
 
   if (r.verdict === "equal") {
+    // WHAT WAS OBSERVED, not what caused it. This sentence used to end "The
+    // answer did not change when the infrastructure did", which asserts that
+    // infrastructure was the only variable — and nothing on this page checked
+    // that. See the gap line below. (M04 F1.)
     line.appendChild(hintSpan(
       "citations agree as sets and every real_deadline matches exactly — "
-      + prev.tier + " vs " + cur.tier + ". The answer did not change when the "
-      + "infrastructure did."));
+      + prev.tier + " vs " + cur.tier + "."));
   } else {
     const bits = [];
     if (!r.citationsEqual) {
@@ -883,6 +934,27 @@ function renderCompare(entry, refusal) {
       "Recorded cache states: " + r.cacheNote + ". SPEC/04's control 1 wants "
       + "`bypass` on both sides; a `miss` means the cache was consulted anyway."));
   }
+
+  // THE CAVEAT THAT MAKES THE VERDICT READABLE. `make demo-parity` refuses a
+  // comparison whose two halves recorded different `documents_sha`, because
+  // the daily poller moves the corpus unattended — it once took it from 4 to
+  // 34 documents between two halves. The response body carries no corpus
+  // fingerprint, so this panel cannot make that check and must not imply it
+  // did. It shows how far apart the two sides are and says which instrument
+  // does gate it.
+  const gap = document.createElement("div");
+  gap.className = "hint";
+  gap.style.marginTop = "10px";
+  gap.textContent = "The two sides are "
+    + (r.gapSeconds === null ? "an unknown interval"
+       : r.gapSeconds < 90 ? r.gapSeconds + " s"
+       : Math.floor(r.gapSeconds / 3600) + "h "
+         + Math.round((r.gapSeconds % 3600) / 60) + "m")
+    + " apart. This panel compares two answers; it cannot check that only the "
+    + "infrastructure changed between them — the corpus is not pinned here. "
+    + "`make demo-parity` is what gates that, by refusing any comparison whose "
+    + "halves recorded a different documents_sha.";
+  box.appendChild(gap);
 
   const lat = document.createElement("div");
   lat.className = "hint";

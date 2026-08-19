@@ -167,10 +167,28 @@
       onlyInCur: cur.citations.filter(c => prev.citations.indexOf(c) === -1),
       vacuous: !everything.some(v => String(v || "").trim()),
       sameTier: prev.tier === cur.tier,
+      // HOW FAR APART THE TWO SIDES ARE, and it is reported rather than used,
+      // because this panel CANNOT establish that only the infrastructure
+      // changed between them. `make demo-parity` gates that claim by refusing
+      // any comparison whose halves recorded different `documents_sha` — the
+      // daily poller moved the corpus 4 -> 34 documents unattended once
+      // already. The response body carries no corpus fingerprint, so the page
+      // has nothing to check it with. An earlier version of this panel printed
+      // "The answer did not change when the infrastructure did" under two
+      // observations 5h42m apart: SPEC/04's equal/differs verdict, which is
+      // what it is asked for, with a causal claim appended that nothing here
+      // tested. `eng-code-reviewer`, M04 F1.
+      gapSeconds: gapSeconds(prev.at, cur.at),
       cacheNote: (prev.cache !== "bypass" || cur.cache !== "bypass")
         ? prev.tier + "=" + prev.cache + ", " + cur.tier + "=" + cur.cache
         : null,
     };
+  }
+
+  function gapSeconds(a, b) {
+    const ta = Date.parse(a), tb = Date.parse(b);
+    if (!isFinite(ta) || !isFinite(tb)) return null;
+    return Math.round(Math.abs(tb - ta) / 1000);
   }
 
   function sameSet(a, b) {
@@ -186,6 +204,76 @@
     return out;
   }
 
+  // ────────────────────────────────────────────────── what the readouts show
+  //
+  // THESE LIVE HERE BECAUSE THE PAGE WAS DECIDING THEM INLINE AND NOTHING
+  // COULD REACH THAT DECISION. `eng-code-reviewer` M04 F2 named the exact
+  // mutation: `const ms = body.retrieval_ms` -> `const ms = roundTripMs` puts
+  // the browser's own stopwatch under the words "retrieval latency", which is
+  // the defect the whole measurement was added to prevent, and every assertion
+  // in the diff stayed green. Returning the decision from here makes it
+  // reachable; `tests/ui_dom_spec.js` then checks the page renders what it
+  // returns.
+
+  function latencyReadout(body, roundTripMs) {
+    const ms = body ? body.retrieval_ms : undefined;
+    const tier = body ? body.tier : undefined;
+    // `=== null || === undefined`, never falsiness: a legitimate 0 is a
+    // measurement and must not read as "not reported".
+    if (ms === null || ms === undefined) {
+      return { value: null, dim: true,
+               note: tier ? "not reported by this response"
+                          : "no retrieval happened" };
+    }
+    if (body.cache === "hit") {
+      // Historical. Nothing was retrieved for THIS request.
+      return { value: ms, dim: true, stored: true,
+               note: "measured when this answer was cached" };
+    }
+    return { value: ms, dim: false,
+             note: "server, router.retrieve — reported, not a claim" };
+  }
+
+  function cacheReadout(body) {
+    const cache = body ? body.cache : undefined;
+    if (cache === undefined || cache === null) {
+      return { value: null, dim: true,
+               note: "hit · miss · bypass · disabled" };
+    }
+    if (CACHE_STATES.indexOf(cache) === -1) {
+      return { value: cache, dim: false, offContract: true,
+               note: "not one of hit · miss · bypass · disabled" };
+    }
+    const NOTES = {
+      hit: "stored answer replayed — nothing was retrieved",
+      bypass: "cache suppressed for this request",
+      disabled: "response cache is off by configuration",
+      // NOT "answered fresh and stored". A `miss` on a paused run is NOT
+      // stored — `response_cache.cacheable()` refuses any body carrying a
+      // resume capability — so the note asserted a write that never happened.
+      // `eng-code-reviewer`, M04 F3.
+      miss: "answered fresh",
+    };
+    let note = NOTES[cache];
+    if (cache === "miss") {
+      note += (body.status === "ok") ? " and stored"
+            : " — not stored: a paused answer carries a resume capability";
+    }
+    return { value: cache, dim: false, note: note };
+  }
+
+  // A verdict row that asserts a change and cites nothing. "An answer without
+  // citations is a bug, not a style issue" — and the page's existing guard
+  // fires only on the RESPONSE-level list, so a single uncited row inside an
+  // otherwise cited `ok` answer rendered a blank cell and said nothing.
+  // `eng-code-reviewer`, M04 F6.
+  function uncitedRows(body) {
+    return ((body && body.answer_rows) || [])
+      .map((row, i) => ({ row: row || {}, i: i }))
+      .filter(r => !((r.row.citations || []).some(c => normCite(c))))
+      .map(r => r.row.product || ("row " + (r.i + 1)));
+  }
+
   // The four legal values of `cache`, per SPEC/04. Exported so the page can
   // report an off-contract value AS off-contract rather than coercing it into
   // one of the four — a label that always reads as a legal value cannot report
@@ -199,6 +287,9 @@
     deadlinesOf: deadlinesOf,
     observationFrom: observationFrom,
     compareObservations: compareObservations,
+    latencyReadout: latencyReadout,
+    cacheReadout: cacheReadout,
+    uncitedRows: uncitedRows,
     CACHE_STATES: CACHE_STATES,
   };
 });

@@ -207,6 +207,92 @@ test("SPEC/04's four cache states, and only those", () => {
   assert.deepEqual(V.CACHE_STATES, ["hit", "miss", "bypass", "disabled"]);
 });
 
+// ─────────────────────────────────────────────────────────── the readouts
+//
+// These moved out of the page because nothing could reach them there
+// (`eng-code-reviewer`, M04 F2). `tests/ui_dom_spec.js` checks the page renders
+// what they return; these check what they return.
+test("the latency readout is retrieval_ms, never the round trip", () => {
+  const r = V.latencyReadout(OK_BODY);
+  assert.equal(r.value, 354.1);
+  assert.equal(r.dim, false);
+  assert.match(r.note, /router\.retrieve/);
+});
+
+test("a legitimate 0 ms is a measurement, not an absence", () => {
+  // `=== null || === undefined`, never falsiness. A 0 rendered as "—" would
+  // report "not measured" for something that was.
+  const r = V.latencyReadout(Object.assign({}, OK_BODY, { retrieval_ms: 0 }));
+  assert.equal(r.value, 0);
+  assert.equal(r.dim, false);
+});
+
+test("a run that never retrieved reports no latency and says why", () => {
+  const r = V.latencyReadout({ status: "needs_input", tier: null });
+  assert.equal(r.value, null);
+  assert.match(r.note, /no retrieval happened/);
+});
+
+test("a cache hit's latency is marked stored, not presented as live", () => {
+  const r = V.latencyReadout(Object.assign({}, OK_BODY,
+    { cache: "hit", retrieval_ms: 999 }));
+  assert.equal(r.stored, true);
+  assert.equal(r.dim, true);
+  assert.match(r.note, /when this answer was cached/);
+});
+
+test("a miss on a PAUSED answer does not claim it was stored", () => {
+  // `response_cache.cacheable()` refuses any body carrying a resume
+  // capability, so "answered fresh and stored" was false for every paused
+  // run. `eng-code-reviewer`, M04 F3.
+  const paused = V.cacheReadout({ cache: "miss", status: "needs_input" });
+  assert.doesNotMatch(paused.note, /and stored/);
+  assert.match(paused.note, /not stored/);
+  assert.match(V.cacheReadout({ cache: "miss", status: "ok" }).note, /and stored/);
+});
+
+test("a cache value outside the contract is reported as off-contract", () => {
+  // A label that always reads as a legal value cannot report a violation.
+  const r = V.cacheReadout({ cache: "warm" });
+  assert.equal(r.offContract, true);
+  assert.equal(r.value, "warm");
+  for (const legal of V.CACHE_STATES) {
+    assert.notEqual(V.cacheReadout({ cache: legal, status: "ok" }).offContract, true);
+  }
+});
+
+test("an uncited verdict row is found even inside a cited answer", () => {
+  // The page's other guard fires only on the response-level list, so a single
+  // uncited row rendered a blank cell and said nothing. `eng-code-reviewer` F6.
+  const mixed = {
+    citations: ["89 FR 106064"],
+    answer_rows: [
+      { product: "granola bar", citations: ["89 FR 106064"] },
+      { product: "frosting", citations: [] },
+      { product: "sprinkles", citations: ["  "] },
+    ],
+  };
+  assert.deepEqual(V.uncitedRows(mixed), ["frosting", "sprinkles"]);
+  assert.deepEqual(V.uncitedRows(OK_BODY), []);
+});
+
+test("the panel reports how far apart the two sides are", () => {
+  // It cannot check that only the infrastructure changed — the response body
+  // carries no corpus fingerprint and the poller moves the corpus unattended.
+  // So it reports the gap and names `make demo-parity` as what does gate it.
+  // `eng-code-reviewer`, M04 F1.
+  const a = obs("s3vectors", ["89 FR 106064"], ["2028-02-25"]);
+  const b = Object.assign({}, obs("aoss", ["89 FR 106064"], ["2028-02-25"]),
+                          { at: "2026-08-19T15:42:00Z" });
+  a.at = "2026-08-19T10:00:00Z";
+  assert.equal(V.compareObservations(a, b).gapSeconds, 5 * 3600 + 42 * 60);
+});
+
+test("an unparseable timestamp yields no gap rather than a wrong one", () => {
+  const a = Object.assign({}, obs("s3vectors", [], [""]), { at: "not a date" });
+  assert.equal(V.compareObservations(a, obs("aoss", [], [""])).gapSeconds, null);
+});
+
 // ──────────────────────────────────────────────────────────────────── report
 if (failures.length) {
   console.error(failures.length + " of " + ran + " failed:\n");

@@ -12,13 +12,18 @@ that the scenario buttons come from `evals/scenarios.json` rather than a
 transcription of it, and that the internal review prose in that file does not
 get published to an anonymous CloudFront distribution.
 
-WHAT IS NOT TESTED HERE. The rendering. There is no DOM in this suite and
-adding one would mean a dependency; asserting that a `<td>` exists would pin
-the template rather than the behaviour, which is the shape of test this
-milestone has already found green in a clean checkout. The rendering's evidence
-is a screenshot of the deployed page taken against the deployed stack and
-recorded in `milestones/M04/` — SPEC/04: "a browser procedure with no record is
-rehearsal, not a criterion."
+`tests/ui_dom_spec.js` runs THE PAGE — in a real headless browser, against
+scripted API responses over a temporary local http server — and reads the
+rendered text back. It exists because the other two cannot see whether the page
+ACTS on the judgement: `eng-code-reviewer` M04 F2 named two one-line mutations
+that left every assertion in the diff green, and both are caught there.
+
+WHAT IS STILL NOT TESTED. Layout, colour and element structure. Asserting that
+a `<td>` exists pins the template rather than the behaviour, which is the shape
+of test this milestone has already found green in a clean checkout. The
+rendering's evidence is a screenshot of the deployed page taken against the
+deployed stack and recorded in `milestones/M04/` — SPEC/04: "a browser
+procedure with no record is rehearsal, not a criterion."
 
 NODE IS NOT AN ADDED DEPENDENCY. `import aws_cdk` already starts a node child
 process, and CI installs `aws-cdk-lib` for the infra tests, so every
@@ -48,6 +53,37 @@ def test_the_panels_judgement_holds_up():
                        capture_output=True, text=True, cwd=str(ROOT))
     sys.stdout.write(r.stdout)
     assert r.returncode == 0, "ui/verdict.js failed its spec:\n" + r.stdout + r.stderr
+
+
+def test_the_page_behaves_as_it_renders():
+    """Runs tests/ui_dom_spec.js: the real page, in a real browser, against
+    scripted API responses served over http from a temporary local server.
+
+    THE ONE THING THE OTHER TESTS CANNOT REACH. `ui_verdict_spec.js` proves what
+    `verdict.js` RETURNS; nothing there proves the page acts on it.
+    `eng-code-reviewer` (M04, F2) named two one-line mutations that left every
+    assertion in the diff green: recording a cache hit as a tier observation —
+    SPEC/04 control 1 defeated in the browser — and printing the round trip
+    under "retrieval latency", which is the exact defect the `retrieval_ms`
+    measurement was added to prevent. Both are caught here, checked by making
+    them.
+
+    Exit 64 means the spec found no browser. That is reported as a SKIP rather
+    than a pass, so an environment without chrome cannot show a green check for
+    a thing that did not run.
+    """
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not on PATH")
+    r = subprocess.run([node, str(Path(__file__).parent / "ui_dom_spec.js")],
+                       capture_output=True, text=True, cwd=str(ROOT),
+                       encoding="utf-8", errors="replace", timeout=300)
+    sys.stdout.write(r.stdout or "")
+    if r.returncode == 64:
+        pytest.skip("no chrome/chromium found - set CHROME_PATH to run the DOM spec")
+    assert r.returncode == 0, (
+        "the page does not behave as it renders:\n"
+        + (r.stdout or "") + (r.stderr or ""))
 
 
 def test_both_ui_files_parse():
