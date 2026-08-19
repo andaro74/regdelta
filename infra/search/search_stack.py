@@ -15,10 +15,10 @@ import os
 import re
 from pathlib import Path
 
+import asset_policy
 import aws_cdk as cdk
 from aws_cdk import (
     Duration,
-    IgnoreMode,
     aws_iam as iam,
     aws_lambda as _lambda,
     aws_opensearchserverless as aoss,
@@ -28,11 +28,14 @@ from aws_cdk import (
 )
 from constructs import Construct
 
-# WHAT THE REINDEX LAMBDA IS ALLOWED TO SHIP, and the mode that decides what
-# these patterns mean. Both are module constants because
-# tests/test_search_stack_access.py imports them and synthesises a planted
-# fixture tree through them: a test carrying its own copy of the patterns
-# asserts a duplicate and passes while the stack ships something else.
+# WHAT THE REINDEX LAMBDA IS ALLOWED TO SHIP. The policy itself now lives in
+# infra/asset_policy.py, because the core stack packages the same tree and had
+# no filter at all — two copies of a packaging rule is the shape that drifted
+# _EDGE_PREDICATE at M01c. Re-exported here so callers and tests can keep
+# reading the policy off the stack that applies it.
+#
+# Everything below is the reasoning, kept where the reader of this stack meets
+# it; asset_policy.py carries the same argument for the same reason.
 #
 # IGNORE MODE IS LOAD-BEARING, and the default is wrong for an allowlist.
 # Measured at M04, not reasoned about: the deploy failed with "No module named
@@ -63,8 +66,8 @@ from constructs import Construct
 #
 # Symlinks are not a hole here: follow_symlinks defaults to
 # SymlinkFollowMode.NEVER, so a link is copied as a link and never dereferenced.
-ASSET_EXCLUDE = ["*", "!**/*.py", "**/*.py/**"]
-ASSET_IGNORE_MODE = IgnoreMode.DOCKER
+ASSET_EXCLUDE = asset_policy.ASSET_EXCLUDE
+ASSET_IGNORE_MODE = asset_policy.ASSET_IGNORE_MODE
 
 COLLECTION_NAME = "regdelta"
 SSM_ENDPOINT_PARAM = "/regdelta/search/endpoint"

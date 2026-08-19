@@ -3,6 +3,9 @@
 Everything bills per-request: S3 (+S3 Vectors), DynamoDB on-demand, Lambda.
 Nothing here may reference regdelta-search.
 """
+from pathlib import Path
+
+import asset_policy
 import aws_cdk as cdk
 from aws_cdk import (
     CfnResource,
@@ -17,6 +20,10 @@ from aws_cdk import (
     aws_sqs as sqs,
 )
 from constructs import Construct
+
+# Resolved from this file, not the process CWD — same reason as
+# asset_policy.SRC, and the reason `../src` was wrong here.
+JANITOR_SRC = str(Path(__file__).resolve().parent.parent / "lambdas" / "janitor")
 
 SSM_ENDPOINT_PARAM = "/regdelta/search/endpoint"
 VECTOR_INDEX_NAME = "chunks"
@@ -115,11 +122,19 @@ class RegDeltaCoreStack(cdk.Stack):
             "VECTOR_INDEX": VECTOR_INDEX_NAME,
         }
 
+        # EVERY Lambda here ships through asset_policy.python_source(): an
+        # allowlist of **/*.py under the DOCKER ignore mode. Until M04 these
+        # three called `Code.from_asset("../src")` with no filter, staging 75
+        # files of which 39 were not Python — .pytest_cache/, every
+        # __pycache__/*.pyc — into the persistent stack's functions. A code zip
+        # is readable by anyone with lambda:GetFunction, so that is disclosure,
+        # not untidiness. The path was also CWD-relative and only resolved when
+        # cdk ran from infra/. security-reviewer, M04.
         poller = _lambda.Function(
             self, "PollerFn",
             runtime=_lambda.Runtime.PYTHON_3_14,
             handler="ingestion.poller.handler",
-            code=_lambda.Code.from_asset("../src"),
+            code=asset_policy.python_source(),
             timeout=Duration.minutes(5),
             environment={**common_env, "QUEUE_URL": queue.queue_url},
         )
@@ -135,7 +150,7 @@ class RegDeltaCoreStack(cdk.Stack):
             self, "ProcessorFn",
             runtime=_lambda.Runtime.PYTHON_3_14,
             handler="ingestion.processor.handler",
-            code=_lambda.Code.from_asset("../src"),
+            code=asset_policy.python_source(),
             timeout=Duration.minutes(15),
             memory_size=1024,
             environment=common_env,
@@ -160,7 +175,7 @@ class RegDeltaCoreStack(cdk.Stack):
             self, "QueryFn",
             runtime=_lambda.Runtime.PYTHON_3_14,
             handler="api.api.handler",
-            code=_lambda.Code.from_asset("../src"),
+            code=asset_policy.python_source(),
             timeout=Duration.minutes(2),
             memory_size=2048,
             environment={
@@ -197,7 +212,7 @@ class RegDeltaCoreStack(cdk.Stack):
             self, "JanitorFn",
             runtime=_lambda.Runtime.PYTHON_3_14,
             handler="handler.handler",
-            code=_lambda.Code.from_asset("lambdas/janitor"),
+            code=asset_policy.python_source(JANITOR_SRC),
             timeout=Duration.minutes(2),
             environment={"SEARCH_STACK_NAME": "regdelta-search"},
         )
