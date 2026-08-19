@@ -16,7 +16,7 @@
 | crossref wiring (M03 carryover, M04-blocking) | **done**, SPEC/04's retrieval gate now passes |
 | 3 — UI | not started |
 | 4 — `make demo-parity` + Tier B latency | **done** for the artifact; the latency criterion's **UI conjunct is outstanding** (see below) |
-| 5 — golden set vs deployed API, both tiers | **half done**: `--subset retrieval` 5/5 on Tier A through the deployed API; the AOSS half needs a `make up` |
+| 5 — golden set vs deployed API, both tiers | **done**: `--subset retrieval` 5/5 on both tiers through the deployed API — but the first Tier B card was false, see below |
 
 ## Evidence
 
@@ -458,3 +458,73 @@ decision, not an engineering one: q15 is outside SPEC/04, blocks nothing M04
 gates on, and pulling it in would widen a milestone in flight. An implementer
 noticing that q15 still fails is not grounds to fix it here — that is exactly
 how a milestone's boundary erodes. Raise it, cite the cost, and wait.
+
+## Tier B answered nothing, and the card said 5/5 — measured 2026-08-19
+
+With the hot tier up, `run_evals.py --subset retrieval` scored 5/5 against the
+deployed API and was reported as the AOSS half of Phase 5. It was not evidence
+of anything.
+
+All five answers came back `cache: hit`. They were served from response-cache
+entries the **Tier A** run had written minutes earlier, inside the 1h TTL. The
+collection's own `SearchRequestRate` settles it independently:
+
+| window (UTC) | AOSS search requests | what ran |
+|---|---|---|
+| 03:01 | **2** | the "5/5 Tier B" run — five questions |
+| 03:07–03:08 | **16** | the same five, cache bypassed |
+| 03:14–03:15 | **16** | the recorded card, `e9ba788-aoss-retrieval.json` |
+
+Five questions cost AOSS sixteen searches when they actually reach it. Two is
+what "the hot tier is up and the cache answered" looks like.
+
+**The instrument, not the system.** Re-run honestly, Tier B passes 5/5 on the
+same corpus fingerprint (`b70879d76cea`, 49 documents) — the card is
+`evals/history/e9ba788-aoss-retrieval.json`, `cache_statuses: ["bypass"]`.
+SPEC/04's clause is met on both tiers. What was broken was the only thing that
+could have told the difference.
+
+### Why it was possible
+
+SPEC/04 parity control 1 already requires both tier runs to bypass the response
+cache. It was written for `make demo-parity` — and demo-parity is not the
+command that writes the scorecards. `run_evals.py` had **no cache handling of
+any kind**, while `record()` names every card `{sha}-{tier}-{subset}.json` and
+every progress claim in this repo is a delta against those files. A tier in a
+filename, and nothing forcing the tier to have done the work.
+
+This is the milestone's recurring defect, for the fourth time: *an instrument
+that measures something adjacent to the claim reads exactly like one that
+measures the claim.* Adjacent here is one cache lookup away.
+
+Fixed in `e9ba788`: `ask()` bypasses both ways, the per-question record keeps
+what the server said it did, and `--record` **refuses** rather than warns —
+under a green 5/5 a warning is not read. `miss` counts as a violation and not
+only `hit`, because on a run that asked for a bypass it means the cache was
+consulted anyway; the control is already broken and the next question is the
+one that comes back a hit.
+
+The first cut of the rule was too broad and an existing test caught it. A
+transport error leaves no response to carry a cache status, which is not the
+same as an answer of unknown provenance — the guard was refusing to record
+partially-failed runs, which is precisely what `tests/test_scorecard_audit.py`
+exists to pin.
+
+### What is still not measured
+
+The card records `tier` from `GET /health`, which reports what SSM is
+**configured** to, not what answered. The router falls back to `s3vectors` on
+any AOSS error and reports it only through `retrieve_traced` — which
+`graph/nodes.py:221` discards and the API never surfaces. So a broken AOSS
+collection would still produce `/health: aoss`, a green card filed under
+`-aoss-`, and every answer served by Tier A.
+
+`router.py`'s own docstring names this failure ("a silent fallback is how two
+S3 Vectors runs get reported as two-tier coverage"); the guard exists in the
+in-process harness and not on the deployed path. The card now states the limit
+as `tier_source` rather than leaving it implied. Closing it means carrying the
+`Resolution` through the graph onto the response — which SPEC/04's UI clause
+needs anyway for the tier indicator that must visibly flip.
+
+Corroborated for this run by the AOSS metric above, which is the strongest
+evidence available without that change.
