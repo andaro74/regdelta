@@ -1361,3 +1361,146 @@ domain, rather than now.
 reasons this write-up did not have: `cloudfront.net` is a **public suffix you do
 not control**, on a hostname AWS assigns and can reassign; and the URLs carry
 nothing secret — `?scenario=…&run=1&cache=1` is the whole of it.
+
+
+## A 4/5 that was not a regression — measured 2026-08-19
+
+Asked to re-verify `--subset retrieval` against the deployed API, because both
+recorded cards predated this session's `router.py` change and "a timing wrapper
+cannot move retrieval" was reasoning rather than measurement.
+
+It scored **4/5**. q05 failed, having passed on all eight prior cards.
+
+### What the card said, and what had actually happened
+
+The card gave three reasons: no food-group phrase, no added-sugars-limit
+phrase, no citation from `21 CFR 101.65` / `89 FR 106064`. Each true. None of
+them the reason. The response was:
+
+    {"answer": "", "answer_rows": [], "citations": [],
+     "status": "pending_review", "cache": "bypass", "tier": "s3vectors"}
+
+**The system did not answer wrongly — it declined to answer.** `check()` can
+only report what it looked for and did not find, so against an empty string it
+listed every missing token. An instrument reporting a reason that is not the
+reason, which is this milestone's shape once more, now in the scorecard itself.
+
+### Ruled by `sme-eval-triage`: (a) SYSTEM, question sound, no golden-set change
+
+Verified against primary sources rather than against the question's own
+phrasing: 21 CFR 101.65(d) really is two-pronged — a qualifying **food group
+equivalent**, and limits on added sugars, saturated fat and sodium — and the
+tokens are source-shaped, with `"a food group equivalent"` being the rule's own
+defined term. The rule has not moved: the eCFR versioner shows 101.65's last
+amendment as **2025-04-28**, and an FR full-text search for "101.65" since
+2026-06-01 returns **zero documents**. `must_cite_any` is an OR over two
+citations the rule does support.
+
+`evals/golden_questions.json` was not touched, and no change to it is proposed.
+
+**One latent weakness recorded and NOT acted on:** the added-sugars token group
+omits `"no greater than"`, the phrase 21 CFR 101.65(d)'s own limit tables use,
+against repo token rule (6). It did not cause this failure. Hardening candidate
+for the human SME seat.
+
+### Why it declined — narrowed by elimination
+
+`pending_review` **together with** an empty answer, no rows and no citations is
+reachable through only two of `_needs_review`'s five triggers, and that exact
+emptiness is what `verdict()` emits when `_json_object(raw)` returns `{}`:
+`_confidence({})` falls through to `_CONFIDENCE_UNKNOWN = 0.0`, which
+`nodes.py` documents as "deliberately below the HITL threshold: an answer whose
+confidence we could not read is an answer we cannot vouch for."
+
+So the most economical reading is that **the verdict model's reply did not
+parse, and the fail-safe correctly turned that into a pause.** The gate caught a
+verdict node that produced nothing — not a genuinely uncertain answer. And
+`hitl_gate` files the review item with `draft_answer: state.get("answer", "")`,
+so the human queued to review it received **an empty draft**. That is a failure
+the safety behaviour caught, not the safety behaviour working, which is why
+"declining is not being wrong" does not rescue it.
+
+**Explicitly ruled out, and agreed:** do not "fix" this by moving
+`CONFIDENCE_HITL_THRESHOLD` or `_CONFIDENCE_UNKNOWN`. That 0.0 is the default
+for an *unreadable* confidence, not a measured score; raising either would ship
+an unparsed verdict with a green light.
+
+### It is transient, and the comparison it came from was not sound
+
+Re-run at the same sha and the same corpus: **5/5**. Not deterministic.
+
+And a correction to how this was first reported. I wrote that the re-run showed
+the `router.py` change to be "behaviour-neutral, now measured". It does not.
+`sme-eval-triage` found what the scorecards had recorded and nobody had read:
+
+| card | at | documents | `documents_sha` | score |
+|---|---|---|---|---|
+| `ec0e049` | 03:53Z | 49 | `b70879d76cea` | 5/5 |
+| `aeacab0` | 13:05Z | **52** | **`35a293e17117`** | 4/5 |
+
+The poller took the corpus from 49 to 52 documents in the nine hours between
+them, unattended. **Code and corpus both moved, so that pair can attribute
+nothing.** What the re-run does support is narrower and still worth having: at
+one sha and one corpus, 4/5 then 5/5, so the failure is transient. The three new
+documents are colour-additive petition filings — `2026-16944`, `2026-16943`,
+`2026-16939` — with nothing to do with the healthy claim, so the expected answer
+is unchanged. What this shows is a system whose answer to a *stable* question is
+not stable under corpus growth *irrelevant to that question*.
+
+### Two instrument gaps closed, three recorded
+
+Closed, and neither touches ground truth or changes a verdict:
+
+1. **The card dropped `review_reason` and `confidence`** — both already on every
+   response from `api.py:_shape`. The first question triage asks was
+   unanswerable from the evidence pack, and did not have to be. Now recorded,
+   and a declined answer prints as one: *"DECLINED, not answered — status
+   pending_review, confidence 0.0: …"*, with the token misses marked as
+   consequences rather than causes. **The pass/fail verdict is deliberately
+   unchanged** — see the open question below.
+2. **`run_evals` recorded `corpus.documents_sha` and nothing ever read it.**
+   `corpus_fingerprint`'s own docstring was written because the poller moved the
+   corpus from 4 documents to 34 unattended, and the hash exists so that "same
+   corpus?" is a string comparison. It then sat unread for exactly the case it
+   was written for. `corpus_drift()` now names it, after the score and before
+   the card, and outside `--record` — a plain `make evals` is the run where a
+   silent corpus move does its damage. It does **not** refuse: `run_demo_parity`
+   can refuse because its two halves are meant to be one measurement, and these
+   are not.
+
+Recorded and **not** acted on, because each is larger or entangled:
+
+3. **`replay_history` cannot see a failure shaped like this.** It skips any
+   recorded question whose response has no `answer` and no `answer_rows` — right
+   for cards predating answer-recording, and it also swallows a *current* card
+   whose response is present and deliberately empty. So q05 went PASS ×8 → FAIL
+   and the gate exited 0. A question that starts failing **by pausing** is
+   invisible to the gate built to catch questions that start failing. Fixing it
+   turns this PR red, which entangles it with the open question below.
+4. **`record()` overwrites at the same sha.** `path.write_text` on
+   `{sha}-{tier}-{subset}.json` means a second `--record` at one commit erases
+   the first. "History is append-only, so the pre-fix cards never age out" holds
+   across shas and not within one: a flaky question could be re-run until green
+   with no trace. The 5/5 re-run above was therefore taken **without**
+   `--record`, and the 4/5 card is intact.
+5. **The agent path discards `stopReason` while the naive control checks it.**
+   `baseline/naive.py` records `"truncated": stop_reason == "max_tokens"` with
+   the comment that a cut-off "would look like a substantive miss in a scorecard
+   we can never re-run identically"; `_text_of` drops it, and the verdict runs at
+   `maxTokens=2000`. **The control is better instrumented than the system it
+   controls for** — which is worth stating plainly, given ADR-0002 makes that
+   control the baseline every progress claim is measured against.
+
+### Open for the human seat — a PM question, not an SME one
+
+**Should a `fail-declined` block a milestone the way a `fail-wrong` does?**
+
+`sme-eval-triage` recommends yes, on the ground that a tier where declining
+costs nothing makes every question passable by declining, leaving only q10 and
+q18 measuring anything — and two questions cannot police an exemption available
+on twenty. The counter-argument is the one this repo already makes about the
+cache: in compliance, refusing to answer and answering wrongly are not alike.
+
+It is an exit-criteria call in SPEC/03, not a ground-truth call, and it is not
+taken here. Gap 3 above is held pending it, because closing that gap is what
+would make the question bite.

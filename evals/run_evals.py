@@ -188,11 +188,84 @@ def observed_tier(per_q: list[dict]) -> str | None:
     return tiers.pop() if len(tiers) == 1 else None
 
 
+# Statuses meaning the system chose not to answer rather than answering badly.
+# `needs_input` asks the ASKER for more; `pending_review` stops for a reviewer.
+# Both are correct behaviour in a compliance product, and both leave `check()`
+# nothing to score.
+_DECLINED = ("needs_input", "pending_review")
+
+
+def declined(resp: dict | None) -> bool:
+    """Did this response decline to answer, rather than answer wrongly?
+
+    BOTH HALVES MATTER. A `pending_review` carrying a full answer and citations
+    is a hedge the set already rewards (q03, q09, q16) and is scored on its
+    content like anything else. A declined status with NOTHING behind it is the
+    case this names — and at q05/aeacab0 the emptiness was itself the finding:
+    `hitl_gate` files the review item with `draft_answer: ""`, so the human
+    queued to review it received nothing to review.
+    """
+    if not resp:
+        return False
+    return (str(resp.get("status")) in _DECLINED
+            and not (resp.get("answer") or resp.get("answer_rows")))
+
+
 def cache_control_violations(per_q: list[dict]) -> list[str]:
     """Question ids whose answer did not demonstrably bypass the cache."""
     return [q["id"] for q in per_q
             if (q.get("response") or {}).get("cache") not in _BYPASSED
             and (q.get("response") or {}).get("cache") != UNREACHABLE]
+
+
+def previous_card(tier: str, subset: str | None) -> dict | None:
+    """The most recent card for this same tier and subset, or None."""
+    cards = []
+    for path in HISTORY.glob(f"*-{tier}-{subset or 'full'}.json"):
+        try:
+            card = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            continue
+        if card.get("at"):
+            cards.append(card)
+    return max(cards, key=lambda c: c["at"]) if cards else None
+
+
+def corpus_drift(corpus: dict, tier: str, subset: str | None) -> str | None:
+    """A sentence to print when this run's corpus is not the last card's.
+
+    THE CARD HAS ALWAYS STORED THIS AND NOTHING EVER READ IT.
+    `corpus_fingerprint` exists because the daily poller took the corpus from 4
+    documents to 34 unattended, and `documents_sha` was added so that "same
+    corpus?" is a string comparison between two cards. It then sat unread: at
+    aeacab0 a run scored 4/5 where the previous card scored 5/5, and the obvious
+    reading — the code regressed — spanned a corpus that had gone 49 -> 52
+    documents in nine hours. Two variables moved and the scorecard reported one
+    number.
+
+    A drift is NOT an error and this does not refuse the run. The corpus is
+    meant to move; `run_demo_parity` can refuse because its two halves are meant
+    to be one measurement and these are not. What a drift must not do is happen
+    silently, at the moment a reader is deciding what a delta means.
+    """
+    if not corpus.get("available"):
+        return None
+    prev = previous_card(tier, subset)
+    if not prev:
+        return None
+    before = (prev.get("corpus") or {}).get("documents_sha")
+    now = corpus.get("documents_sha")
+    if not before or not now or before == now:
+        return None
+    return (
+        f"\n⚠ CORPUS CHANGED since the last {tier}/{subset or 'full'} card "
+        f"({str(prev.get('sha', '?'))[:7]} at {prev.get('at', '?')}):\n"
+        f"    {before} -> {now}"
+        f"   ({(prev.get('corpus') or {}).get('documents')} -> "
+        f"{corpus.get('documents')} documents)\n"
+        f"    That card and this run differ in the CORPUS as well as the code, "
+        f"so a score delta\n"
+        f"    between them cannot be attributed to either one alone.")
 
 
 def record(result: dict) -> Path:
@@ -350,6 +423,15 @@ def main() -> int:
                 "answer_rows": resp.get("answer_rows"),
                 "citations": resp.get("citations"),
                 "status": resp.get("status"),
+                # WHY IT DECLINED, and how sure it was. Both are already on
+                # every response (`api.py:_shape`) and neither reached the
+                # card, so a paused run recorded three content-token misses
+                # against an empty string and nothing about the pause itself —
+                # an instrument reporting a reason that is not the reason.
+                # `sme-eval-triage` on the q05 failure at aeacab0, whose first
+                # question the evidence pack could not answer.
+                "review_reason": resp.get("review_reason"),
+                "confidence": resp.get("confidence"),
                 # What the SERVER said it did with the cache. ask() asks for a
                 # bypass; this is the half that notices when it stops being
                 # honoured. See cache_control_violations.
@@ -367,6 +449,20 @@ def main() -> int:
         })
         if fails:
             print(f"❌ {q['id']}: {q['question'][:70]}")
+            # A DECLINED ANSWER IS STILL A FAILURE, and it is a different
+            # failure. `check()` can only report what it looked for and did not
+            # find, so against an empty answer it lists every missing token —
+            # each true, none of them the reason. The VERDICT is deliberately
+            # unchanged: whether a declined answer should block a milestone the
+            # way a wrong one does is SPEC/03 exit criteria and a PM-seat call.
+            # This only says which of the two happened.
+            if declined(resp):
+                print(f"     ↳ DECLINED, not answered — status "
+                      f"{resp.get('status')}, confidence "
+                      f"{resp.get('confidence')}: "
+                      f"{resp.get('review_reason') or '(no reason recorded)'}")
+                print("       the token misses below follow from an empty "
+                      "answer; they are not its cause")
             for f in fails:
                 print(f"     - {f}")
             if args.fail_fast:
@@ -377,6 +473,16 @@ def main() -> int:
 
     total = len(questions)
     print(f"\n{passed}/{total} passed ({100 * passed // total}%)")
+
+    # AFTER the score and BEFORE the card, because it changes what the score
+    # means rather than annotating it afterwards — and outside `--record`,
+    # because a plain `make evals` is exactly the run where a silent corpus move
+    # does its damage: a reader sees a number, compares it to the last one they
+    # remember, and attributes the difference to the code.
+    corpus = corpus_fingerprint()
+    drift_tier = observed_tier(per_q) or ("naive" if args.mode == "naive" else None)
+    if drift_tier and (drift := corpus_drift(corpus, drift_tier, args.subset)):
+        print(drift)
 
     # NOTHING MEASURED IS NOT A SCORE OF ZERO. If no question ever reached the
     # API, the run says nothing about the system and a card recording it is
@@ -454,7 +560,7 @@ def main() -> int:
             "subset": args.subset,
             # Which corpus answered. The poller changes this daily and without
             # it two cards cannot be compared — see corpus_fingerprint.
-            "corpus": corpus_fingerprint(),
+            "corpus": corpus,
             "provenance": provenance,
             "passed": passed,
             "total": total,
