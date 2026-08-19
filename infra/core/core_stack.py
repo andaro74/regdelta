@@ -9,11 +9,18 @@ from pathlib import Path
 import asset_policy
 import aws_cdk as cdk
 
-# The model ids the IAM policy grants come from the SAME place the code reads
-# them. A model id copied into this file drifts from the one the Lambda calls,
-# and the drift surfaces as an AccessDenied in the region rather than a failed
-# build — the worst place to learn about it.
-sys.path.insert(0, asset_policy.SRC)
+# src/ on the path so the IAM policy can grant exactly the model ids the code
+# reads. Copied into this file they drift from the ones the Lambda calls, and
+# the drift surfaces as an AccessDenied in the region rather than a failed build
+# — the worst place to learn about it.
+#
+# APPEND, not insert(0). Position 0 would let any top-level name under src/
+# win over the installed distributions for every module infra/app.py loads.
+# Nothing collides today, which makes it latent rather than live — and latent is
+# the kind that surfaces during a deploy. Note this runs application code inside
+# the deploy toolchain: shared/config.py is `import os` and nothing else, and
+# that property is now load-bearing.
+sys.path.append(asset_policy.SRC)
 from aws_cdk import (
     CfnResource,
     Duration,
@@ -205,7 +212,15 @@ class RegDeltaCoreStack(cdk.Stack):
         processor.add_to_role_policy(iam.PolicyStatement(
             actions=["s3vectors:PutVectors", "s3vectors:GetVectors",
                      "s3vectors:ListVectors", "s3vectors:QueryVectors"],
-            resources=["*"]))  # TODO SPEC/05: scope to bucket/index ARNs
+            # Scoped alongside the query role's: leaving `*` next to a helper
+            # verified against the live bucket is harder to justify than the
+            # SPEC/05 deferral was. `bedrock:InvokeModel` above stays wildcard
+            # for now — but note "not internet-facing" is the wrong summary of
+            # why that is safe. The processor is not reachable by attacker
+            # -controlled INVOCATION; it is reachable by attacker-controlled
+            # CONTENT, since it runs Federal Register text through Converse.
+            resources=[self._vector_bucket_arn(),
+                       f"{self._vector_bucket_arn()}/index/{VECTOR_INDEX_NAME}"]))
 
         # ------------------------------------------------------------------
         # Query plane: LangGraph Lambda. Routes AOSS/S3Vectors via SSM param;
@@ -272,6 +287,20 @@ class RegDeltaCoreStack(cdk.Stack):
                 "SEARCH_ENDPOINT_PARAM": SSM_ENDPOINT_PARAM,
                 # What Mangum strips from rawPath. Same constant as the stage.
                 "API_BASE_PATH": f"/{API_STAGE_NAME}",
+                # PINNED so the IAM grant below and the runtime call are
+                # provably the same string. `config` resolves these from the
+                # environment, and the policy resolves them in the SYNTH process
+                # — the operator's shell — while the function resolved them
+                # again from its own, which set none of them. They agreed only
+                # when the deployer had nothing exported, and config.py invites
+                # the divergence ("Raise MODEL_VERDICT to Opus 4.7 once account
+                # model access is granted"): export it, deploy, and the policy
+                # grants 4.7 to a function still invoking 4.6. Under the old
+                # `Resource: "*"` that was impossible — the narrowing introduced
+                # it. Security review of the M04 IAM scoping, finding 2.
+                "MODEL_FAST": config.MODEL_FAST,
+                "MODEL_VERDICT": config.MODEL_VERDICT,
+                "EMBED_MODEL": config.EMBED_MODEL,
             },
         )
         self.corpus_bucket.grant_read(query_fn)
@@ -493,10 +522,26 @@ class RegDeltaCoreStack(cdk.Stack):
             base = model
             for prefix in _PROFILE_PREFIXES:
                 if model.startswith(prefix):
+                    if prefix != "us.":
+                        # INFERENCE_PROFILE_REGIONS describes the `us.` profile
+                        # only. A `global.` or `eu.` id would strip cleanly here
+                        # and then be granted in the wrong regions — an
+                        # intermittent, region-dependent AccessDenied, which is
+                        # the exact failure this whole block exists to prevent.
+                        # Refuse rather than guess.
+                        raise ValueError(
+                            f"{model!r} is a {prefix!r} inference profile, but "
+                            "INFERENCE_PROFILE_REGIONS lists the regions for "
+                            "`us.` profiles. Read the new profile's regions off "
+                            "`aws bedrock get-inference-profile` and set them "
+                            "here before deploying.")
                     base = model[len(prefix):]
                     break
-            arns += [f"arn:aws:bedrock:{region}::foundation-model/{base}"
+            arns += [self.format_arn(service="bedrock", region=region,
+                                     account="", resource="foundation-model",
+                                     resource_name=base)
                      for region in INFERENCE_PROFILE_REGIONS]
-        arns.append(
-            f"arn:aws:bedrock:{self.region}::foundation-model/{config.EMBED_MODEL}")
+        arns.append(self.format_arn(service="bedrock", account="",
+                                    resource="foundation-model",
+                                    resource_name=config.EMBED_MODEL))
         return arns

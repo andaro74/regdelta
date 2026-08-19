@@ -125,8 +125,50 @@ def test_the_operator_gets_read_only_and_never_aoss_star(monkeypatch):
     template = synth({"devPrincipalArn": DEV_ARN})
     assert permissions_for(template, DEV_ARN) == {
         "aoss:DescribeIndex", "aoss:ReadDocument"}
-    # And the Lambda roles keep theirs — this narrowed one principal, not all.
-    assert "aoss:*" in permissions_for(template, QUERY_ROLE)
+    # The REINDEX role keeps aoss:* — it creates the index and writes every
+    # document in it. Its ARN is a CFN token, so it reads as the placeholder
+    # access_statements() substitutes. The query role does not; see below.
+    assert "aoss:*" in permissions_for(template, "<cfn-token>")
+
+
+def test_the_query_role_gets_read_only_too(monkeypatch):
+    """Security review of the M04 IAM scoping, finding 1 — and the same
+    argument as the test above, applied to the principal it exempted.
+
+    That test narrowed the human operator and left the two Lambda roles sharing
+    one `aoss:*` statement, on the SPEC/05 deferral. The query role has since
+    become the only role in this account driven by ANONYMOUS requests, and
+    `core_stack` scoped its IAM grant to `collection/*` explicitly citing this
+    data access policy as "the control that actually admits the request".
+
+    That citation was false while this statement granted it `aoss:*`. The
+    internet-facing role could DeleteIndex and WriteDocument on the corpus index
+    the answers are drawn from — corpus poisoning of cited regulatory deadlines,
+    reachable from the same role that feeds untrusted Federal Register text to
+    an LLM.
+
+    It needs neither: src/retrieval/aoss_tier.py issues `_search` and `_msearch`
+    and nothing else. Exact permission set, for the reason the test above gives.
+    """
+    monkeypatch.delenv("REGDELTA_DEV_PRINCIPAL_ARN", raising=False)
+    template = synth({"devPrincipalArn": DEV_ARN})
+    assert permissions_for(template, QUERY_ROLE) == {
+        "aoss:DescribeIndex", "aoss:ReadDocument"}
+
+
+def test_the_query_role_has_no_collection_level_access(monkeypatch):
+    """A collection-level rule carries CreateCollectionItems and
+    DeleteCollectionItems, which is how a read-only intent turns back into index
+    deletion by a different route — the same trap the operator's statement
+    avoids."""
+    monkeypatch.delenv("REGDELTA_DEV_PRINCIPAL_ARN", raising=False)
+    template = synth({"devPrincipalArn": DEV_ARN})
+    for stmt in access_statements(template):
+        if QUERY_ROLE not in stmt["Principal"]:
+            continue
+        for rule in stmt["Rules"]:
+            assert rule["ResourceType"] == "index", \
+                f"query role granted {rule['ResourceType']}-level access: {rule}"
 
 
 def test_the_operators_statement_grants_no_collection_level_access(monkeypatch):

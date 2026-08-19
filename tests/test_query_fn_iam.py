@@ -98,12 +98,36 @@ def _resources(stmt):
 
 
 # ------------------------------------------------------------------- the rule
-def test_no_grant_on_the_internet_facing_role_uses_a_bare_wildcard(template):
+def test_no_inline_grant_on_the_internet_facing_role_uses_a_bare_wildcard(template):
     """THE FINDING, as one assertion. Anything reachable by a stranger's HTTP
-    request should not be able to name every resource in the account."""
+    request should not be able to name every resource in the account.
+
+    INLINE policies only, and the name says so. The role also carries managed
+    policies, which this cannot see — covered by the test below instead of being
+    quietly included in a claim about "the role".
+    """
     offenders = [(_actions(s), _resources(s)) for s in query_statements(template)
                  if s.get("Effect") == "Allow" and "*" in _resources(s)]
     assert offenders == [], f"wildcard resources on QueryFn: {offenders}"
+
+
+def test_the_role_attaches_only_the_managed_policies_we_expect(template):
+    """Security review of this change, finding 4.
+
+    The wildcard test above walks `AWS::IAM::Policy` resources and never looks
+    at `ManagedPolicyArns` — so attaching a managed policy was the one way to
+    widen this role without tripping any test in this file. The basic execution
+    role does grant `logs:*` on `Resource: "*"`, which is the standard Lambda
+    grant and is not what this is about; an allowlist is, because
+    `AdministratorAccess` would have read exactly the same to every assertion
+    here.
+    """
+    role = _query_role(template)
+    managed = template["Resources"][role]["Properties"].get("ManagedPolicyArns", [])
+    names = sorted(
+        str(m["Fn::Join"][1][-1] if isinstance(m, dict) else m) for m in managed)
+    assert names == [":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"], \
+        names
 
 
 # --------------------------------------------------------------------- bedrock
@@ -181,3 +205,38 @@ def test_the_query_role_still_cannot_write_vectors(template):
     processor writes, and they are different roles for that reason."""
     for forbidden in ("s3vectors:PutVectors", "s3vectors:DeleteVectors"):
         assert not _for_action(template, forbidden), forbidden
+
+
+# ------------------------------------------- policy and runtime, same string
+def test_the_models_granted_are_the_models_the_function_is_told_to_use(template):
+    """Security review of this change, finding 2.
+
+    The policy resolves `config.MODEL_*` in the SYNTH process — the operator's
+    shell during `make core`. The function resolved them again at runtime from
+    its own environment, which set none of them, so the two agreed only when the
+    deployer had nothing exported. `config.py` invites exactly that divergence:
+    "Raise MODEL_VERDICT to Opus 4.7 once account model access is granted."
+
+    Export it, run `make core`, and you deploy a policy granting 4.7 to a
+    function still invoking 4.6 — AccessDenied on the verdict node of every
+    anonymous query. Under the old `Resource: "*"` this was impossible; the
+    narrowing introduced it, and it presents as a Bedrock error in the demo
+    rather than a failed build, which is the outcome the scoping was meant to
+    prevent.
+
+    Pinning the ids into the function's environment makes policy and runtime
+    the same string by construction, and this asserts the correspondence rather
+    than the values.
+    """
+    query = next(r["Properties"] for r in template["Resources"].values()
+                 if r["Type"] == "AWS::Lambda::Function"
+                 and r["Properties"].get("Handler") == "api.api.handler")
+    env = query["Environment"]["Variables"]
+    granted = " ".join(sorted(
+        str(r) for s in _for_action(template, "bedrock:InvokeModel")
+        for r in _resources(s)))
+
+    for var in ("MODEL_FAST", "MODEL_VERDICT", "EMBED_MODEL"):
+        assert var in env, f"{var} is not pinned into the function environment"
+        assert env[var] in granted, \
+            f"{var}={env[var]} is what the function will call, and it is not granted"

@@ -214,7 +214,25 @@ class RegDeltaSearchStack(cdk.Stack):
         # branch (M1) was right that a *new* widening must not ride out on an
         # existing TODO — and read-only for this one principal does not need the
         # SPEC/05 split, only a second statement with a different principal list.
-        lambda_principals = [reindex.role.role_arn, query_lambda_role_arn]
+        # SPLIT, not one list. The reindex role BUILDS the index — it creates,
+        # writes and deletes documents — and the query role only reads it.
+        #
+        # They shared one `aoss:*` statement until M04 on the SPEC/05 write/read
+        # deferral. That stopped being tenable when `core_stack` scoped the
+        # query role's IAM grant to `collection/*` and justified the remaining
+        # breadth by citing THIS policy as "the control that actually admits the
+        # request" — a citation that was false while this granted it `aoss:*`.
+        # The internet-facing role could DeleteIndex and WriteDocument on the
+        # corpus index the cited deadlines are drawn from.
+        #
+        # The narrowing needed no SPEC/05 split after all, for the same reason
+        # the operator's statement below did not: a second statement with a
+        # different principal list. Security review of the M04 IAM scoping.
+        index_writers = [reindex.role.role_arn]
+        # src/retrieval/aoss_tier.py issues `_search` and `_msearch`, both
+        # index-level reads, and nothing else — the same two permissions the
+        # operator's read-only statement has been running the probe harness on.
+        index_readers = [query_lambda_role_arn]
         dev_principal = (self.node.try_get_context("devPrincipalArn")
                          or os.environ.get("REGDELTA_DEV_PRINCIPAL_ARN"))
         if dev_principal:
@@ -271,9 +289,19 @@ class RegDeltaSearchStack(cdk.Stack):
                  "Permission": ["aoss:*"]},
                 {"ResourceType": "index",
                  "Resource": [f"index/{COLLECTION_NAME}/*"],
-                 "Permission": ["aoss:*"]},  # TODO SPEC/05: split write/read
+                 "Permission": ["aoss:*"]},
             ],
-            "Principal": lambda_principals,
+            "Principal": index_writers,
+        }, {
+            # INDEX-LEVEL ONLY. A collection-level rule would carry
+            # CreateCollectionItems and DeleteCollectionItems, which is how a
+            # read-only intent turns back into index deletion by another route.
+            "Rules": [
+                {"ResourceType": "index",
+                 "Resource": [f"index/{COLLECTION_NAME}/*"],
+                 "Permission": ["aoss:DescribeIndex", "aoss:ReadDocument"]},
+            ],
+            "Principal": index_readers,
         }]
         if dev_principal:
             # Read-only, and separate. The eval harness only ever issues
