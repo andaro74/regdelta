@@ -21,7 +21,16 @@ from shared.config import SSM_SEARCH_ENDPOINT
 from shared.models import Chunk, Filters
 
 _ssm = boto3.client("ssm")
-_cache: dict = {"endpoint": None, "at": 0.0}
+# `fetched` is not redundant with `at`. The refresh used to be guarded by
+# `now - at > _TTL` alone with `at` seeded to 0.0, which makes the first call
+# ask `time.monotonic() > 60` — a question about how long THE MACHINE has been
+# up, not about how stale the value is. On a laptop monotonic is thousands of
+# seconds so the lookup always fired and the code read as correct; in a Lambda
+# microVM the clock starts near zero, so for the first minute of every
+# container's life the seeded None was returned WITHOUT CONSULTING SSM and the
+# router silently served S3 Vectors while SSM held an AOSS endpoint. An explicit
+# "have we ever fetched" flag cannot be fooled by the clock's origin.
+_cache: dict = {"endpoint": None, "at": 0.0, "fetched": False}
 _TTL = 60.0
 
 
@@ -49,13 +58,14 @@ class Resolution:
 
 def active_endpoint() -> str | None:
     now = time.monotonic()
-    if now - _cache["at"] > _TTL:
+    if not _cache.get("fetched") or now - _cache["at"] > _TTL:
         try:
             _cache["endpoint"] = _ssm.get_parameter(
                 Name=SSM_SEARCH_ENDPOINT)["Parameter"]["Value"]
         except _ssm.exceptions.ParameterNotFound:
             _cache["endpoint"] = None
         _cache["at"] = now
+        _cache["fetched"] = True
     return _cache["endpoint"]
 
 
@@ -74,6 +84,12 @@ def reset_cache() -> None:
     """
     _cache["endpoint"] = None
     _cache["at"] = 0.0
+    # Clearing `at` alone had the same clock dependency as the seed above: on a
+    # cold process the next call would find `monotonic() - 0.0 < _TTL` and hand
+    # back the endpoint this function was called to forget — leaving the second
+    # tier run reading the first tier's endpoint, which is the one thing
+    # reset_cache exists to prevent.
+    _cache["fetched"] = False
 
 
 def retrieve(query: str, filters: Filters, k: int = 8) -> list[Chunk]:
