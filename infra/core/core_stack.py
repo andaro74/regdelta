@@ -11,12 +11,17 @@ from aws_cdk import (
     CfnResource,
     Duration,
     RemovalPolicy,
+    aws_apigatewayv2 as apigw,
+    aws_apigatewayv2_integrations as apigw_int,
+    aws_cloudfront as cloudfront,
+    aws_cloudfront_origins as origins,
     aws_dynamodb as ddb,
     aws_events as events,
     aws_events_targets as targets,
     aws_iam as iam,
     aws_lambda as _lambda,
     aws_s3 as s3,
+    aws_s3_deployment as s3deploy,
     aws_sqs as sqs,
 )
 from constructs import Construct
@@ -24,6 +29,7 @@ from constructs import Construct
 # Resolved from this file, not the process CWD — same reason as
 # asset_policy.SRC, and the reason `../src` was wrong here.
 JANITOR_SRC = str(Path(__file__).resolve().parent.parent / "lambdas" / "janitor")
+UI_SRC = str(Path(__file__).resolve().parents[2] / "ui")
 
 SSM_ENDPOINT_PARAM = "/regdelta/search/endpoint"
 VECTOR_INDEX_NAME = "chunks"
@@ -200,8 +206,112 @@ class RegDeltaCoreStack(cdk.Stack):
             actions=["aoss:APIAccessAll"], resources=["*"]))  # TODO: scope to collection
         self.query_lambda_role_arn = query_fn.role.role_arn
 
-        # TODO SPEC/04: HTTP API Gateway (ApiUrl output), UI bucket +
-        #   CloudFront (DemoUrl output), SES identity for HITL notifications.
+        # ------------------------------------------------------------------
+        # SPEC/04's API surface and demo UI. ONE CloudFront distribution serves
+        # both: static files from S3 at `/`, and the HTTP API at `/api/*`.
+        #
+        # THE SINGLE ORIGIN IS THE POINT, and it is a security decision rather
+        # than a convenience. The alternative — UI on CloudFront calling the API
+        # on its own execute-api domain — is cross-origin, so it needs CORS, and
+        # the allowed origin is the CloudFront domain, which does not exist
+        # until the distribution is created that depends on the API. The usual
+        # escape is `allowOrigins: ["*"]` on an endpoint that spends Bedrock
+        # tokens per request. Same-origin removes the question: the browser
+        # never makes a cross-origin request, and no CORS policy exists to get
+        # wrong. `/query` stays unauthenticated, which SPEC/04 declares out of
+        # scope and which the throttle below bounds.
+        # ------------------------------------------------------------------
+        api = apigw.HttpApi(self, "Api", api_name="regdelta",
+                            # No $default stage: the stage NAME becomes the
+                            # first path segment, so a stage called `api` makes
+                            # the API answer at /api/query — exactly what
+                            # CloudFront forwards, with no path rewriting on
+                            # either side. A default stage would need a
+                            # CloudFront Function to strip `/api`, which is a
+                            # second place for the path to be wrong.
+                            create_default_stage=False)
+        query_integration = apigw_int.HttpLambdaIntegration(
+            "QueryIntegration", query_fn)
+        for path, method in (("/query", apigw.HttpMethod.POST),
+                             ("/resume/{thread_id}", apigw.HttpMethod.POST),
+                             ("/health", apigw.HttpMethod.GET)):
+            api.add_routes(path=path, methods=[method],
+                           integration=query_integration)
+
+        # Explicit routes, never a catch-all proxy. `ANY /{proxy+}` would hand
+        # the Lambda every path an attacker cares to try and rely on FastAPI to
+        # refuse them; three routes mean API Gateway refuses everything else
+        # before a request reaches code that costs money.
+        api_stage = apigw.HttpStage(
+            self, "ApiStage", http_api=api, stage_name="api", auto_deploy=True,
+            # A BOUND ON AN UNAUTHENTICATED ENDPOINT THAT SPENDS MONEY. Each
+            # /query is a Bedrock call; without a ceiling the only limit on a
+            # stranger's bill is Lambda's account concurrency. These numbers are
+            # a demo's shape — a handful of humans clicking — not a capacity
+            # plan; M06 sets real ones against a load test.
+            throttle=apigw.ThrottleSettings(rate_limit=20, burst_limit=40))
+
+        # The UI's bucket is PRIVATE and reachable only through CloudFront's
+        # origin access control. It holds derived files that are rebuilt from
+        # git on every deploy, so DESTROY is right here where RETAIN is right
+        # for the corpus.
+        ui_bucket = s3.Bucket(
+            self, "UiBucket",
+            encryption=s3.BucketEncryption.S3_MANAGED,
+            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+            enforce_ssl=True,
+            removal_policy=RemovalPolicy.DESTROY,
+            auto_delete_objects=True,
+        )
+
+        self.demo_distribution = cloudfront.Distribution(
+            self, "Demo",
+            default_root_object="index.html",
+            default_behavior=cloudfront.BehaviorOptions(
+                origin=origins.S3BucketOrigin.with_origin_access_control(ui_bucket),
+                viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+            ),
+            additional_behaviors={
+                "/api/*": cloudfront.BehaviorOptions(
+                    origin=origins.HttpOrigin(
+                        f"{api.api_id}.execute-api.{self.region}.amazonaws.com"),
+                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                    allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
+                    # An answer is per-question and per-profile, and the
+                    # response cache is DynamoDB's job with a stated TTL and a
+                    # bypass a gate depends on (SPEC/04 control 1). A CloudFront
+                    # cache in front of it would be a second, unstated cache
+                    # with no bypass — and `make demo-parity`'s control would be
+                    # measuring it.
+                    cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
+                    # Everything except Host: the origin is API Gateway, which
+                    # must see its own hostname to route. This is what carries
+                    # `x-regdelta-no-cache` through to the Lambda.
+                    origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+                ),
+            },
+        )
+
+        # The UI ships with the stack, so a deploy cannot leave the bucket
+        # holding a different commit's page than the API it talks to.
+        s3deploy.BucketDeployment(
+            self, "DemoUi",
+            sources=[s3deploy.Source.asset(UI_SRC)],
+            destination_bucket=ui_bucket,
+            distribution=self.demo_distribution,
+            distribution_paths=["/*"],
+        )
+
+        # Both consumed by tooling already in the repo: run_evals.resolve_api_url
+        # reads ApiUrl, and the Makefile's `demo` target prints DemoUrl.
+        cdk.CfnOutput(self, "ApiUrl", value=api_stage.url,
+                      description="SPEC/04 API base; POST /query, POST "
+                                  "/resume/{thread_id}, GET /health")
+        cdk.CfnOutput(self, "DemoUrl",
+                      value=f"https://{self.demo_distribution.distribution_domain_name}",
+                      description="Demo UI; /api/* proxies to the same API")
+
+        # TODO SPEC/04: SES identity for HITL notifications.
         # TODO SPEC/06: nightly eval Lambda + regression alarm + dashboard.
 
         # ------------------------------------------------------------------
