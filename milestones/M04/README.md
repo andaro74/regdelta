@@ -10,12 +10,13 @@
 | phase | state |
 |---|---|
 | 0 — spec amendment (`/resume` auth) | **done**, `pm-spec-reviewer` accept-with-changes |
-| 1 — `/query`, `/resume`, `/health`, `scenarios.json` | **done**, verified in-process against real AWS — see the correction below |
-| 2 — response cache + bypass | **done**, verified in-process against real DynamoDB |
+| 1 — `/query`, `/resume`, `/health`, `scenarios.json` | **done**, and now verified **through the deployed API** |
+| 2 — response cache + bypass | **done**, verified through the deployed API: miss 11.2s → hit 247ms |
+| infra — API Gateway, CloudFront, UI bucket, dependency layer | **done**, deployed |
 | crossref wiring (M03 carryover, M04-blocking) | **done**, SPEC/04's retrieval gate now passes |
 | 3 — UI | not started |
 | 4 — `make demo-parity` + Tier B latency | **done** for the artifact; the latency criterion's **UI conjunct is outstanding** (see below) |
-| 5 — golden set vs deployed API, both tiers | not started |
+| 5 — golden set vs deployed API, both tiers | **half done**: `--subset retrieval` 5/5 on Tier A through the deployed API; the AOSS half needs a `make up` |
 
 ## Evidence
 
@@ -135,6 +136,49 @@ strengthened checks live: `documents_sha` identical across both halves
 (`b70879d76cea`), configs identical, two real runs per scenario, correct tier
 resolution, no fallbacks, three of three scenarios substantive. Its answers were
 measured at `3966b47`; the file records who judged them and when.
+
+## The deployed stack answers — measured 2026-08-18
+
+The first end-to-end evidence in this milestone, taken against the deployed
+stack rather than in-process. `ApiUrl` and `DemoUrl` are CloudFormation outputs;
+no environment variable is needed, because `run_evals.resolve_api_url` reads the
+output and the Makefile's `demo` target reads the other.
+
+| check | result |
+|---|---|
+| `GET /health` via API Gateway | 200 `{"status":"ok","tier":"s3vectors"}` |
+| `GET /api/health` via CloudFront | 200, same body — the same-origin proxy works |
+| `GET /` via CloudFront | the UI page, from the private bucket via OAC |
+| `POST /query`, cache bypassed | 200 in ~10s; citations `89 FR 106064`, `90 FR 10592`; `real_deadline` `2028-02-25` |
+| response cache, same question twice | miss **11.2s** → hit **247ms** |
+| `run_evals.py --subset retrieval` vs the deployed API | **5/5** |
+| `/resume` round trip | pause → token → resume returns `status: ok` with a verdict row |
+| the four refusals | all four return `{"detail": "not found"}`, varying only in `trace_id` |
+
+Two SPEC/04 Done-when clauses are met by that table and were not before:
+**"a cached repeat query returns < 500ms"** (247ms), and **`--subset retrieval`
+passes against the deployed API** — on Tier A. The clause says BOTH tiers, so
+the AOSS half is still owed and needs a `make up`.
+
+The answer through the deployed API matches
+`milestones/M04/answer-parity-3966b47.json` on citations and `real_deadline`
+exactly, which is a small cross-check of the in-process instrument against the
+deployed one.
+
+**Getting there took three defects that only a real invoke could show**, all in
+this session:
+
+1. **No dependencies shipped.** `src/` is first-party Python by policy, and
+   nothing packaged fastapi, mangum or langgraph — no layer, no bundling
+   anywhere in `infra/`. The function had failed on every invoke since it first
+   deployed: `No module named 'fastapi'`.
+2. **A named stage puts itself in the path.** With the layer fixed the Lambda
+   ran and returned FastAPI's own 404 on every route: an HTTP API's named stage
+   is in the event's `rawPath`, so `/api/health` arrived as `/api/health` and the
+   app has `/health`. Mangum's base path now comes from `API_BASE_PATH`, which
+   the stack sets from the same constant it names the stage with.
+3. **The persistent stack's Lambdas shipped 39 non-Python files** — caches and
+   `.pytest_cache/` — into zips anyone with `lambda:GetFunction` can download.
 
 ## "Verified end-to-end against real AWS" meant something narrower
 
