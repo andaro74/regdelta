@@ -1139,6 +1139,14 @@ comparison instead of refusing one — visibly, as `differs`.
 **Six mutations, six caught**, including both of the reviewer's. It skips with a
 stated reason if no browser is found (exit 64 → pytest skip), never passes.
 
+**And it runs in CI rather than skipping there**, which is the question worth
+asking about any test that can skip — this repo has already had twenty infra
+tests skipping silently in CI while passing locally. Measured on the gate:
+`842 passed, 1 warning`, **zero skipped**, against `841 passed, 1 skipped`
+locally, where the one skip is `test_dev_requirements.py` asserting the CI
+environment and not a laptop's. Chrome is on the GitHub-hosted runner, so the
+page is actually driven on every PR and F2's closure is enforced by the gate.
+
 On the reviewer's direct question about
 `test_the_page_uses_the_judgement_it_is_tested_on`: its verdict was "not
 theatre; a smaller test than it reads as", and that is right. It catches "the
