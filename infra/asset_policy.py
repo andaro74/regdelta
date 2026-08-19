@@ -52,6 +52,21 @@ SRC = str(Path(__file__).resolve().parent.parent / "src")
 ASSET_EXCLUDE = ["*", "!**/*.py", "**/*.py/**"]
 ASSET_IGNORE_MODE = IgnoreMode.DOCKER
 
+# THE SAME QUESTION FOR THE DEMO PAGE, where the answer matters more.
+#
+# The Lambda-code case above needs a reader holding `lambda:GetFunction`. The UI
+# bucket needs no IAM at all — CloudFront serves it to anyone, and the
+# distribution domain is a `CfnOutput`. `Source.asset(UI_SRC)` carried no filter
+# until `security-reviewer` measured it against a `ui/` seeded with strays:
+#
+#     ['.env', '__pycache__/x.pyc', 'index.html', 'notes.md', 'verdict.js']
+#
+# So it is an explicit allowlist of the two files the page is, rather than
+# `!**/*.{html,js}` — a scratch `index.old.html` or a vendored script would
+# otherwise publish itself, and the whole point is that adding something to the
+# anonymous distribution should be a decision someone made.
+UI_ASSET_EXCLUDE = ["*", "!index.html", "!verdict.js"]
+
 
 def python_source(path: str | None = None) -> _lambda.Code:
     """A Lambda asset carrying Python source and nothing else.

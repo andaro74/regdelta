@@ -369,6 +369,20 @@ function selectScenario(s) {
   CURRENT_PROFILE = s.company_profile || {};
   document.getElementById("question").value = s.question;
   renderProfileLine();
+  showRetained();
+}
+
+// What is already retained for the question now in the box, shown WITHOUT
+// asking anything. The tier flip takes a `make up` — twenty minutes, during
+// which a viewer will reload the page — and a panel that only appears after
+// the next answer cannot be checked in the meantime. It also makes the
+// retention itself visible: if localStorage lost the previous tier, this says
+// so before a Bedrock call is spent finding out.
+async function showRetained() {
+  const question = document.getElementById("question").value.trim();
+  if (!question) return renderCompare(null, null);
+  const key = await inputKey(question, CURRENT_PROFILE);
+  renderCompare(loadStore()[key] || null, null);
 }
 
 function renderProfileLine() {
@@ -571,8 +585,14 @@ function renderResult(body, httpStatus, question) {
   out.innerHTML = "";
 
   if (httpStatus >= 400) {
+    // REDACTED BEFORE STRINGIFY. No error path the API has today returns a
+    // `resume_token` — both 4xx bodies are `{detail, trace_id}` and the token
+    // is minted only on a 200 — so this changes nothing now. It is here because
+    // the "never print the capability" property was resting on an invariant
+    // held in api.py rather than in the page, and this page gets screenshotted
+    // into milestones/M04/. security-reviewer, M04.
     out.appendChild(banner("bad", "HTTP " + httpStatus,
-      (body && (body.detail || JSON.stringify(body))) || ""));
+      (body && (body.detail || JSON.stringify(redact(body)))) || ""));
     return;
   }
 
@@ -940,6 +960,17 @@ function hintSpan(text) {
   s.textContent = text;
   return s;
 }
+// Anything that is or could carry a bearer capability, stripped before a body
+// is rendered wholesale. A whitelist would be safer still, but this is a
+// diagnostic display of an unexpected shape and blanking it would defeat it.
+function redact(body) {
+  const copy = Object.assign({}, body);
+  for (const k of ["resume_token", "token", "authorization"]) {
+    if (k in copy) copy[k] = "[redacted]";
+  }
+  return copy;
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -958,6 +989,7 @@ async function main() {
   });
   renderProfileLine();
   renderCompare(null, null);
+  document.getElementById("question").addEventListener("change", showRetained);
   await Promise.all([loadScenarios(), refreshHealth()]);
 
   const q = new URLSearchParams(location.search);

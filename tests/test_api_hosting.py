@@ -13,6 +13,7 @@ resource still deploys — which is exactly the class of failure that has no tes
 until someone writes one.
 """
 import contextlib
+import pathlib
 import sys
 import tempfile
 from pathlib import Path
@@ -55,6 +56,25 @@ def template():
         RegDeltaCoreStack(app, "regdelta-core", env=cdk.Environment(
             account="111122223333", region="us-west-2"))
     return app.synth().get_stack_by_name("regdelta-core").template
+
+
+def staged_files(assembly) -> dict:
+    """Every asset `cdk synth` staged, as {asset dir name: {relative paths}}.
+
+    Assets are staged as DIRECTORIES and zipped at publish time, so this reads
+    what will be uploaded rather than what the template says was asked for. The
+    distinction is the point of the two tests below: the template records an
+    asset hash, and a hash cannot say whether a `.env` is inside it.
+    """
+    out = {}
+    for asset in sorted(pathlib.Path(assembly.directory).glob("asset.*")):
+        if not asset.is_dir():
+            continue
+        out[asset.name] = {
+            f.relative_to(asset).as_posix()
+            for f in asset.rglob("*") if f.is_file()
+        }
+    return out
 
 
 def resources(template, kind):
@@ -202,3 +222,101 @@ def test_the_stage_name_and_the_lambda_base_path_cannot_drift(template):
                     if r["Type"] == "AWS::Lambda::Function"
                     and r["Properties"].get("Handler") == "api.api.handler")
     assert query_fn["Environment"]["Variables"]["API_BASE_PATH"] == f"/{stage}"
+
+
+# ---------------------------------------------------- what reaches the bucket
+def test_only_the_two_files_the_page_is_reach_the_public_bucket(tmp_path):
+    """The UI bucket is served by CloudFront to anyone, with no IAM in the way.
+
+    Measured through the stack's OWN constants against a planted tree, not
+    asserted over the real `ui/` — a clean checkout has nothing to leak, so a
+    test written that way passes vacuously, which is precisely the defect
+    `security-reviewer` found in the first version of the Lambda-asset test this
+    one is modelled on.
+
+    Reproduced before it was fixed: `Source.asset(UI_SRC)` carried no filter and
+    staged `['.env', '__pycache__/x.pyc', 'index.html', 'notes.md',
+    'verdict.js']`.
+    """
+    import asset_policy
+    import aws_cdk as cdk
+    from aws_cdk import aws_s3_deployment as s3deploy
+
+    ui = tmp_path / "ui"
+    ui.mkdir()
+    (ui / "index.html").write_text("<!doctype html>", encoding="utf-8")
+    (ui / "verdict.js").write_text("// judgement", encoding="utf-8")
+    # Everything below is a plausible accident, and each would be readable by
+    # anyone with the distribution URL.
+    (ui / ".env").write_text("AWS_SECRET_ACCESS_KEY=hunter2", encoding="utf-8")
+    (ui / "index.old.html").write_text("<!-- last week's page -->", encoding="utf-8")
+    (ui / "notes.md").write_text("internal", encoding="utf-8")
+    (ui / "verdict.js.bak").write_text("// judgement, previously", encoding="utf-8")
+    (ui / "__pycache__").mkdir()
+    (ui / "__pycache__" / "x.pyc").write_bytes(b"\x00")
+    (ui / ".git").mkdir()
+    (ui / ".git" / "config").write_text("[remote]", encoding="utf-8")
+
+    app = cdk.App(outdir=str(tmp_path / "out"))
+    stack = cdk.Stack(app, "probe")
+    bucket = __import__("aws_cdk").aws_s3.Bucket(stack, "B")
+    s3deploy.BucketDeployment(
+        stack, "D",
+        sources=[s3deploy.Source.asset(str(ui),
+                                       exclude=asset_policy.UI_ASSET_EXCLUDE,
+                                       ignore_mode=asset_policy.ASSET_IGNORE_MODE)],
+        destination_bucket=bucket)
+    # BucketDeployment stages its own handler lambda as a second asset; the
+    # one under test is whichever carries a file the page is made of.
+    ours = [names for names in staged_files(app.synth()).values()
+            if names & {"index.html", "verdict.js", "notes.md", ".env"}]
+    assert len(ours) == 1, ours
+    assert ours[0] == {"index.html", "verdict.js"}, sorted(ours[0])
+
+
+def test_the_stack_applies_that_allowlist_to_the_ui_bucket(tmp_path):
+    """The constants above are only worth testing if THE STACK uses them.
+
+    Synthesised against a PLANTED `ui/`, by redirecting the stack's own
+    `UI_SRC` — the way `stub_layer` redirects `LAYER_SRC`. The first version of
+    this test synthesised over the real `ui/`, which holds two files and has
+    nothing to leak, so it passed with the allowlist deleted from the stack
+    entirely: green by construction, one level down, in the test written to
+    close a leak. That is the same defect `security-reviewer` found in the first
+    version of the Lambda-asset test this one is modelled on, and it was caught
+    the same way — by re-introducing the bug and checking the test noticed.
+
+    Two assets reach the UI bucket, the allowlisted tree and the generated
+    `scenarios.json`, so this asserts their union.
+    """
+    import aws_cdk as cdk
+    from core import core_stack
+
+    ui = tmp_path / "ui"
+    ui.mkdir()
+    (ui / "index.html").write_text("<!doctype html>", encoding="utf-8")
+    (ui / "verdict.js").write_text("// judgement", encoding="utf-8")
+    (ui / ".env").write_text("AWS_SECRET_ACCESS_KEY=hunter2", encoding="utf-8")
+    (ui / "index.old.html").write_text("<!-- last week -->", encoding="utf-8")
+    (ui / "notes.md").write_text("internal", encoding="utf-8")
+
+    app = cdk.App(outdir=str(tmp_path / "out"))
+    original = core_stack.UI_SRC
+    core_stack.UI_SRC = str(ui)
+    try:
+        with stub_layer():
+            core_stack.RegDeltaCoreStack(
+                app, "regdelta-core",
+                env=cdk.Environment(account="111122223333", region="us-west-2"))
+        assembly = app.synth()
+    finally:
+        core_stack.UI_SRC = original
+
+    # The Lambda code assets ship the `src/` tree and are asserted elsewhere;
+    # the UI's are the ones carrying a file the page is made of.
+    published = set()
+    for names in staged_files(assembly).values():
+        if names & {"index.html", "verdict.js", "scenarios.json",
+                    "notes.md", ".env", "index.old.html"}:
+            published |= names
+    assert published == {"index.html", "verdict.js", "scenarios.json"}, sorted(published)

@@ -69,6 +69,13 @@ def _public_scenarios() -> str:
     projection is a whitelist rather than a blacklist: a field added to the
     source for the SME or PM seat does not become public by default.
 
+    THE WHITELIST IS TOP-LEVEL ONLY. `company_profile` is copied whole, so a
+    reviewer note nested inside a profile would publish. Harmless today — the
+    three profiles hold `company`, `products`, `claims`, `colour_additives` and
+    nothing else — and recorded rather than deepened, because a recursive
+    projection would need a schema for a field whose shape is the PM seat's to
+    choose. `security-reviewer`, M04, LOW.
+
     Raises rather than shipping an empty list. A page with no buttons still
     renders, and "one button per entry" is then satisfied by a file with no
     entries — the vacuous-green shape this milestone has already found four
@@ -473,7 +480,14 @@ class RegDeltaCoreStack(cdk.Stack):
         # holding a different commit's page than the API it talks to.
         s3deploy.BucketDeployment(
             self, "DemoUi",
-            sources=[s3deploy.Source.asset(UI_SRC),
+            # ALLOWLISTED, with its mode, for the reason asset_policy states at
+            # length: `exclude` without `ignore_mode` stages the opposite of
+            # what it reads as, and this bucket is the one served to anonymous
+            # callers with no IAM in the way.
+            sources=[s3deploy.Source.asset(
+                         UI_SRC,
+                         exclude=asset_policy.UI_ASSET_EXCLUDE,
+                         ignore_mode=asset_policy.ASSET_IGNORE_MODE),
                      s3deploy.Source.data("scenarios.json", _public_scenarios())],
             destination_bucket=ui_bucket,
             distribution=self.demo_distribution,
