@@ -131,6 +131,24 @@ def _shape(state: dict, thread_id: str) -> dict:
         # exists on one _shape only is how `dropped_citations` came to read as
         # "nothing was dropped" where nothing had been asked.
         "retrieval_ms": state.get("retrieval_ms"),
+        # THERE IS NO RESPONSE CACHE ON THIS PATH, and saying so is not
+        # cosmetic. `run_evals.cache_control_violations` refuses to record a
+        # card whose answers did not demonstrably bypass the cache — added at
+        # e9ba788, because a Tier B scorecard had read 5/5 from Tier A's cached
+        # answers. The shim emitted no `cache` field at all, so every response
+        # read `None`, which is not in `_BYPASSED`, and the guard refused all
+        # 20. `make baseline` has therefore been unable to record since e9ba788:
+        # the M00b control that ADR-0002 makes every progress claim a delta
+        # against became unrecordable, and nothing noticed because nothing
+        # re-ran it until the M04 close.
+        #
+        # `disabled` is SPEC/04's own word for "the response cache is off",
+        # which is exactly this path — the shim invokes the graph directly and
+        # never consults `api.response_cache`. Emitting one of the four legal
+        # values rather than inventing a fifth keeps the contract SPEC/04
+        # states; silence was the only dishonest option, because it left the
+        # guard unable to tell "no cache here" from "cache not bypassed".
+        "cache": "disabled",
         "provenance": {
             "model_fast": config.MODEL_FAST,
             "model_verdict": config.MODEL_VERDICT,
