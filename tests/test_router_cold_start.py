@@ -43,12 +43,15 @@ def cold(monkeypatch):
     """A process that has just started: monotonic near zero, cache unseeded."""
     calls = []
 
+    # Names mirror botocore's own shape — `_ssm.exceptions.ParameterNotFound`
+    # is what router.py catches and `Name=` is the kwarg it passes — so they
+    # cannot follow the naming conventions without ceasing to be a stand-in.
     class FakeSsm:
-        class exceptions:
-            class ParameterNotFound(Exception):
+        class exceptions:  # noqa: N801
+            class ParameterNotFound(Exception):  # noqa: N818
                 pass
 
-        def get_parameter(self, Name):  # noqa: N803 — boto3's own kwarg
+        def get_parameter(self, Name):
             calls.append(Name)
             return {"Parameter": {"Value": ENDPOINT}}
 
