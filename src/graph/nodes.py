@@ -218,9 +218,20 @@ def retrieval_agent(state: RegDeltaState, retrieve=None) -> dict:
     """
     from retrieval import router
 
-    chunks = (retrieve or router.retrieve)(state.get("query", ""), Filters(),
-                                           config.NAIVE_TOP_K)
-    return {"retrieved": list(chunks)}
+    # TRACED, not `router.retrieve`. The plain call drops the `Resolution` on
+    # the floor, and with it the only statement anywhere about which tier
+    # actually answered — the API then reported the tier from `active_tier()`,
+    # an SSM read describing what is CONFIGURED. Those two agree right up until
+    # the hot tier fails, which is the case the distinction exists for: the
+    # router falls back to S3 Vectors silently and by design, so that a broken
+    # AOSS cannot take the API down. Without carrying the resolution out, that
+    # fallback is invisible to every scorecard, and a card filed under `-aoss-`
+    # can have reached AOSS zero times.
+    chunks, resolution = (retrieve or router.retrieve_traced)(
+        state.get("query", ""), Filters(), config.NAIVE_TOP_K)
+    return {"retrieved": list(chunks),
+            "retrieval_tier": resolution.tier,
+            "retrieval_fallback": resolution.fallback_reason}
 
 
 # ------------------------------------------------------------ timeline agent

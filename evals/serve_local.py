@@ -119,10 +119,22 @@ def _shape(state: dict, thread_id: str) -> dict:
         # A model that reached for authority the sources did not carry is a
         # finding about the answer, not noise — q03 is why it is surfaced.
         "dropped_citations": state.get("dropped_citations") or [],
+        # Same two fields the deployed API returns, for the same reason and by
+        # the same name — this mapping is the contract between the graph and the
+        # scorecard, and a field that exists on one side only is how
+        # `dropped_citations` came to read as "nothing was dropped" on every
+        # demo-parity response when nothing had been asked.
+        "tier": state.get("retrieval_tier"),
+        "fallback_reason": state.get("retrieval_fallback"),
         "provenance": {
             "model_fast": config.MODEL_FAST,
             "model_verdict": config.MODEL_VERDICT,
-            "tier": router.active_tier(),
+            # OBSERVED, not configured. This was `router.active_tier()` — an
+            # SSM read — so a card recorded through the shim inherited the same
+            # untruth the deployed API told: a silent fallback to S3 Vectors
+            # still filed under `aoss`. Falls back to the SSM answer only when
+            # the run never retrieved and there is nothing observed to report.
+            "tier": state.get("retrieval_tier") or router.active_tier(),
             "top_k": config.NAIVE_TOP_K,
             "rerank": config.RERANK,
             "lexical_lane": config.RETRIEVAL_LEXICAL_LANE,

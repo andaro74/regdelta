@@ -278,6 +278,20 @@ def _shape(state: dict, thread_id: str) -> dict:
         # because the field never left the graph, which reads as "nothing was
         # dropped" when nothing was asked. Engineering review of M04 Phase 4.
         "dropped_citations": state.get("dropped_citations") or [],
+        # WHICH TIER ANSWERED THIS REQUEST, from the router's own Resolution.
+        #
+        # Not `router.active_tier()`, which is an SSM read reporting what the
+        # system is configured to. The router falls back to S3 Vectors on any
+        # AOSS error, so the two disagree in exactly the case anyone would want
+        # to know about — and reporting the configured tier is how a scorecard
+        # named for a tier can be produced without that tier doing any work.
+        #
+        # `None` rather than a default when the run never retrieved (rejected,
+        # needs_input): a tier on a response no tier produced is the same
+        # substitution one step further out. SPEC/04's UI tier indicator reads
+        # this field, and it must be able to show "no retrieval" as itself.
+        "tier": state.get("retrieval_tier"),
+        "fallback_reason": state.get("retrieval_fallback"),
     }
 
 

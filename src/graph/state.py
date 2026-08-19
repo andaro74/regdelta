@@ -27,6 +27,17 @@ class RegDeltaState(TypedDict, total=False):
 
     # --- parallel branches
     retrieved: list[Chunk]
+    #: Which tier ACTUALLY answered — "aoss" | "s3vectors" — straight from
+    #: `router.Resolution`, never from `active_tier()`. The difference is the
+    #: whole point: `active_tier()` reads SSM and reports what the system is
+    #: CONFIGURED to, while the router falls back to S3 Vectors on any AOSS
+    #: error. Reporting the former is how two Tier A runs get scored as
+    #: two-tier coverage, which is the failure router.py's own docstring names.
+    #: Absent on a run that never reached retrieval (rejected, needs_input).
+    retrieval_tier: str
+    #: Why the hot tier did not answer, when it was configured and did not.
+    #: None on a clean run; a silent fallback is the thing being made loud.
+    retrieval_fallback: str | None
     timeline_facts: list[dict]   # from the amendment graph, never from prose
     #: True when documents WERE in play and the graph produced no dated fact for
     #: any of them. `timeline_facts == []` cannot express this: it is also what

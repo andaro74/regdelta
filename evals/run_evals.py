@@ -160,6 +160,34 @@ _BYPASSED = frozenset({"bypass", "disabled", "uncacheable"})
 UNREACHABLE = "unreachable"
 
 
+def observed_tier(per_q: list[dict]) -> str | None:
+    """The tier that ACTUALLY answered, or None if the run cannot claim one.
+
+    `record()` names each card `{sha}-{tier}-{subset}.json` and that filename is
+    what a progress claim cites, so it has to come from what answered rather
+    than from `GET /health` — an SSM read describing what the system is
+    CONFIGURED to. The router falls back to S3 Vectors on any AOSS error, so the
+    two agree until precisely the case worth knowing about.
+
+    Taking it from here means a run that silently fell back files itself under
+    `-s3vectors-`: the filename stops being capable of lying, instead of being
+    something to audit for lying.
+
+    None on disagreement, deliberately. A card carries ONE tier in its name, and
+    a run where AOSS answered some questions and fell back on others can claim
+    neither — picking the majority would be the same substitution wearing a
+    different hat. None also when the API reports no tier at all (deployed code
+    older than this field), so the caller falls back to the /health reading WITH
+    its disclaimer rather than inventing an observation.
+
+    Questions that never reached the API observed nothing and do not vote.
+    """
+    tiers = {(q.get("response") or {}).get("tier") for q in per_q
+             if (q.get("response") or {}).get("cache") != UNREACHABLE}
+    tiers.discard(None)
+    return tiers.pop() if len(tiers) == 1 else None
+
+
 def cache_control_violations(per_q: list[dict]) -> list[str]:
     """Question ids whose answer did not demonstrably bypass the cache."""
     return [q["id"] for q in per_q
@@ -331,6 +359,10 @@ def main() -> int:
                 # unknown provenance. It is already recorded as a failure, and
                 # the all-transport-failed case has its own guard above.
                 "cache": resp.get("cache") if resp else UNREACHABLE,
+                # Which tier ANSWERED this question, and why the hot one did
+                # not when it was configured and did not. See observed_tier.
+                "tier": resp.get("tier"),
+                "fallback_reason": resp.get("fallback_reason"),
             },
         })
         if fails:
@@ -383,14 +415,22 @@ def main() -> int:
                   file=sys.stderr)
             return 2
 
-        tier = "naive"
+        # OBSERVED FIRST. What answered beats what SSM is set to; /health is
+        # only the fallback for a deployment too old to report the tier per
+        # response, and it says so in tier_source rather than passing itself off
+        # as a measurement.
+        tier, tier_source = "naive", "mode=naive"
         if args.mode != "naive":
-            try:
-                with urllib.request.urlopen(f"{api_url.rstrip('/')}/health",
-                                            timeout=10) as r:
-                    tier = json.loads(r.read()).get("tier", "unknown")
-            except Exception:  # noqa: BLE001 — tier is provenance, not a result
-                tier = "unknown"
+            if observed := observed_tier(per_q):
+                tier, tier_source = observed, "observed (router Resolution)"
+            else:
+                try:
+                    with urllib.request.urlopen(f"{api_url.rstrip('/')}/health",
+                                                timeout=10) as r:
+                        tier = json.loads(r.read()).get("tier", "unknown")
+                except Exception:  # noqa: BLE001 — tier is provenance, not a result
+                    tier = "unknown"
+                tier_source = "GET /health (configured, not observed)"
         out = record({
             "sha": git_sha(),
             # run_parity.py already refuses a retrieval card carrying this;
@@ -398,14 +438,18 @@ def main() -> int:
             "dirty": dirty,
             "at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
             "tier": tier,
-            # `tier` above is what /health says is CONFIGURED (an SSM lookup),
-            # not what answered — the router falls back to s3vectors on an AOSS
-            # error and says so only through retrieve_traced, which the API does
-            # not yet surface. Recorded as the weaker claim it is; the stronger
-            # one needs the answering tier on the response.
-            "tier_source": "GET /health (configured, not observed)",
+            # HOW THAT TIER WAS ESTABLISHED, on the card rather than in a
+            # reader's assumptions. "observed" means the router said so per
+            # response; the /health value is what SSM is CONFIGURED to, which is
+            # a weaker claim and the one that let a card be filed under `-aoss-`
+            # while S3 Vectors answered everything.
+            "tier_source": tier_source,
             "cache_statuses": sorted({(q.get("response") or {}).get("cache")
                                       for q in per_q}, key=str),
+            # Non-empty means the hot tier was configured and did not answer.
+            # The card is already named for whichever tier did; this says why.
+            "fallbacks": sorted({(q.get("response") or {}).get("fallback_reason")
+                                 for q in per_q} - {None}),
             "mode": args.mode,
             "subset": args.subset,
             # Which corpus answered. The poller changes this daily and without
