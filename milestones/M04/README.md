@@ -10,8 +10,8 @@
 | phase | state |
 |---|---|
 | 0 — spec amendment (`/resume` auth) | **done**, `pm-spec-reviewer` accept-with-changes |
-| 1 — `/query`, `/resume`, `/health`, `scenarios.json` | **done**, verified end-to-end against real AWS |
-| 2 — response cache + bypass | **done**, verified against real DynamoDB |
+| 1 — `/query`, `/resume`, `/health`, `scenarios.json` | **done**, verified in-process against real AWS — see the correction below |
+| 2 — response cache + bypass | **done**, verified in-process against real DynamoDB |
 | crossref wiring (M03 carryover, M04-blocking) | **done**, SPEC/04's retrieval gate now passes |
 | 3 — UI | not started |
 | 4 — `make demo-parity` + Tier B latency | **done** for the artifact; the latency criterion's **UI conjunct is outstanding** (see below) |
@@ -135,6 +135,36 @@ strengthened checks live: `documents_sha` identical across both halves
 (`b70879d76cea`), configs identical, two real runs per scenario, correct tier
 resolution, no fallbacks, three of three scenarios substantive. Its answers were
 measured at `3966b47`; the file records who judged them and when.
+
+## "Verified end-to-end against real AWS" meant something narrower
+
+Corrected 2026-08-18. Every run in this milestone described that way drives the
+graph **in-process** — `fastapi.testclient` over `src/api/api.py`, or the
+loopback shim — against real S3, DynamoDB, Bedrock and S3 Vectors, configured
+from the deployed function's own environment via `evals/local_env.py`. That
+exercises the code and the AWS resources it talks to, which is what those claims
+were about and what they still support.
+
+What it never did was **invoke the deployed function**. Doing that, for the
+first time, returned:
+
+    Unable to import module 'api.api': No module named 'fastapi'
+
+`src/` ships first-party Python only, and nothing had ever packaged anything
+else — no layer, no bundling, anywhere in `infra/`. The deployed query Lambda
+has failed on every invoke since it first deployed, and no run in this repo
+could have seen it, because none of them called it.
+
+Fixed by `make layer` and a `LayerVersion` on the query function; the stack now
+refuses to synth without it rather than shipping an empty one. The phase-1 and
+phase-2 rows above are re-worded to say *in-process*, which is what they meant.
+
+**The general lesson, recorded because it is the third instance this milestone.**
+An instrument that measures something adjacent to the claim reads exactly like
+one that measures the claim: the parity gate that would have passed comparing
+nothing, the allowlist test that was green in a clean checkout, and now
+"end-to-end" that never touched the end. In each case the fix was to ask what
+the instrument *cannot* see.
 
 ## What Phase 4 required — and how the harness answers each part
 
