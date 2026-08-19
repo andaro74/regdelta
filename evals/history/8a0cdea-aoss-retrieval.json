@@ -1,0 +1,194 @@
+{
+  "sha": "8a0cdea",
+  "dirty": false,
+  "at": "2026-08-19T03:46:55+00:00",
+  "tier": "aoss",
+  "tier_source": "observed (router Resolution)",
+  "cache_statuses": [
+    "bypass"
+  ],
+  "fallbacks": [],
+  "mode": "agent",
+  "subset": "retrieval",
+  "corpus": {
+    "available": true,
+    "documents": 49,
+    "documents_sha": "b70879d76cea",
+    "newest_pub_date": "2026-08-17",
+    "oldest_pub_date": "2024-12-27"
+  },
+  "provenance": {},
+  "passed": 5,
+  "total": 5,
+  "wall_s": 69.4,
+  "questions": [
+    {
+      "id": "q01",
+      "pass": true,
+      "fails": [],
+      "response": {
+        "answer": "No, the compliance deadline did not change. Document 2025-03118 (90 FR 10592, published 2025-02-25) delayed the effective date of the 'healthy' claim final rule (2024-29957, 89 FR 106064) from February 25, 2025 to April 28, 2025, in accordance with the Presidential memorandum 'Regulatory Freeze Pending Review.' However, the document explicitly states: 'We note that the compliance date remains unchanged at this time.' The compliance date of February 25, 2028, as originally stated in 2024-29957 (89 FR 106064), remains in effect. This means regulated parties must conform to the updated 'healthy' nutrient content claim requirements under 21 CFR 101.65(d) by February 25, 2028, even though the rule text did not legally take effect until April 28, 2025.",
+        "answer_rows": [
+          {
+            "product": "All products bearing a 'healthy' nutrient content claim",
+            "trigger": "Updated definition of 'healthy' under 21 CFR 101.65(d)",
+            "required_change": "Products bearing the 'healthy' claim (or derivative terms) must meet the new food-group-based criteria and nutrients-to-limit thresholds established in 21 CFR 101.65(d)",
+            "real_deadline": "2028-02-25",
+            "confidence": 0.97,
+            "citations": [
+              "89 FR 106064",
+              "90 FR 10592"
+            ]
+          }
+        ],
+        "citations": [
+          "89 FR 106064",
+          "90 FR 10592",
+          "2025-03118",
+          "2024-29957"
+        ],
+        "status": "ok",
+        "cache": "bypass",
+        "tier": "aoss",
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q05",
+      "pass": true,
+      "fails": [],
+      "response": {
+        "answer": "Under the updated 'healthy' nutrient content claim rule (89 FR 106064, codified at 21 CFR 101.65(d)), a food that does not qualify for one of the automatic exemptions (e.g., single-ingredient foods from encouraged food groups, or water/tea/coffee) must meet two main criteria to bear the 'healthy' claim:\n\n1. **Food Group Equivalent (FGE) requirement**: The food must contain a specified amount of at least one food group equivalent from the food groups encouraged by the Dietary Guidelines (vegetables, fruits, whole grains, fat-free or low-fat dairy, lean meat/seafood/eggs/beans/peas/lentils/nuts/seeds). The specific FGE amounts vary by product category (individual food, mixed product, main dish, or meal) as set forth in 21 CFR 101.65(d)(3)(ii)\u2013(v) and the associated tables.\n\n2. **Nutrient-to-Limit (NTL) requirement**: The food must not exceed specific limits for added sugars, saturated fat, and sodium, based on a percentage of the Daily Value for these nutrients. These limits also vary by product category.\n\nAs stated in the background summary of the delay notice (90 FR 10592): the rule 'requires that, to bear a claim subject to the rule, individual food products, mixed products, main dishes, and meals must meet FGEs and specific limits for added sugars, saturated fat, and sodium based on a percentage of the Daily Value for these nutrients' (2025-03118, Section II). The preamble to the final rule (2024-29957) further explains that the FGE criteria ensure foods contain beneficial nutrients from nutrient-dense food groups, while the NTL criteria limit nutrients that should be consumed in moderation, consistent with current nutrition science and the Dietary Guidelines, 2020\u20132025.",
+        "answer_rows": [
+          {
+            "product": "Any food bearing the 'healthy' claim",
+            "trigger": "Updated definition of 'healthy' under 21 CFR 101.65(d)",
+            "required_change": "Food must (1) contain a qualifying food group equivalent (FGE) amount and (2) meet nutrient-to-limit (NTL) caps for added sugars, saturated fat, and sodium, unless it qualifies for an automatic exemption under \u00a7 101.65(d)(3)(i) or (vi).",
+            "real_deadline": "2028-02-25",
+            "confidence": 0.95,
+            "citations": [
+              "89 FR 106064",
+              "90 FR 10592"
+            ]
+          }
+        ],
+        "citations": [
+          "89 FR 106064",
+          "90 FR 10592",
+          "2024-29957",
+          "2025-03118"
+        ],
+        "status": "ok",
+        "cache": "bypass",
+        "tier": "aoss",
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q06",
+      "pass": true,
+      "fails": [],
+      "response": {
+        "answer": "The 'healthy' implied nutrient content claim is governed by 21 CFR 101.65(d). This section defines the general nutritional claims paragraph that covers labeling claims using the term 'healthy' or related terms as implied nutrient content claims because they suggest that a food may help consumers maintain healthy dietary practices due to its nutrient content. The general principles for nutrient content claims (including the definition of implied nutrient content claims) are set forth in 21 CFR 101.13(b)(2)(ii), which specifically identifies 'healthy' as an example of an implied nutrient content claim that 'suggests that a food, because of its nutrient content, may be useful in maintaining healthy dietary practices' (21 CFR 101.13(b)(2)(ii), as amended by 89 FR 106064). The final rule updating the definition of 'healthy' was published on 2024-12-27 (89 FR 106064, Doc. 2024-29957), with an effective date of 2025-04-28 (as revised by Doc. 2025-03118) and a compliance date of 2028-02-25.",
+        "answer_rows": [
+          {
+            "product": "All products bearing a 'healthy' claim",
+            "trigger": "Final rule 2024-29957 (89 FR 106064) revising 21 CFR 101.65(d) definition of 'healthy'",
+            "required_change": "Products must meet the updated food-group-equivalent-based criteria in revised 21 CFR 101.65(d)(3) (including nutrient limits per RACC in tables 2 and 3) to bear the 'healthy' implied nutrient content claim",
+            "real_deadline": "2028-02-25",
+            "confidence": 0.95,
+            "citations": [
+              "89 FR 106064",
+              "21 CFR 101.65(d)"
+            ]
+          }
+        ],
+        "citations": [
+          "89 FR 106064",
+          "21 CFR 101.65(d)",
+          "2024-29957",
+          "2025-03118"
+        ],
+        "status": "ok",
+        "cache": "bypass",
+        "tier": "aoss",
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q13",
+      "pass": true,
+      "fails": [],
+      "response": {
+        "answer": "The Red No. 3 order (90 FR 4628, Doc. 2025-00830, published 2025-01-16) changes two CFR provisions in 21 CFR Part 74, but they do NOT all change on the same day:\n\n1. **21 CFR 74.303** (FD&C Red No. 3 for food use): Amendatory instruction 2 removes this section, and amendatory instruction 3 revises \u00a7 74.1303 to incorporate the identity and specifications previously cross-referenced from \u00a7 74.303. Both take effect **January 15, 2027** (2025-00830#0000; 2025-00830#0002; timeline-facts).\n\n2. **21 CFR 74.1303** (FD&C Red No. 3 for ingested drugs): Amendatory instruction 4 removes this section, effective **January 18, 2028** (2025-00830#0002; 2025-00830#0000; timeline-facts).\n\nThus the order has two different effective dates. The interim revision of \u00a7 74.1303 (amendatory instruction 3) takes effect January 15, 2027 \u2014 the same day \u00a7 74.303 is removed \u2014 so that the ingested-drug listing temporarily carries its own identity and specifications rather than cross-referencing the now-deleted food listing (2025-00830#0021). Then \u00a7 74.1303 itself is removed on January 18, 2028.\n\nThe order was administratively stayed under 21 U.S.C. 371(e)(2) from February 18, 2025, through August 5, 2026, but the stay has been lifted and both effective dates are confirmed without change (91 FR 50475, Doc. 2026-15920#0000).\n\nNo separate compliance date is stated in the order. Because this is a revocation (not a new requirement with a phase-in), the operative deadline for each provision is derived from its effective date: after that date, use of FD&C Red No. 3 renders the food or drug adulterated (2025-00830#0021).",
+        "answer_rows": [
+          {
+            "product": "Any food (including dietary supplements) containing FD&C Red No. 3",
+            "trigger": "Removal of 21 CFR 74.303 (food-use listing)",
+            "required_change": "Reformulate to eliminate FD&C Red No. 3 from all food products; after the effective date the color additive is no longer listed and its use renders food adulterated",
+            "real_deadline": "2027-01-15",
+            "confidence": 0.97,
+            "citations": [
+              "90 FR 4628",
+              "2025-00830",
+              "91 FR 50475",
+              "21 CFR 74.303"
+            ]
+          },
+          {
+            "product": "Any ingested drug containing FD&C Red No. 3",
+            "trigger": "Removal of 21 CFR 74.1303 (ingested-drug listing) via amendatory instruction 4",
+            "required_change": "Reformulate to eliminate FD&C Red No. 3 from all ingested drug products; after the effective date the color additive is no longer listed and its use renders the drug adulterated",
+            "real_deadline": "2028-01-18",
+            "confidence": 0.97,
+            "citations": [
+              "90 FR 4628",
+              "2025-00830",
+              "91 FR 50475",
+              "21 CFR 74.1303"
+            ]
+          }
+        ],
+        "citations": [
+          "90 FR 4628",
+          "91 FR 50475",
+          "2025-00830",
+          "2026-15920",
+          "21 CFR 74.303",
+          "21 CFR 74.1303"
+        ],
+        "status": "ok",
+        "cache": "bypass",
+        "tier": "aoss",
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q14",
+      "pass": true,
+      "fails": [],
+      "response": {
+        "answer": "Under 21 CFR 101.65(a)(2), a 'healthy' implied nutrient content claim must be made in accordance with the general requirements for nutrient content claims in \u00a7 101.13, with one specific carve-out: \u00a7 101.13(h) is excepted when the nutrient content claim is made in accordance with paragraph (d) of \u00a7 101.65. Section 101.13(h) is the disclosure requirement that would otherwise mandate a statement such as 'See nutrition information for ___ content' when a food exceeds specified levels of fat, saturated fat, cholesterol, or sodium. This carve-out means that a food bearing the 'healthy' claim under \u00a7 101.65(d) does not need to include the \u00a7 101.13(h) disclosure statement, even if the food would otherwise trigger it. All other provisions of \u00a7 101.13 (e.g., type size requirements in (f), general claim definitions in (b), labeling requirements, etc.) still apply to a 'healthy' claim.",
+        "answer_rows": [
+          {
+            "product": "Any food bearing a 'healthy' claim",
+            "trigger": "Use of the term 'healthy' or its derivatives as an implied nutrient content claim under 21 CFR 101.65(d)",
+            "required_change": "Must comply with all general requirements of 21 CFR 101.13 (e.g., type size, labeling, claim definitions) except \u00a7 101.13(h) disclosure requirements, which are carved out for 'healthy' claims made under \u00a7 101.65(d)",
+            "real_deadline": "2028-02-25",
+            "confidence": 0.95,
+            "citations": [
+              "89 FR 106064"
+            ]
+          }
+        ],
+        "citations": [
+          "89 FR 106064"
+        ],
+        "status": "ok",
+        "cache": "bypass",
+        "tier": "aoss",
+        "fallback_reason": null
+      }
+    }
+  ]
+}

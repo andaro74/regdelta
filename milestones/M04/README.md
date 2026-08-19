@@ -528,3 +528,87 @@ needs anyway for the tier indicator that must visibly flip.
 
 Corroborated for this run by the AOSS metric above, which is the strongest
 evidence available without that change.
+
+## A cold Lambda served the wrong tier for 60 seconds — measured 2026-08-19
+
+Found by disbelieving an observation. After deploying the answering-tier change,
+the API reported `tier: s3vectors` while SSM plainly held the AOSS endpoint and
+the collection was `ACTIVE`. The full sequence against the deployed stack:
+
+| time (UTC) | container | `/health` |
+|---|---|---|
+| 02:58 | fresh | `s3vectors` |
+| 03:00 | same, now warm | `aoss` |
+| 03:05 | fresh again, redeploy replaced it | `s3vectors` |
+
+`router._cache` seeded `at` to `0.0` and guarded the refresh with
+`now - at > _TTL`, so the first call in a process asks `time.monotonic() > 60`
+— **a question about how long the machine has been up**, not about how stale
+the value is. On a laptop `monotonic()` is thousands of seconds, so the lookup
+always fired and the code read as correct; every test in this repo ran that way.
+In a Lambda microVM the clock starts near zero at boot, so for the first minute
+of every container's life `active_endpoint()` returned the seeded `None`
+**without consulting SSM at all**, and the router served S3 Vectors while SSM
+held an AOSS endpoint — silently, with no `fallback_reason`, because nothing
+failed.
+
+`GET /health` reads the same function, so the endpoint whose entire job is to
+report which tier is live was structurally unable to notice.
+
+**This is the third form of the same M04 defect and the worst of the three.**
+The first two produced a false *scorecard*; this one produced false *routing* on
+real user questions. `reset_cache()` had the identical clock dependency — it
+cleared `at` to `0.0`, so on a cold process the next call would hand back the
+endpoint it was called to forget, which is exactly `make demo-parity`'s tier
+flip.
+
+Fixed with an explicit `fetched` flag, which no clock origin can fool. Five
+tests, seeded with the module's own import-time cache state so they exercise the
+real cold start rather than one invented to fail; all five fail against the
+unfixed code with "SSM was never consulted".
+
+Verified by prediction, on the deployed stack: a fresh container now reports
+`aoss` on its first request, where before the fix it reported `s3vectors` for a
+full minute.
+
+## Which tier answered is now on the response — measured 2026-08-19
+
+`graph/nodes.py` called the untraced `router.retrieve` and discarded the
+`Resolution`, so the only statement anywhere about which tier answered was
+thrown away and the API reported `active_tier()` instead — an SSM read of what
+the system is **configured** to. Both `_shape` mappings now carry `tier` and
+`fallback_reason`, and `run_evals` takes the card's tier from what answered,
+recording `tier_source` so the weaker claim can never pass for the stronger one.
+
+Demonstrated against real code rather than argued. With SSM pointing at a
+collection that does not answer:
+
+    active_tier()  (configured) : aoss
+    response tier  (observed)   : s3vectors
+    fallback_reason             : AossError: refusing to sign a request to ...
+    chunks returned             : 8
+
+The fallback still protects availability — the answer comes back — it simply
+cannot hide any more. Before this, that run produced a green card filed under
+`-aoss-`.
+
+### Phase 5, Tier B, on evidence
+
+`evals/history/8a0cdea-aoss-retrieval.json`:
+
+| field | value |
+|---|---|
+| `tier` / `tier_source` | `aoss` / **observed (router Resolution)** |
+| per-question tier | `aoss` ×5 |
+| `cache_statuses` | `["bypass"]` |
+| `fallbacks` | `[]` |
+| result | **5/5** |
+
+Corroborated independently by the collection's own `SearchRequestRate`: **16
+search requests** inside the run's window, against the 2 that the false card
+produced. Two unlike instruments — the system's self-report and an AWS counter
+it does not write — agreeing.
+
+**Not closed:** `router.hydrate` has its own silent AOSS→S3V fallback on the
+crossref lane, so one response can still span two tiers without saying so. The
+`tier` field describes the main retrieval call. Recorded, not fixed.
