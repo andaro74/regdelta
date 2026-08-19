@@ -87,6 +87,16 @@ const RESPONSES = [
   }),
   // 3. Tier B, bypassed, agreeing. The tier-switch demo moment.
   answer({ tier: "aoss", cache: "bypass", retrieval_ms: 222 }),
+  // 4. The hot tier is still CONFIGURED — /health says aoss below — and it
+  //    failed, so S3 Vectors answered. This is the case the `tier` field
+  //    exists for: the router falls back silently and by design, and before
+  //    that resolution was carried onto the response a card filed under
+  //    `-aoss-` could have reached AOSS zero times.
+  answer({
+    tier: "s3vectors", cache: "bypass", retrieval_ms: 333,
+    fallback_reason: "AossError: refusing to sign a request to a collection "
+                   + "that does not answer",
+  }),
 ];
 
 const SCENARIOS = {
@@ -116,6 +126,12 @@ const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; "
           + "connect-src 'self'; img-src 'self'; base-uri 'none'; "
           + "form-action 'none'; frame-ancestors 'none'";
 
+// WHAT /health REPORTS, which is a different question from what answered.
+// `make up` moves `/regdelta/search/endpoint`, so a real flip moves both — and
+// the interesting cases are the ones where they DISAGREE, which is why this is
+// scriptable rather than constant.
+let healthTier = "s3vectors";
+
 let served = 0;
 
 function startServer() {
@@ -136,7 +152,7 @@ function startServer() {
       res.end(body);
     }, delay || 0);
 
-    if (url === "/api/health") return json(200, { status: "ok", tier: "s3vectors" });
+    if (url === "/api/health") return json(200, { status: "ok", tier: healthTier });
     if (url === "/api/query") {
       const body = RESPONSES[Math.min(served, RESPONSES.length - 1)];
       served += 1;
@@ -218,6 +234,7 @@ async function main() {
   ], { stdio: ["ignore", "ignore", "ignore"] });
 
   let cdp;
+  let ran = 0;
   const failures = [];
   try {
     let target = null;
@@ -249,6 +266,7 @@ async function main() {
     }
 
     const check = (name, fn) => {
+      ran += 1;
       try { fn(); } catch (e) {
         failures.push(name + "\n    " + String(e.message || e).split("\n").join("\n    "));
       }
@@ -314,8 +332,31 @@ async function main() {
     });
 
     // ---- 3. Tier B for real. The tier-switch demo moment.
+    //      `make up` has happened: the SSM parameter moved, so /health moves too.
+    healthTier = "aoss";
     t = await load(origin + "/?scenario=healthy-claim&run=1",
                    x => x.includes("EQUAL") || x.includes("DIFFERS"));
+
+    check("THE TIER INDICATOR FLIPS — aoss, live, not stored", () => {
+      // SPEC/04's UI clause is "an active-tier indicator that visibly flips
+      // across `make up` / `make down`". Step 1 pinned `s3vectors` live and
+      // step 2 pinned `aoss` STORED; this is the fourth combination and the
+      // one the clause is actually about — the hot tier answering, read off
+      // the response body rather than off /health.
+      //
+      // It is also, deliberately, what the one screenshot missing from
+      // milestones/M04/ would have shown. A photograph would have covered one
+      // moment on one build for the price of a ~20-minute `make up`; this
+      // covers the behaviour on every build, for nothing.
+      assert.match(t, /TIER THAT ANSWERED\s*\n\s*aoss\s*\n\s*observed on this response/,
+        "the badge does not report the hot tier as freshly observed");
+      assert.doesNotMatch(t, /TIER THAT ANSWERED\s*\n\s*aoss\s*\n\s*stored/,
+        "a freshly answered response is being labelled as a cached one");
+      assert.match(t, /RESPONSE CACHE\s*\n\s*bypass/);
+      // And the readout is this tier's own measurement, not the previous
+      // tier's 111 ms carried over.
+      assert.match(t, /RETRIEVAL LATENCY\s*\n\s*222 ms/);
+    });
 
     check("the panel reports EQUAL across the two tiers", () => {
       assert.match(t, /PREVIOUS TIER: S3VECTORS/);
@@ -339,6 +380,22 @@ async function main() {
       assert.match(t, /s3vectors 111 ms/);
       assert.match(t, /aoss 222 ms/);
     });
+
+    // ---- 4. The hot tier is configured and broken. /health still says aoss.
+    t = await load(origin + "/?scenario=healthy-claim&run=1",
+                   x => x.includes("fell back") || x.includes("AossError"));
+
+    check("A SILENT FALLBACK IS MADE LOUD", () => {
+      // The answer still comes back — availability is the point of the
+      // fallback — but the page must not report the tier that was CONFIGURED.
+      // `/health` says aoss here and s3vectors is what answered; reporting the
+      // former is how two Tier A runs got scored as two-tier coverage.
+      assert.match(t, /TIER THAT ANSWERED\s*\n\s*s3vectors/);
+      assert.match(t, /fell back/);
+      assert.match(t, /AossError/);
+      assert.doesNotMatch(t, /TIER THAT ANSWERED\s*\n\s*aoss/,
+        "the page is reporting the configured tier, not the one that answered");
+    });
   } finally {
     try { if (cdp) cdp.close(); } catch (e) { /* closing */ }
     try {
@@ -357,7 +414,10 @@ async function main() {
     for (const f of failures) console.error("  FAIL " + f + "\n");
     process.exit(1);
   }
-  console.log("the page behaves as rendered: 12 checks passed");
+  // COUNTED, not written down. The literal "12" was true when it was typed and
+  // silently false two checks later — a tally that cannot go wrong is not a
+  // measurement of anything.
+  console.log(`the page behaves as rendered: ${ran} checks passed`);
   process.exit(0);
 }
 
