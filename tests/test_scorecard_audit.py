@@ -49,6 +49,12 @@ def one_question(monkeypatch, tmp_path):
     monkeypatch.setattr(run_evals, "corpus_fingerprint", lambda: {"documents": 1})
 
     def run(resp):
+        # A real ask() bypasses the response cache and the API reports that it
+        # did; main() refuses to record a card without it (see
+        # run_evals.cache_control_violations). Defaulted here rather than
+        # written into every canned response so each test below stays about the
+        # one property it names.
+        resp = {"cache": "bypass", **resp}
         monkeypatch.setattr(run_evals, "ask", lambda *a, **k: resp)
         monkeypatch.setattr(sys, "argv", ["run_evals.py", "--record"])
         run_evals.main()
@@ -89,7 +95,7 @@ def two_questions(monkeypatch, tmp_path):
             r = next(seq)
             if r == "boom":
                 raise RuntimeError("connection refused")
-            return r
+            return {"cache": "bypass", **r}
 
         monkeypatch.setattr(run_evals, "ask", ask)
         monkeypatch.setattr(sys, "argv", ["run_evals.py", "--record"])

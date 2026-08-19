@@ -148,6 +148,25 @@ def corpus_fingerprint() -> dict:
         return {"available": False, "reason": f"{type(e).__name__}: {e}"[:200]}
 
 
+# Anything that is not a POSITIVE statement of a bypass. `hit` is the observed
+# failure; a MISSING field is included deliberately, because an API too old to
+# report `cache` is indistinguishable from one that served a hit, and letting
+# "no evidence" pass as "evidence of none" is the substitution that produced the
+# 5/5 Tier B card in which AOSS answered nothing.
+_BYPASSED = frozenset({"bypass", "disabled", "uncacheable"})
+
+# Not a cache status the API can return: this end put it there because the
+# request never produced a response to have one.
+UNREACHABLE = "unreachable"
+
+
+def cache_control_violations(per_q: list[dict]) -> list[str]:
+    """Question ids whose answer did not demonstrably bypass the cache."""
+    return [q["id"] for q in per_q
+            if (q.get("response") or {}).get("cache") not in _BYPASSED
+            and (q.get("response") or {}).get("cache") != UNREACHABLE]
+
+
 def record(result: dict) -> Path:
     HISTORY.mkdir(exist_ok=True)
     path = HISTORY / f"{result['sha']}-{result['tier']}-{result['subset'] or 'full'}.json"
@@ -170,11 +189,30 @@ def resolve_api_url(cli: str | None) -> str:
 
 
 def ask(api_url: str, question: str, mode: str | None, timeout: int = 120) -> dict:
+    """One question against the deployed API, WITH THE CACHE BYPASSED.
+
+    The bypass is not a tuning choice, it is what makes a scorecard mean
+    anything. `record()` names its file for a tier, and at M04 a Tier B
+    retrieval card scored 5/5 in which AOSS answered nothing: all five came
+    back `cache: hit` from entries the Tier A run had written minutes before,
+    inside the 1h TTL. The collection's own SearchRequestRate showed two search
+    requests where there should have been at least five.
+
+    SPEC/04 parity control 1 already required this of `make demo-parity`. It
+    belongs to whatever measures the system, and demo-parity is not the command
+    that writes the cards every progress claim is a delta against.
+
+    Sent BOTH ways on purpose: response_cache reads the payload flag first and
+    the header second, and the header is the half that survives a proxy
+    rewriting a body while the flag is the half that survives a proxy dropping
+    an unrecognised header. The demo path crosses CloudFront, which does both.
+    """
     qs = "?mode=naive" if mode == "naive" else ""
     req = urllib.request.Request(
         f"{api_url.rstrip('/')}/query{qs}",
-        data=json.dumps({"question": question}).encode(),
-        headers={"Content-Type": "application/json"},
+        data=json.dumps({"question": question, "no_cache": True}).encode(),
+        headers={"Content-Type": "application/json",
+                 "x-regdelta-no-cache": "1"},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -284,6 +322,15 @@ def main() -> int:
                 "answer_rows": resp.get("answer_rows"),
                 "citations": resp.get("citations"),
                 "status": resp.get("status"),
+                # What the SERVER said it did with the cache. ask() asks for a
+                # bypass; this is the half that notices when it stops being
+                # honoured. See cache_control_violations.
+                #
+                # A request that never completed has no cache status because it
+                # has no response, which is a different thing from an answer of
+                # unknown provenance. It is already recorded as a failure, and
+                # the all-transport-failed case has its own guard above.
+                "cache": resp.get("cache") if resp else UNREACHABLE,
             },
         })
         if fails:
@@ -318,6 +365,24 @@ def main() -> int:
         return 1
 
     if args.record:
+        # A CARD THAT MEASURED THE CACHE MUST NOT BE WRITTEN.
+        #
+        # record() names the file for a tier and every progress claim in this
+        # repo is a delta against those files, so a card whose answers came
+        # from the cache is worse than no card: it is indistinguishable from a
+        # real one and it is filed under a tier that did no work. This is not
+        # hypothetical — see ask().
+        #
+        # Refuses rather than warns. A warning on a green 5/5 is read as noise,
+        # and the whole failure mode is that the run looks fine.
+        if violations := cache_control_violations(per_q):
+            print(f"\n❌ cache control failed on {len(violations)}/{len(per_q)}: "
+                  f"{', '.join(violations)}", file=sys.stderr)
+            print("   These answers did not demonstrably bypass the response "
+                  "cache, so this card would not measure the tier it names.",
+                  file=sys.stderr)
+            return 2
+
         tier = "naive"
         if args.mode != "naive":
             try:
@@ -333,6 +398,14 @@ def main() -> int:
             "dirty": dirty,
             "at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
             "tier": tier,
+            # `tier` above is what /health says is CONFIGURED (an SSM lookup),
+            # not what answered — the router falls back to s3vectors on an AOSS
+            # error and says so only through retrieve_traced, which the API does
+            # not yet surface. Recorded as the weaker claim it is; the stronger
+            # one needs the answering tier on the response.
+            "tier_source": "GET /health (configured, not observed)",
+            "cache_statuses": sorted({(q.get("response") or {}).get("cache")
+                                      for q in per_q}, key=str),
             "mode": args.mode,
             "subset": args.subset,
             # Which corpus answered. The poller changes this daily and without
