@@ -81,6 +81,35 @@ def resume_agent(thread_id: str, decision: dict) -> dict:
     return _shape(state, thread_id)
 
 
+# THERE IS NO RESPONSE CACHE ON THIS PATH, and saying so is not cosmetic.
+#
+# `run_evals.cache_control_violations` refuses to record a card whose answers
+# did not demonstrably bypass the response cache — added at e9ba788, because a
+# Tier B scorecard had read 5/5 from Tier A's cached answers. The shim emitted
+# no `cache` field at all, so every response read `None`, which is not in
+# `_BYPASSED`, and the guard rejected all twenty questions.
+#
+# The effect: `make baseline` could not record a card at all after e9ba788, so
+# the M00b control that ADR-0002 makes every progress claim a delta against
+# became unrecordable. Nothing noticed, because nothing re-ran the baseline in
+# between — the last naive card, 2cea737, predates the guard and carries
+# `cache_statuses: null`.
+#
+# `disabled` is SPEC/04's own word for "the response cache is off by
+# configuration", which is exactly this path: the shim invokes the graph (or
+# the baseline) directly and never consults `api.response_cache`. One of the
+# four legal values rather than a fifth invented for the shim. Silence was the
+# only dishonest option — it left the guard unable to tell "no cache on this
+# path" from "cache not bypassed".
+#
+# IT IS SET HERE, IN THE SHIM, AND NOT IN `src/baseline/naive.py`. That file is
+# the frozen control (ADR-0002) and is not touched. It does not belong there on
+# the merits either: a cache status describes the serving path, not an answer —
+# the deployed API sets it in the endpoint and not in the graph, and this is the
+# same seam one layer out.
+SHIM_CACHE_STATE = "disabled"
+
+
 def _shape(state: dict, thread_id: str) -> dict:
     """Map graph state onto the response the eval runner reads.
 
@@ -131,24 +160,7 @@ def _shape(state: dict, thread_id: str) -> dict:
         # exists on one _shape only is how `dropped_citations` came to read as
         # "nothing was dropped" where nothing had been asked.
         "retrieval_ms": state.get("retrieval_ms"),
-        # THERE IS NO RESPONSE CACHE ON THIS PATH, and saying so is not
-        # cosmetic. `run_evals.cache_control_violations` refuses to record a
-        # card whose answers did not demonstrably bypass the cache — added at
-        # e9ba788, because a Tier B scorecard had read 5/5 from Tier A's cached
-        # answers. The shim emitted no `cache` field at all, so every response
-        # read `None`, which is not in `_BYPASSED`, and the guard refused all
-        # 20. `make baseline` has therefore been unable to record since e9ba788:
-        # the M00b control that ADR-0002 makes every progress claim a delta
-        # against became unrecordable, and nothing noticed because nothing
-        # re-ran it until the M04 close.
-        #
-        # `disabled` is SPEC/04's own word for "the response cache is off",
-        # which is exactly this path — the shim invokes the graph directly and
-        # never consults `api.response_cache`. Emitting one of the four legal
-        # values rather than inventing a fifth keeps the contract SPEC/04
-        # states; silence was the only dishonest option, because it left the
-        # guard unable to tell "no cache here" from "cache not bypassed".
-        "cache": "disabled",
+        "cache": SHIM_CACHE_STATE,
         "provenance": {
             "model_fast": config.MODEL_FAST,
             "model_verdict": config.MODEL_VERDICT,
@@ -251,7 +263,10 @@ class Handler(BaseHTTPRequestHandler):
             if mode == "agent":
                 return self._send(200, answer_agent(question, profile))
             from baseline.naive import answer_naive
-            self._send(200, answer_naive(question))
+            # The control's own dict, plus the serving path's cache status.
+            # `answer_naive` is not modified and must not be — ADR-0002.
+            self._send(200, {**answer_naive(question),
+                             "cache": SHIM_CACHE_STATE})
         except Exception as e:  # noqa: BLE001 — surface as a failed answer
             # Detail to stderr only: botocore error strings embed the account
             # id, role ARN and bucket name. This handler is the template
