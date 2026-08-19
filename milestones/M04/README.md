@@ -612,3 +612,73 @@ it does not write — agreeing.
 **Not closed:** `router.hydrate` has its own silent AOSS→S3V fallback on the
 crossref lane, so one response can still span two tiers without saying so. The
 `tier` field describes the main retrieval call. Recorded, not fixed.
+
+## The internet-facing role's wildcard grants — closed 2026-08-19
+
+`QueryFn` is the only role in this account driven by **anonymous requests**:
+SPEC/04 declares `/query` unauthenticated and CloudFront serves it publicly. It
+held three `Resource: "*"` grants carrying `# TODO: scope`, deferred to SPEC/05.
+Security review pulled them forward — the risk changed character the day the
+role stopped being reachable only by credential-holders.
+
+| grant | was | now |
+|---|---|---|
+| `bedrock:InvokeModel` | `*` | 2 inference profiles + their foundation models in 3 regions + Titan |
+| `s3vectors:QueryVectors\|GetVectors` | `*` | the vector bucket and its `index/chunks` |
+| `aoss:APIAccessAll` | `*` (every collection in the account) | `collection/*` in this account and region |
+
+Every ARN was read off the live resource rather than inferred. Two would have
+been wrong by analogy: **s3vectors ARNs carry region and account** and use
+`bucket/NAME`, not the plain-S3 `arn:aws:s3:::name` shape; and a **cross-region
+inference profile is not what Bedrock authorises** — it evaluates `InvokeModel`
+against the foundation model in whichever region it routes to, so granting only
+the profile denies intermittently, by region, and not in the regions a smoke
+test happens to hit.
+
+### The review found the justification was false
+
+`core_stack` justified the remaining `collection/*` breadth by citing the AOSS
+data access policy as "the control that actually admits the request". It wasn't:
+that policy put the reindex role and the query role in **one principal list**
+with `aoss:*` at collection and index level. The internet-facing role could
+`DeleteIndex` and `WriteDocument` on the corpus index the cited deadlines are
+drawn from — corpus poisoning, reachable from the same role that feeds untrusted
+Federal Register text to an LLM.
+
+`search_stack.py` already contained the argument against this. An earlier review
+made exactly this point about the human operator, gave it its own read-only
+statement, and wrote that "a *new* widening must not ride out on an existing
+TODO". The same fix applies: the reindex role keeps `aoss:*`, the query role
+gets `DescribeIndex` + `ReadDocument` at index level, which is all
+`aoss_tier.py` issues. **An existing test pinned the wrong state**, asserting
+the query role *keeps* `aoss:*`; it now asserts the opposite.
+
+### And a bug the scoping itself introduced
+
+The policy resolved `config.MODEL_*` in the **synth** process — the operator's
+shell — while the function resolved them again from its own environment, which
+set none of them. They agreed only when the deployer had nothing exported, and
+`config.py` invites the divergence in a comment ("Raise MODEL_VERDICT to Opus
+4.7 once account model access is granted"). Export it, deploy, and the policy
+grants 4.7 to a function still invoking 4.6 — `AccessDenied` on the verdict node
+of every anonymous query. Under `Resource: "*"` that was impossible; **the
+narrowing created it.** Now pinned into the function's environment so the two
+are the same string by construction.
+
+Verified by running: `MODEL_FAST`, `MODEL_VERDICT` and `EMBED_MODEL` are on the
+deployed function and each appears in the grant, and `--subset retrieval` is
+**5/5** against the deployed API — which exercises the Bedrock, Titan and S3
+Vectors grants together.
+
+**Not verified:** the AOSS grant and the data access split. The hot tier was
+destroyed before both changes, so the narrowed collection ARN and the read-only
+statement have not met a live collection. The next `make up` settles it, and
+until then this is stated rather than claimed.
+
+**Raised, not done:** the `aoss` grant could be pinned to the real collection id
+by moving it into the ephemeral search stack, which would also make it vanish
+with `make down`. Separately, the janitor's nightly OCU guard **does not work at
+all** — it calls `delete_stack` with no `RoleARN` while holding only
+`DeleteStack` and `DescribeStacks`, so it reports `delete-initiated` and lands in
+`DELETE_FAILED`. Correctness rather than security, and the TODO's wording implies
+it works in a degraded way when it does not work at all.
