@@ -14,8 +14,8 @@
 | 2 — response cache + bypass | **done**, verified through the deployed API: miss 11.2s → hit 247ms |
 | infra — API Gateway, CloudFront, UI bucket, dependency layer | **done**, deployed |
 | crossref wiring (M03 carryover, M04-blocking) | **done**, SPEC/04's retrieval gate now passes |
-| 3 — UI | not started |
-| 4 — `make demo-parity` + Tier B latency | **done** for the artifact; the latency criterion's **UI conjunct is outstanding** (see below) |
+| 3 — UI | **done**, and verified in a browser **against the deployed distribution** — see "Phase 3" below |
+| 4 — `make demo-parity` + Tier B latency | **done** for the artifact; the latency criterion's **UI conjunct is now met too** — the readout is populated from a real per-query measurement through the deployed API on both tiers (Phase 3) |
 | 5 — golden set vs deployed API, both tiers | **done**: `--subset retrieval` 5/5 on both tiers through the deployed API — but the first Tier B card was false, see below |
 
 ## Evidence
@@ -32,7 +32,9 @@ fingerprint `b70879d76cea`:
 
 746 tests, ruff clean, **CI green on #11** — see "CI was red because the system
 got better" below. The infra tests now run there too: they were skipping
-silently, 713 tests in CI against 733 locally.
+silently, 713 tests in CI against 733 locally. (Phase 3 takes the suite to
+**840 passed, 1 skipped**; the 746 is the figure at the time this paragraph was
+recorded and is left as written.)
 
 ### Phase 4 — `milestones/M04/answer-parity-3966b47.json`
 
@@ -89,13 +91,15 @@ direction.
 do with it is a PM-seat call once it exists." What is decided is that CLAUDE.md's
 "do not say faster" now has a measurement behind it rather than an absence.
 
-**The latency criterion is a conjunction and only half of it is met.** SPEC/04
-gates on the artifact recording median and p95 **and** on "the UI readout
-populated from a real per-query measurement through the deployed API on both
-tiers". The artifact half is done; the UI half is Phase 3 and is not started, so
-this criterion must not be read as closed at milestone close. Raised by
-`eng-code-reviewer`, which found the phase table said "done" against a
-conjunction.
+**The latency criterion is a conjunction, and BOTH halves are now met.**
+SPEC/04 gates on the artifact recording median and p95 **and** on "the UI
+readout populated from a real per-query measurement through the deployed API on
+both tiers". The artifact half is the table above. The UI half was outstanding
+when this paragraph was first written — raised by `eng-code-reviewer`, which
+found the phase table saying "done" against a conjunction — and is closed by
+Phase 3 below, which had to add the measurement before there was a number to
+read. The two are deliberately the same span from two vantages; neither is a
+target, and displaying one is not asserting one (ADR-0012).
 
 ### The gate was reviewed, and it had holes
 
@@ -682,3 +686,374 @@ all** — it calls `delete_stack` with no `RoleARN` while holding only
 `DeleteStack` and `DescribeStacks`, so it reports `delete-initiated` and lands in
 `DELETE_FAILED`. Correctness rather than security, and the TODO's wording implies
 it works in a degraded way when it does not work at all.
+
+
+## Phase 3 — the demo page — measured 2026-08-19
+
+`ui/index.html` and `ui/verdict.js`, served from the existing S3 + CloudFront
+distribution (`DemoUrl`), calling the API same-origin at `/api/*`. Static, no
+dependencies, no build step. Everything in the table below was read off the
+deployed page in a real browser against the deployed stack, not from a test.
+
+| SPEC/04 UI clause | how it is met | observed |
+|---|---|---|
+| question box | textarea, ⌘/Ctrl+Enter to send | ✅ |
+| one button per entry in `evals/scenarios.json` | the page **fetches** `scenarios.json`, which the stack writes from the canonical file at synth | 3 buttons, ids `healthy-claim` `red-no-3` `needs-review` |
+| verdict table with citation links | `product / trigger / required_change / real_deadline / confidence / citations` | the full Nordvale row |
+| confidence badges | coloured at **0.7**, which is `config.CONFIDENCE_HITL_THRESHOLD` — not a number invented here | `0.97` green |
+| "needs human review" state | `needs_input` / `pending_review`, with the reason | ✅ `needs-review` |
+| active-tier indicator that visibly flips | **from the response**, see below | ✅ |
+| cache-state label, exactly one of four | **from the response** `cache` | `bypass`, `miss` and `hit` all observed |
+| cache-bypass control | checkbox → `no_cache: true` | ✅ |
+| retrieval latency readout | **from the response** `retrieval_ms` | 256 ms Tier A |
+| cross-tier comparison panel, explicit equal / differs | citations as **sets**, `real_deadline` **exactly** | see the panel section |
+
+### The readout had nothing to read, so the measurement was added
+
+SPEC/04's Tier B latency criterion is a conjunction and the artifact half was
+met at Phase 4. The other half — "the UI readout is populated from a real
+per-query measurement through the deployed API on both tiers" — had no field to
+read. `Resolution` carried `tier` and `fallback_reason` and no timing, so the
+only number a browser could produce was **its own round trip**: 10.5 s on this
+question, of which retrieval is 256 ms. **97% of it is Bedrock.** Printing that
+under the words "retrieval latency" would have been an instrument measuring
+something adjacent to the claim — the fifth instance in this milestone, in the
+readout whose whole purpose is to compare two retrieval tiers.
+
+So `retrieve_traced` now times its whole self and carries `elapsed_ms` out on
+the `Resolution` → `retrieval_ms` on the state → `retrieval_ms` on **both**
+`_shape` mappings. That is deliberately the **same span** `make demo-parity`
+records for the artifact — it times `router.retrieve`, which is
+`retrieve_traced` plus a tuple index — so the two are one quantity from two
+vantages, which is what SPEC/04 means by "different instruments". The timing
+wraps the call rather than sitting at each `return`, so the fallback path is
+timed by construction; on a fallback the number spans both legs and
+`fallback_reason` is on the same response to say why it is large.
+
+The browser's stopwatch is still shown, in its own box, labelled `round trip ·
+client stopwatch, incl. generation`. Two numbers, two labels, and neither
+borrows the other's meaning.
+
+### Every instrument reads the field that describes its own request
+
+The tier badge, the cache label and the latency readout all come from the
+`/query` **response body**. `/health` is on the page too — in the header,
+labelled `configured tier`, with a tooltip saying it reports what SSM holds and
+not what answered — and the badge shows `≠ configured` when the two disagree.
+That disagreement is the information; substituting one for the other is the
+defect. A tier badge sourced from `/health` would have been structurally unable
+to notice the cold-start bug recorded above, where `/health` said `s3vectors`
+for the first sixty seconds of every container's life while SSM held an AOSS
+endpoint.
+
+**A cache hit is rendered as provenance, never as a live reading.** On a hit the
+API returns the STORED body, so `tier`, `fallback_reason` and `retrieval_ms`
+describe the request that populated the cache — possibly the other tier, up to
+an hour ago. Observed, on the deployed page:
+
+    RESPONSE CACHE     hit          stored answer replayed — nothing was retrieved
+    TIER THAT ANSWERED s3vectors    stored — the tier that answered when this was cached
+    RETRIEVAL LATENCY  259 ms       stored — measured when this answer was cached
+    ROUND TRIP         170 ms
+
+That 170 ms is also **SPEC/04's "a cached repeat query returns < 500 ms"**,
+measured for the first time in a browser through CloudFront rather than with
+`curl` — the vantage the clause is about.
+
+### The panel's judgement is in a file that can be run
+
+`ui/verdict.js` holds what the cross-tier panel decides — citation URLs, which
+responses may become a tier observation, and the equal/differs verdict — and
+`tests/ui_verdict_spec.js` drives it under node. The page **calls** it rather
+than keeping a copy, and a test asserts that: a tested `verdict.js` beside a
+page with its own duplicate would be a suite pinning a function the demo never
+runs, which is this milestone's defect class wearing a green check.
+
+It refuses two things, and the first is the whole control:
+
+1. **A cache hit is not recorded as a tier observation.** Nothing was
+   retrieved, and filing the stored body under `tier` would file one tier's
+   answer under the other's name — the panel would then report `equal` by
+   construction and be measuring the response cache. This is SPEC/04 parity
+   control 1, in the browser, and it is not hypothetical: the Tier B scorecard
+   recorded above read 5/5 having reached AOSS zero times, exactly this way.
+   Observed live, on a `hit`: *"This response was served from the cache, so it
+   is not evidence about any tier."*
+2. **A response with no tier is not recorded.** A `needs_input` run never
+   reached retrieval.
+
+And it reports three caveats beside the verdict rather than folding them into
+it, because each says what the verdict is *evidence of* rather than whether the
+two sides matched: `sameTier` (a determinism observation, not a cross-tier one —
+the defect engineering review found in Phase 4's `compare()`), `vacuous`
+(agreement about nothing, the artifact's guard 4), and a cache note when either
+side is not `bypass` — a `miss` counts, not only a `hit`, because on a request
+that asked for a bypass it means the cache was consulted anyway.
+
+Observations are keyed by the **sha-256 of the question and profile**, not by
+scenario id, for the reason the artifact records `input_sha256`: "scenario 1" is
+not a stable subject. They live in `localStorage` because the tier flip takes a
+`make up` — twenty minutes, during which a viewer reloads the page — and the
+panel renders whatever is retained as soon as a scenario is selected, before
+anything is asked, so the retention can be checked without spending a Bedrock
+call to find out.
+
+### Citation links, checked against the live sites
+
+Three notations, all named by the regulatory-domain skill, each URL shape
+verified by following it rather than inferred:
+
+| citation | link | resolves to |
+|---|---|---|
+| `89 FR 106064` | `federalregister.gov/citation/89-FR-106064` | the healthy final rule |
+| `2024-29957` | `federalregister.gov/d/2024-29957` | **the same document** |
+| `21 CFR 101.65(d)(2)` | `ecfr.gov/current/title-21/section-101.65#p-101.65(d)(2)` | eCFR emits exactly that anchor id |
+
+**Anything unrecognised is rendered as plain text, never as a guessed link.** A
+citation a reader cannot follow is a visible limit; a link that quietly lands on
+the wrong document is the failure this product exists to expose. Sixteen hostile
+inputs were probed during security review, including `javascript:` and `data:`
+payloads — all returned `null`.
+
+**Every citation the three scenarios actually produce was followed**, not just
+the three shapes: `89 FR 106064`, `90 FR 10592`, `90 FR 4628`, `91 FR 50475`,
+`2024-29957`, `2025-03118`, `21 CFR 74.303`, `21 CFR 80.32(h)`,
+`21 CFR 101.65(d)(2)` — all 200, and both eCFR paragraph anchors
+(`id="p-80.32(h)"`, `id="p-101.65(d)(2)"`) are present in the live pages.
+`91 FR 50475` resolves to *Micro-Tracers, Inc.; Response to Objections* — the
+stay-lift document ADR-0007 is about.
+
+One first-pass observation withdrawn: `91 FR 50475` returned **503** on the
+first check and was about to be written up as a limit of the corpus. It was
+transient — 200 on retry, which is why it is stated here as measured twice
+rather than once. A single failed request is not a finding.
+
+### What the page deliberately does not do
+
+**It never prints the `resume_token`.** A `needs_input` response carries one — a
+bearer capability bound to that thread — and the page says a capability was
+minted and shows only the `thread_id`. This page is screenshotted into this
+directory. There is no resume control: SPEC/04's UI list requires the review
+**state** to render, not a resume round trip, and `make test` already gates the
+resume contract including its four byte-identical refusals.
+
+### The screenshots
+
+`milestones/M04/screenshots/`, taken by a headless Chrome against
+`DemoUrl` over the DevTools Protocol.
+
+**Not `--virtual-time-budget`.** The first attempt used it and produced a page
+reporting a **10 ms round trip for a request that really took eleven seconds** —
+the flag advances a virtual clock and `performance.now()` inside the page
+follows it. A screenshot filed as evidence of a latency readout must not contain
+a fabricated latency, so the driver runs in real wall-clock and polls the page
+for a completion signal instead. Caught by disbelieving the number, which is how
+every real finding in this milestone was found.
+
+A second harness defect, same class: the driver killed Chrome after capturing,
+so `localStorage` never flushed its leveldb and the cross-tier panel came back
+empty on the next run — *which reads exactly like a page that never stored
+anything*. It closes the browser now and waits for it to exit. Verified by
+prediction: a 30-byte Local Storage log before, 1248 bytes after, and the panel
+showing the retained Tier A observation on a cold browser start.
+
+| file | shows |
+|---|---|
+| `01-healthy-claim-tier-a.png` | the full Nordvale table, Tier A, cache `bypass`, retrieval 256 ms against a 10.55 s round trip |
+| `02-needs-human-review.png` | the `needs_input` state, its reason, and a minted capability that is not displayed |
+| `03-cache-hit.png` | `cache: hit`, a **170 ms** round trip, and tier and latency both labelled `stored` |
+| `04-cross-tier-equal.png` | the tier-switch demo moment: `aoss` beside the retained `s3vectors` side, both `bypass`, verdict **EQUAL** |
+
+### Tests
+
+`tests/ui_verdict_spec.js` (18 assertions, run by
+`tests/test_ui_verdict.py`) covers the panel's judgement; `tests/test_ui_verdict.py`
+covers the wiring — that the page loads the judgement it is tested on, that the
+buttons come from the canonical scenarios file, and that the PM/SME commentary
+in that file is not published to an anonymous distribution.
+`tests/test_retrieval_latency.py` covers the measurement, in the router, in the
+node and on both `_shape`s.
+
+**The rendering itself is not unit-tested**, deliberately: there is no DOM in
+this suite, adding one would be a dependency, and asserting that a `<td>` exists
+pins the template rather than the behaviour. The rendering's evidence is the
+screenshots above — SPEC/04: "a browser procedure with no record is rehearsal,
+not a criterion."
+
+**25 mutations re-introduced, 25 caught** — 7 for the latency measurement, 14
+for the UI, 4 for the asset allowlist below.
+
+### Security review of Phase 3
+
+`security-reviewer` on the diff: **no HIGH**, one MEDIUM and three LOWs, each
+reproduced by running.
+
+**MEDIUM, fixed.** `s3deploy.Source.asset(UI_SRC)` carried no allowlist. The UI
+bucket is the one bucket served to **anonymous callers with no IAM in the way** —
+the reader needs only the distribution URL, which is a `CfnOutput` — and
+`infra/asset_policy.py` was written this milestone for exactly this class and
+had been applied to Lambda code and not here. Measured against a `ui/` seeded
+with plausible strays:
+
+    ['.env', '__pycache__/x.pyc', 'index.html', 'notes.md', 'verdict.js']
+
+Now `asset_policy.UI_ASSET_EXCLUDE`, an explicit two-file allowlist rather than
+`!*.{html,js}` — a scratch `index.old.html` or a vendored script should not
+publish itself — carried with `ASSET_IGNORE_MODE`, because `exclude` without its
+mode stages the opposite of what it reads as.
+
+**And the test for it was green with the fix deleted.** Four mutations, the
+first pass caught one. `test_the_stack_applies_that_allowlist_to_the_ui_bucket`
+synthesised the real stack over the real `ui/`, which holds two files and has
+nothing to leak, so removing the allowlist from the stack entirely changed
+nothing it could see. That is the *same* vacuous-green shape `security-reviewer`
+found in the first version of the Lambda-asset test — reproduced one milestone
+later, in the test written to close its sibling finding. It now redirects the
+stack's own `UI_SRC` at a planted tree, the way `stub_layer` redirects
+`LAYER_SRC`. Four mutations, four caught, including one proving `ignore_mode` is
+load-bearing here too.
+
+**LOW, fixed.** The one path that renders a body wholesale — the `>= 400` banner
+— now redacts first. No error path returns a `resume_token` today (both 4xx
+bodies are `{detail, trace_id}`; the token is minted only on a 200), so this
+changes nothing now. It is there because "never print the capability" was
+resting on an invariant held in `api.py` rather than in the page.
+
+**LOW, recorded.** The scenario projection is a top-level whitelist, so a
+reviewer note nested inside a `company_profile` would publish. Harmless today;
+a recursive projection needs a schema for a field whose shape is the PM seat's
+to choose.
+
+**LOW, declined — for the human seat.** No `ResponseHeadersPolicy` (CSP,
+`nosniff`) on the distribution. Defence-in-depth with no sink found: every
+model-generated string goes through `textContent` or `createTextNode`, every
+`innerHTML` is a static literal or passes `escapeHtml`, and `citationUrl`
+returns only literal `federalregister.gov` / `ecfr.gov` prefixes concatenated
+with digit-only captures. A meaningful CSP would also mean moving the page's
+inline script into its own file. Named rather than left to be found.
+
+
+## The tier flip, in the browser — measured 2026-08-19
+
+`make up`, then the same question through the deployed page on the same browser
+profile that already held the Tier A observation, then `make down`. The hot tier
+was up for about twenty-five minutes.
+
+**And it is down**, checked four ways rather than on the exit code — the janitor's
+nightly OCU guard does not work (see below), so `make down` is the only thing
+that stops the billing and "it said destroyed" is not the same as "it is gone":
+the stack does not exist, `list-collections` returns nothing,
+`/regdelta/search/endpoint` is `ParameterNotFound`, and `/api/health` reports
+`s3vectors` again.
+
+### `/health` before and after, and why it is the weaker claim
+
+| when | `GET /api/health` | what answered a `/query` |
+|---|---|---|
+| hot tier down | `s3vectors` | `s3vectors` |
+| hot tier up | `aoss` | `aoss` |
+
+SPEC/04's Done-when says "`/health` reports the correct tier before and after
+`make up`", and it does. The page shows it in the header as `configured tier`
+and takes its **badge** from the response, because those two answer different
+questions and this milestone has already recorded the case where they disagreed
+for sixty seconds of every container's life.
+
+### Tier B, through the deployed API, cache bypassed
+
+    tier             'aoss'
+    fallback_reason  None
+    cache            'bypass'
+    retrieval_ms     897.6
+    status           'ok'
+    citations        ['89 FR 106064', '90 FR 10592']
+    deadlines        ['2028-02-25']
+
+**This is what settles the two IAM changes** that were left stated rather than
+claimed when the hot tier came down last session. A wrong `aoss:APIAccessAll`
+scope, or a data-access split that did not actually admit the query role, both
+surface the same way: `AossError` in `fallback_reason`, `tier: s3vectors`, and
+an answer served by Tier A. Neither happened. Verified live:
+
+- **`aoss:APIAccessAll` narrowed from `*` to `collection/*`** in this account
+  and region — the internet-facing role reached the collection.
+- **The data-access split**: the reindex role keeps `aoss:*`, the query role has
+  `aoss:DescribeIndex` + `aoss:ReadDocument` at **index level only**. Those two
+  permissions are all `src/retrieval/aoss_tier.py` issues, and they are
+  sufficient — the query returned eight chunks and a cited answer. The
+  internet-facing role no longer holds `DeleteIndex` or `WriteDocument` on the
+  corpus index the cited deadlines are drawn from.
+
+The stack itself is the other half of the evidence: `HydrateOnDeploy` completed,
+so the reindex role's `aoss:*` still works for the writer it was kept for.
+
+### The panel: EQUAL
+
+`milestones/M04/screenshots/04-cross-tier-equal.png`.
+
+| | previous tier | current tier |
+|---|---|---|
+| tier | `s3vectors` | `aoss` |
+| at | 05:30:35Z | 11:12:39Z |
+| cache | `bypass` | `bypass` |
+| `citations[]` as a set | `89 FR 106064`, `90 FR 10592` | `89 FR 106064`, `90 FR 10592` |
+| every `real_deadline` | `2028-02-25` | `2028-02-25` |
+
+> **EQUAL** — citations agree as sets and every real_deadline matches exactly —
+> s3vectors vs aoss. The answer did not change when the infrastructure did.
+
+No caveat fired: two different tiers, both `bypass`, and not vacuous. The two
+observations are 5h42m apart across a real `make up`, and the second was
+retained from a **cold browser start** — the panel had been closed and reopened
+in between, which is the reload the twenty-minute flip makes inevitable.
+
+This is the UI counterpart of `make demo-parity`, and it agrees with the
+artifact: `answer-parity-3966b47.json` recorded the same citation set and the
+same date for `healthy-claim` on both tiers, from the in-process harness. Two
+unlike instruments, same answer.
+
+### The latency readout on both tiers — the criterion's UI conjunct, closed
+
+| tier | `retrieval_ms`, deployed | round trip | artifact median (laptop, in-process) |
+|---|---|---|---|
+| A — S3 Vectors | 256 / 270 / 294 ms | 10.5 s | 354.1 ms |
+| B — AOSS | 464 / 897.6 ms | 11.3 s | 889.3 ms |
+
+SPEC/04: "the UI readout is populated from a real per-query measurement through
+the deployed API on **both tiers**". It is, and the numbers above are individual
+measurements displayed on the page, not a summary.
+
+**Read them for what they are.** These are n=1 per row, from a Lambda in-region
+rather than a laptop, and the two Tier B numbers differ by a factor of two —
+which is exactly why the criterion puts the gating median and p95 in the
+artifact and leaves the page reporting. What the deployed vantage does add is
+that it agrees in **direction** with the artifact: Tier B slower on both
+instruments. That was the open question the artifact's own caveat named — "a
+production vantage could move the ratio and has not been measured" — and it did
+not move it. It remains a report, not a claim (ADR-0012), and **no target is set
+here either**.
+
+Retrieval is **2.5–8%** of what a viewer waits through. That ratio is the whole
+argument for the readout existing: the browser's own stopwatch, printed under
+the words "retrieval latency", would have been a number about Bedrock.
+
+### Two harness defects, same shape as everything else this milestone
+
+Both in the screenshot driver, neither in the product, both recorded because
+they are the same defect class and both would have produced *plausible*
+evidence.
+
+1. **`--virtual-time-budget` fakes the clock.** The first screenshot showed a
+   **10 ms round trip for a request that took eleven seconds** — the flag
+   advances a virtual clock and `performance.now()` follows it. A screenshot
+   filed as evidence of a latency readout, containing a fabricated latency. The
+   driver now runs in real wall-clock over the DevTools Protocol.
+2. **The wait predicate matched a static heading.** The first cross-tier attempt
+   waited for the text `CROSS-TIER`, which is the panel's `<h2>` and is on the
+   page before anything is asked, so it captured 0.5 s after load and produced a
+   screenshot of four em dashes that could have been filed as "the panel". It
+   waits for text only the *finished* comparison emits.
+
+Neither cost anything but time, and both are the milestone's recurring lesson
+pointed at the instrument rather than the system: *ask what the instrument
+cannot see.*
