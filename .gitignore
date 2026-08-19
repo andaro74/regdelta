@@ -10,3 +10,9 @@ loadtest/reports/
 # a file the harness itself created, seconds after creating it.
 *.pid
 infra/cdk.context.json
+
+# The Lambda dependency layer, built by `make layer` from requirements.txt.
+# A build artifact and a large one (~101MB unzipped), rebuilt reproducibly from
+# a pinned file — committing it would put wheels in git and let the layer drift
+# from the pins that produced it.
+build/

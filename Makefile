@@ -32,10 +32,11 @@ CDK          := cd infra && npx cdk
 # See evals/local_env.py and evals/wait_ready.py.
 RESOLVE_ENV = eval "$$(python evals/local_env.py)";
 
-.PHONY: help bootstrap core up down status smoke evals agent-evals discrimination replay-history lint test demo ingest-backfill synth diff \
+.PHONY: help bootstrap layer core up down status smoke evals agent-evals discrimination replay-history lint test demo ingest-backfill synth diff \
         retrieval-evals retrieval-parity preflight rebuild-vectors demo-parity
 
 help:
+	@echo "make layer           - build the Lambda dependency layer (needed by core)"
 	@echo "make core            - deploy/update persistent stack"
 	@echo "make up / make down  - create/destroy AOSS hot tier"
 	@echo "make status          - tier state"
@@ -58,7 +59,31 @@ help:
 bootstrap:
 	$(CDK) bootstrap
 
-core:
+# THE DEPLOYED FUNCTION'S DEPENDENCIES. src/ ships first-party Python only
+# (infra/asset_policy.py), so fastapi, mangum, langgraph and the pinned boto3
+# reach Lambda through this layer or not at all. Until M04 they did not: the
+# deployed query function answered every invoke with "No module named
+# 'fastapi'", invisible because every end-to-end run drives the graph in-process
+# with the function's environment rather than invoking the function.
+#
+# --platform/--implementation/--python-version because this is built from a
+# Windows laptop for a linux runtime; without them pip resolves win_amd64 wheels
+# and pydantic_core's compiled extension is the wrong architecture — a failure
+# that only appears at invoke time, in the region, on the demo.
+#
+# --only-binary=:all: so a missing wheel FAILS here rather than silently
+# building a source distribution against the local Python and shipping that.
+LAYER_DIR := build/lambda-layer
+layer:
+	@rm -rf $(LAYER_DIR)
+	python -m pip install --quiet \
+	  --platform manylinux2014_x86_64 --implementation cp --python-version 3.14 \
+	  --only-binary=:all: --target $(LAYER_DIR)/python -r requirements.txt
+	@echo "✅ layer built → $(LAYER_DIR)/python ($$(du -sh $(LAYER_DIR) | cut -f1))"
+
+# Depends on `layer`: the stack refuses to synth without it, which is better
+# than deploying a function whose imports fail in the region.
+core: layer
 	$(CDK) deploy $(STACK_CORE) --require-approval never
 
 # Deploys and prints the endpoint. It used to run `smoke` — i.e. the golden

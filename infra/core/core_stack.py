@@ -30,6 +30,9 @@ from constructs import Construct
 # asset_policy.SRC, and the reason `../src` was wrong here.
 JANITOR_SRC = str(Path(__file__).resolve().parent.parent / "lambdas" / "janitor")
 UI_SRC = str(Path(__file__).resolve().parents[2] / "ui")
+# Built by `make layer`, not committed: ~101MB of wheels reproducible from a
+# pinned requirements.txt. See the LayerVersion below for why it has to exist.
+LAYER_SRC = Path(__file__).resolve().parents[2] / "build" / "lambda-layer"
 
 SSM_ENDPOINT_PARAM = "/regdelta/search/endpoint"
 VECTOR_INDEX_NAME = "chunks"
@@ -177,8 +180,56 @@ class RegDeltaCoreStack(cdk.Stack):
         # Query plane: LangGraph Lambda. Routes AOSS/S3Vectors via SSM param;
         # absent param => S3 Vectors tier (never a 5xx). SPEC/03-04.
         # ------------------------------------------------------------------
+        # THE DEPENDENCIES. src/ is first-party Python only — the asset policy
+        # ships `**/*.py` and nothing else — so fastapi, mangum, langgraph and
+        # our pinned boto3 have to arrive some other way. Until M04 they did
+        # not arrive at all: the deployed function answered every invoke with
+        # `Unable to import module 'api.api': No module named 'fastapi'`, which
+        # nothing noticed because every "end to end" run in this repo drives the
+        # graph IN-PROCESS with the deployed function's environment variables
+        # rather than invoking the function.
+        #
+        # A LAYER, NOT VENDORED INTO src/. `pip install -t src/` would put
+        # pydantic_core's compiled .so and every .dist-info under the `**/*.py`
+        # allowlist, which drops them — a subtler broken deploy that every asset
+        # test still passes, since the modules they name are all present.
+        # security-reviewer named that trap explicitly.
+        #
+        # BOTO3 IS SHIPPED rather than taken from the runtime, which costs
+        # ~27MB of botocore. The Lambda Python runtime bundles its own boto3 at
+        # a version AWS chooses, and this stack calls `boto3.client("s3vectors")`
+        # — a service new enough that an older bundled botocore does not know it
+        # exists. That failure would arrive as a retrieval error in the demo,
+        # not as a dependency error. The pin in requirements.txt is what the
+        # evals run against, and the deployed function should run the same one.
+        if not LAYER_SRC.is_dir():
+            # Explicit rather than an empty layer: a missing directory would
+            # otherwise synth a layer with nothing in it and deploy a function
+            # that fails exactly the way this whole block exists to prevent.
+            raise FileNotFoundError(
+                f"{LAYER_SRC} does not exist — run `make layer` first. It holds "
+                "the Lambda dependency layer built from requirements.txt and is "
+                "deliberately not committed.")
+        deps_layer = _lambda.LayerVersion(
+            self, "DepsLayer",
+            # A DENYLIST here, deliberately, where src/ gets an allowlist. A
+            # wheel is not just .py — pydantic_core ships a compiled .so and
+            # every package ships .dist-info metadata importlib.metadata reads —
+            # so `**/*.py` would break the layer. What is safe to drop is pip's
+            # own bytecode caches, which are rebuilt on import.
+            code=_lambda.Code.from_asset(str(LAYER_SRC),
+                                         exclude=["**/__pycache__/**"]),
+            compatible_runtimes=[_lambda.Runtime.PYTHON_3_14],
+            description="fastapi, mangum, langgraph and the pinned boto3, from "
+                        "requirements.txt via `make layer`",
+        )
+
         query_fn = _lambda.Function(
             self, "QueryFn",
+            # Only the query path needs these. The poller and processor import
+            # boto3 and the standard library and nothing else, so a layer on
+            # them would be 101MB of cold start for no import.
+            layers=[deps_layer],
             runtime=_lambda.Runtime.PYTHON_3_14,
             handler="api.api.handler",
             code=asset_policy.python_source(),

@@ -60,5 +60,14 @@ def python_source(path: str | None = None) -> _lambda.Code:
     own directory — the policy is the same wherever it is applied, which is the
     point of it living here.
     """
-    return _lambda.Code.from_asset(path or SRC, exclude=ASSET_EXCLUDE,
+    resolved = path or SRC
+    # A relative path here reintroduces exactly the CWD dependence SRC exists to
+    # remove — and it would resolve under `make` and nowhere else, which is how
+    # `../src` survived unnoticed. Structural rather than a convention someone
+    # has to remember. security-reviewer, M04.
+    if not Path(resolved).is_absolute():
+        raise ValueError(
+            f"asset path must be absolute, got {resolved!r} — resolve it from "
+            "the calling module's __file__, as SRC does")
+    return _lambda.Code.from_asset(resolved, exclude=ASSET_EXCLUDE,
                                    ignore_mode=ASSET_IGNORE_MODE)

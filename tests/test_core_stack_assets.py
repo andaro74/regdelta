@@ -16,6 +16,7 @@ noticed.
 These mirror tests/test_search_stack_access.py's asset tests deliberately: the
 same property, asserted the same way, against the stack that was missing it.
 """
+import contextlib
 import sys
 import tempfile
 from pathlib import Path
@@ -26,6 +27,26 @@ aws_cdk = pytest.importorskip("aws_cdk", reason="CDK not installed")
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "infra"))
+
+# The dependency layer is a BUILD ARTIFACT (`make layer`, ~101MB) and is not
+# committed, so the stack refuses to synth without it — deliberately, because
+# an empty layer deploys a function whose imports fail in the region. Tests
+# assert stack SHAPE, so they stub the path with an empty directory. One test
+# below asserts the refusal itself, which is the guard that makes the rest of
+# this safe.
+@contextlib.contextmanager
+def stub_layer():
+    from core import core_stack
+
+    original = core_stack.LAYER_SRC
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "python").mkdir()
+        core_stack.LAYER_SRC = Path(tmp)
+        try:
+            yield
+        finally:
+            core_stack.LAYER_SRC = original
+
 
 # The handler each function declares, and a module that must therefore be in its
 # zip. Keyed by handler so a renamed function construct does not silently drop a
@@ -49,8 +70,9 @@ def synth():
     from core.core_stack import RegDeltaCoreStack
 
     app = cdk.App(outdir=tempfile.mkdtemp())
-    RegDeltaCoreStack(app, "regdelta-core", env=cdk.Environment(
-        account="111122223333", region="us-west-2"))
+    with stub_layer():
+        RegDeltaCoreStack(app, "regdelta-core", env=cdk.Environment(
+            account="111122223333", region="us-west-2"))
     assembly = app.synth()
     return assembly, assembly.get_stack_by_name("regdelta-core").template
 
@@ -85,11 +107,17 @@ def test_no_lambda_ships_anything_but_python(handler):
     assert leaked == [], f"{handler} stages non-Python files: {leaked}"
 
 
-def test_the_query_lambda_ships_the_graph_it_runs():
+def test_the_query_lambda_ships_the_first_party_graph_it_runs():
     """api.api.handler compiles the LangGraph app on first request, so the graph
-    and retrieval packages have to be in the same zip. Named separately because
-    "the handler's own module is present" would pass while the graph was
-    missing, and the failure would arrive as a 500 in the demo."""
+    and retrieval packages have to be in the same zip.
+
+    FIRST-PARTY ONLY, and the name says so because an earlier version did not.
+    Its third-party imports — fastapi, mangum, langgraph — are not in this asset
+    at all and never were; they arrive via the layer. This test passing says
+    nothing about whether the function can import. See
+    test_the_query_lambda_gets_the_dependency_layer below, and the invoke that
+    found it: "Unable to import module 'api.api': No module named 'fastapi'".
+    """
     assembly, template = synth()
     files = staged_files(assembly, template, "api.api.handler")
     for module in ("graph/graph.py", "graph/nodes.py", "retrieval/router.py",
@@ -108,3 +136,58 @@ def test_the_asset_path_does_not_depend_on_the_working_directory(monkeypatch,
     monkeypatch.chdir(tmp_path)
     assembly, template = synth()
     assert "api/api.py" in staged_files(assembly, template, "api.api.handler")
+
+
+# ---------------------------------------------------------- the dependency layer
+# src/ ships first-party Python only, so fastapi, mangum, langgraph and the
+# pinned boto3 reach Lambda through a layer or not at all. Until M04 they did not
+# arrive at all, and nothing caught it: every "end to end" run in this repo
+# drives the graph IN-PROCESS with the deployed function's environment variables
+# rather than invoking the function. Invoking it returned
+#   Unable to import module 'api.api': No module named 'fastapi'
+# and had done since the function first deployed.
+def test_the_query_lambda_gets_the_dependency_layer():
+    """The half no asset test can see: what is NOT in the function's own zip."""
+    _, template = synth()
+    query = next(r["Properties"] for r in template["Resources"].values()
+                 if r["Type"] == "AWS::Lambda::Function"
+                 and r["Properties"].get("Handler") == "api.api.handler")
+    assert query.get("Layers"), \
+        "the query function has no layer, so fastapi/mangum/langgraph are absent"
+
+
+@pytest.mark.parametrize("handler", ["ingestion.poller.handler",
+                                     "ingestion.processor.handler",
+                                     "handler.handler"])
+def test_only_the_query_path_carries_the_layer(handler):
+    """The poller, processor and janitor import boto3 and the standard library
+    and nothing else. A layer on them is ~101MB of cold start for no import."""
+    _, template = synth()
+    fn = next(r["Properties"] for r in template["Resources"].values()
+              if r["Type"] == "AWS::Lambda::Function"
+              and r["Properties"].get("Handler") == handler)
+    assert not fn.get("Layers"), f"{handler} does not need the layer"
+
+
+def test_a_missing_layer_refuses_to_synth_rather_than_shipping_an_empty_one():
+    """THE GUARD THAT MAKES stub_layer() SAFE, and the reason the build step is
+    a hard dependency of `make core`.
+
+    An empty or absent layer directory would otherwise synth and deploy
+    perfectly, and the failure would arrive as a 500 from the region on a
+    function whose imports cannot resolve — which is precisely the state this
+    stack was in before M04.
+    """
+    import aws_cdk as cdk
+    from core import core_stack
+
+    original = core_stack.LAYER_SRC
+    core_stack.LAYER_SRC = Path(tempfile.gettempdir()) / "regdelta-no-such-layer"
+    try:
+        app = cdk.App(outdir=tempfile.mkdtemp())
+        with pytest.raises(FileNotFoundError, match="make layer"):
+            core_stack.RegDeltaCoreStack(
+                app, "regdelta-core",
+                env=cdk.Environment(account="111122223333", region="us-west-2"))
+    finally:
+        core_stack.LAYER_SRC = original

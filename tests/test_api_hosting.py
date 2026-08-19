@@ -12,6 +12,7 @@ NAMED `api`, so API Gateway answers at `/api/query`; CloudFront forwards
 resource still deploys — which is exactly the class of failure that has no test
 until someone writes one.
 """
+import contextlib
 import sys
 import tempfile
 from pathlib import Path
@@ -23,6 +24,26 @@ aws_cdk = pytest.importorskip("aws_cdk", reason="CDK not installed")
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "infra"))
 
+# The dependency layer is a BUILD ARTIFACT (`make layer`, ~101MB) and is not
+# committed, so the stack refuses to synth without it — deliberately, because
+# an empty layer deploys a function whose imports fail in the region. Tests
+# assert stack SHAPE, so they stub the path with an empty directory. One test
+# below asserts the refusal itself, which is the guard that makes the rest of
+# this safe.
+@contextlib.contextmanager
+def stub_layer():
+    from core import core_stack
+
+    original = core_stack.LAYER_SRC
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "python").mkdir()
+        core_stack.LAYER_SRC = Path(tmp)
+        try:
+            yield
+        finally:
+            core_stack.LAYER_SRC = original
+
+
 
 @pytest.fixture(scope="module")
 def template():
@@ -30,8 +51,9 @@ def template():
     from core.core_stack import RegDeltaCoreStack
 
     app = cdk.App(outdir=tempfile.mkdtemp())
-    RegDeltaCoreStack(app, "regdelta-core", env=cdk.Environment(
-        account="111122223333", region="us-west-2"))
+    with stub_layer():
+        RegDeltaCoreStack(app, "regdelta-core", env=cdk.Environment(
+            account="111122223333", region="us-west-2"))
     return app.synth().get_stack_by_name("regdelta-core").template
 
 
@@ -55,8 +77,9 @@ def test_only_the_three_routes_spec_04_defines_are_reachable():
     from core.core_stack import RegDeltaCoreStack
 
     app = cdk.App(outdir=tempfile.mkdtemp())
-    RegDeltaCoreStack(app, "regdelta-core", env=cdk.Environment(
-        account="111122223333", region="us-west-2"))
+    with stub_layer():
+        RegDeltaCoreStack(app, "regdelta-core", env=cdk.Environment(
+            account="111122223333", region="us-west-2"))
     t = app.synth().get_stack_by_name("regdelta-core").template
     routes = sorted(r["RouteKey"] for r in resources(t, "AWS::ApiGatewayV2::Route"))
     assert routes == ["GET /health", "POST /query", "POST /resume/{thread_id}"]

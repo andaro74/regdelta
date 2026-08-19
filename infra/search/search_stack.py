@@ -13,7 +13,6 @@ ENABLED + VPC network policy + never destroyed.
 import json
 import os
 import re
-from pathlib import Path
 
 import asset_policy
 import aws_cdk as cdk
@@ -78,13 +77,6 @@ SSM_ENDPOINT_PARAM = "/regdelta/search/endpoint"
 # reads like policy propagation.
 _DEV_PRINCIPAL_RE = re.compile(
     r"arn:aws[a-z-]*:iam::(?P<account>\d{12}):(?:user|role)/[\w+=,.@/-]+")
-
-# Resolved from this file, not from the process CWD. `Code.from_asset("../src")`
-# only works when cdk is invoked from infra/, which is what the Makefile does
-# and what nothing else does — `cdk synth` from the repo root, and any test
-# that synthesises this stack, both look for ../src one level too high. jsii
-# runs Node in its own process, so a chdir on the Python side does not move it.
-SRC = str(Path(__file__).resolve().parents[2] / "src")
 
 
 class RegDeltaSearchStack(cdk.Stack):
@@ -189,8 +181,9 @@ class RegDeltaSearchStack(cdk.Stack):
             # can assert the POLICY rather than a copy of it. A test carrying
             # its own copy of these patterns passes while the stack ships
             # something else.
-            code=_lambda.Code.from_asset(SRC, exclude=ASSET_EXCLUDE,
-                                         ignore_mode=ASSET_IGNORE_MODE),
+            # Through the helper, not by hand: `ASSET_EXCLUDE` without
+            # `ASSET_IGNORE_MODE` reads as correct and stages two files.
+            code=asset_policy.python_source(),
             timeout=Duration.minutes(15), memory_size=1024,
             environment=reindex_env)
         corpus_bucket.grant_read(reindex)
