@@ -3,10 +3,17 @@
 Everything bills per-request: S3 (+S3 Vectors), DynamoDB on-demand, Lambda.
 Nothing here may reference regdelta-search.
 """
+import sys
 from pathlib import Path
 
 import asset_policy
 import aws_cdk as cdk
+
+# The model ids the IAM policy grants come from the SAME place the code reads
+# them. A model id copied into this file drifts from the one the Lambda calls,
+# and the drift surfaces as an AccessDenied in the region rather than a failed
+# build — the worst place to learn about it.
+sys.path.insert(0, asset_policy.SRC)
 from aws_cdk import (
     CfnResource,
     Duration,
@@ -26,6 +33,8 @@ from aws_cdk import (
 )
 from constructs import Construct
 
+from shared import config
+
 # Resolved from this file, not the process CWD — same reason as
 # asset_policy.SRC, and the reason `../src` was wrong here.
 JANITOR_SRC = str(Path(__file__).resolve().parent.parent / "lambdas" / "janitor")
@@ -42,6 +51,23 @@ SSM_ENDPOINT_PARAM = "/regdelta/search/endpoint"
 API_STAGE_NAME = "api"
 VECTOR_INDEX_NAME = "chunks"
 EMBED_DIM = 1024
+
+# Regions a `us.` cross-region inference profile routes to, read off the live
+# profile rather than assumed:
+#     aws bedrock get-inference-profile \
+#       --inference-profile-identifier us.anthropic.claude-sonnet-4-6
+#     -> foundation-model ARNs in us-east-1, us-east-2, us-west-2
+#
+# This matters because an inference profile is NOT itself the thing Bedrock
+# authorises. It evaluates InvokeModel against the FOUNDATION MODEL in whichever
+# region it routes the call to, so a policy naming only the profile fails
+# intermittently — in exactly the regions it happens to pick, and not in the
+# ones a smoke test hits.
+INFERENCE_PROFILE_REGIONS = ("us-east-1", "us-east-2", "us-west-2")
+
+# Prefixes AWS uses for cross-region inference profiles. `us.anthropic.foo` is a
+# profile whose underlying foundation model is `anthropic.foo`.
+_PROFILE_PREFIXES = ("us.", "eu.", "apac.", "global.")
 
 
 class RegDeltaCoreStack(cdk.Stack):
@@ -251,17 +277,46 @@ class RegDeltaCoreStack(cdk.Stack):
         self.corpus_bucket.grant_read(query_fn)
         self.registry_table.grant_read_data(query_fn)
         self.state_table.grant_read_write_data(query_fn)
+        # ------------------------------------------------------------------
+        # QUERY ROLE PERMISSIONS. This is the only role in the account driven by
+        # ANONYMOUS requests — SPEC/04 declares /query unauthenticated and
+        # CloudFront serves it to whoever asks — so its blast radius is the
+        # blast radius of any bug in the query path.
+        #
+        # All three of these carried `Resource: "*"` and a `# TODO: scope` until
+        # M04, deferred to SPEC/05. Security review pulled them forward on the
+        # grounds that the risk changed character the day the role stopped being
+        # reachable only by credential-holders.
+        # ------------------------------------------------------------------
         query_fn.add_to_role_policy(iam.PolicyStatement(
-            actions=["bedrock:InvokeModel"], resources=["*"]))  # TODO: scope
+            actions=["bedrock:InvokeModel"],
+            resources=self._bedrock_model_arns()))
         query_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["s3vectors:QueryVectors", "s3vectors:GetVectors"],
-            resources=["*"]))  # TODO: scope
+            # The bucket AND the index: QueryVectors names the index, and the
+            # bucket ARN alone does not imply its children.
+            resources=[
+                self._vector_bucket_arn(),
+                f"{self._vector_bucket_arn()}/index/{VECTOR_INDEX_NAME}",
+            ]))
         query_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["ssm:GetParameter"],
             resources=[self.format_arn(service="ssm", resource="parameter",
                                        resource_name="regdelta/search/*")]))
         query_fn.add_to_role_policy(iam.PolicyStatement(
-            actions=["aoss:APIAccessAll"], resources=["*"]))  # TODO: scope to collection
+            actions=["aoss:APIAccessAll"],
+            # NOT pinned to a collection id, and that is a constraint rather
+            # than an oversight: the collection is created by the EPHEMERAL
+            # search stack, takes a fresh id on every `make up`, and this
+            # persistent stack is deployed before it exists. Account-and-region
+            # is the honest floor; `*` additionally reached every collection in
+            # the account, and this account has others.
+            #
+            # The control that actually admits the request is AOSS's own data
+            # access policy, which names this role explicitly — IAM here is
+            # necessary and not sufficient, which is how AOSS is designed.
+            resources=[self.format_arn(service="aoss", resource="collection",
+                                       resource_name="*")]))
         self.query_lambda_role_arn = query_fn.role.role_arn
 
         # ------------------------------------------------------------------
@@ -400,3 +455,48 @@ class RegDeltaCoreStack(cdk.Stack):
         cdk.CfnOutput(self, "PollerFnName", value=poller.function_name)
         cdk.CfnOutput(self, "VectorBucketName",
                       value=f"regdelta-vectors-{self.account}")
+
+    # ---------------------------------------------------------------- ARNs
+    def _vector_bucket_arn(self) -> str:
+        """The S3 Vectors bucket, in the shape the service actually reports.
+
+        Verified against the live bucket rather than inferred from the S3
+        convention it does not follow:
+
+            aws s3vectors get-vector-bucket --vector-bucket-name regdelta-...
+            -> arn:aws:s3vectors:us-west-2:<acct>:bucket/regdelta-vectors-<acct>
+
+        Note `bucket/NAME` — s3vectors ARNs carry region and account, unlike
+        plain S3, so an ARN built by analogy with `arn:aws:s3:::name` would be
+        wrong in a way that denies every request.
+        """
+        return self.format_arn(service="s3vectors", resource="bucket",
+                               resource_name=f"regdelta-vectors-{self.account}")
+
+    def _bedrock_model_arns(self) -> list[str]:
+        """Exactly the models this system invokes — profiles AND their models.
+
+        `config.MODEL_FAST` and `MODEL_VERDICT` are cross-region inference
+        profiles (`us.anthropic...`). Two ARNs are needed per profile and the
+        second is the one that is easy to miss: Bedrock authorises the call
+        against the FOUNDATION MODEL in whichever region the profile routes to,
+        so granting only the profile denies intermittently and by region.
+
+        The embedding model is a plain foundation model — the query path embeds
+        the question before it can search — and is regional to this stack.
+        """
+        arns: list[str] = []
+        for model in (config.MODEL_FAST, config.MODEL_VERDICT):
+            arns.append(self.format_arn(service="bedrock",
+                                        resource="inference-profile",
+                                        resource_name=model))
+            base = model
+            for prefix in _PROFILE_PREFIXES:
+                if model.startswith(prefix):
+                    base = model[len(prefix):]
+                    break
+            arns += [f"arn:aws:bedrock:{region}::foundation-model/{base}"
+                     for region in INFERENCE_PROFILE_REGIONS]
+        arns.append(
+            f"arn:aws:bedrock:{self.region}::foundation-model/{config.EMBED_MODEL}")
+        return arns
