@@ -320,7 +320,26 @@ def _load_token(thread_id: str) -> str | None:
 
 
 def handler(event, context):
-    """Lambda entry point. Mangum wraps the app above."""
+    """Lambda entry point. Mangum wraps the app above.
+
+    THE BASE PATH IS NOT DECORATION. An HTTP API with a NAMED stage puts the
+    stage segment into the event's `rawPath`, so a request to /api/health
+    arrives here as `/api/health` — and the app has `/health`. Without
+    stripping it, every route 404s with FastAPI's own body, which looks like a
+    routing mistake in the app rather than a packaging one. Measured against
+    the deployed API, then reproduced offline by handing this function a v2
+    event with `rawPath: "/api/health"`.
+
+    Read from the environment rather than hardcoded, because the stage name is
+    the stack's to choose: infra/core/core_stack.py sets API_BASE_PATH from the
+    same constant it names the stage with, so the two cannot drift. Defaults to
+    "/" — a `$default` stage prefixes nothing, and the local test client never
+    goes through Mangum at all.
+    """
+    import os
+
     from mangum import Mangum
 
-    return Mangum(app, lifespan="off")(event, context)
+    return Mangum(app, lifespan="off",
+                  api_gateway_base_path=os.environ.get("API_BASE_PATH", "/"),
+                  )(event, context)

@@ -35,6 +35,11 @@ UI_SRC = str(Path(__file__).resolve().parents[2] / "ui")
 LAYER_SRC = Path(__file__).resolve().parents[2] / "build" / "lambda-layer"
 
 SSM_ENDPOINT_PARAM = "/regdelta/search/endpoint"
+# The HTTP API stage name, which is also the first path segment the API answers
+# on (/api/query) and the prefix CloudFront forwards. Named once: the Lambda has
+# to strip it from rawPath before FastAPI routes, and it receives it as
+# API_BASE_PATH below rather than hardcoding a second copy.
+API_STAGE_NAME = "api"
 VECTOR_INDEX_NAME = "chunks"
 EMBED_DIM = 1024
 
@@ -239,6 +244,8 @@ class RegDeltaCoreStack(cdk.Stack):
                 **common_env,
                 "STATE_TABLE": self.state_table.table_name,
                 "SEARCH_ENDPOINT_PARAM": SSM_ENDPOINT_PARAM,
+                # What Mangum strips from rawPath. Same constant as the stage.
+                "API_BASE_PATH": f"/{API_STAGE_NAME}",
             },
         )
         self.corpus_bucket.grant_read(query_fn)
@@ -294,7 +301,7 @@ class RegDeltaCoreStack(cdk.Stack):
         # refuse them; three routes mean API Gateway refuses everything else
         # before a request reaches code that costs money.
         api_stage = apigw.HttpStage(
-            self, "ApiStage", http_api=api, stage_name="api", auto_deploy=True,
+            self, "ApiStage", http_api=api, stage_name=API_STAGE_NAME, auto_deploy=True,
             # A BOUND ON AN UNAUTHENTICATED ENDPOINT THAT SPENDS MONEY. Each
             # /query is a Bedrock call; without a ceiling the only limit on a
             # stranger's bill is Lambda's account concurrency. These numbers are

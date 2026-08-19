@@ -370,3 +370,53 @@ def test_a_paused_response_is_never_written_to_the_cache(client, monkeypatch):
     body = c.post("/query", json={"question": "are we affected?"}).json()
     assert body["status"] == "needs_input" and body["resume_token"]
     assert writes == [], "a paused response reached the cache"
+
+
+# ------------------------------------------------- the Lambda transport itself
+# Everything above drives the app through TestClient, which never goes through
+# Mangum. That gap shipped a deploy where every route returned FastAPI's own
+# 404: an HTTP API with a NAMED stage puts the stage segment into the event's
+# `rawPath`, so /api/health arrived as `/api/health` and the app has `/health`.
+#
+# The infra tests asserted the stage NAME and the CloudFront path pattern — the
+# shape — and nothing exercised a request, so nothing could see it. These hand
+# the handler a real API Gateway v2 event.
+def _v2_event(raw_path: str, method: str = "GET", body: str | None = None) -> dict:
+    return {
+        "version": "2.0", "rawPath": raw_path, "rawQueryString": "",
+        "headers": {"host": "x.execute-api.us-west-2.amazonaws.com",
+                    "content-type": "application/json"},
+        "requestContext": {
+            "http": {"method": method, "path": raw_path, "sourceIp": "1.2.3.4",
+                     "protocol": "HTTP/1.1"},
+            "stage": "api", "apiId": "x", "requestId": "r",
+            "domainName": "x.execute-api.us-west-2.amazonaws.com",
+            "timeEpoch": 0, "accountId": "1"},
+        "body": body, "isBase64Encoded": False,
+    }
+
+
+def test_the_stage_prefix_is_stripped_before_routing(monkeypatch):
+    """The deployed failure, reproduced. API_BASE_PATH is what the stack passes
+    the function, taken from the same constant it names the stage with."""
+    monkeypatch.setenv("API_BASE_PATH", "/api")
+    resp = m.handler(_v2_event("/api/health"), None)
+    assert resp["statusCode"] == 200, resp["body"]
+    assert json.loads(resp["body"])["status"] == "ok"
+
+
+def test_without_the_prefix_a_default_stage_still_routes(monkeypatch):
+    """A `$default` stage prefixes nothing, so the handler must work with
+    API_BASE_PATH unset — which is also how it behaves before the stack sets
+    it."""
+    monkeypatch.delenv("API_BASE_PATH", raising=False)
+    resp = m.handler(_v2_event("/health"), None)
+    assert resp["statusCode"] == 200, resp["body"]
+
+
+def test_a_mismatched_prefix_is_a_404_and_not_a_500(monkeypatch):
+    """If the two ever drift, the symptom should stay a clean 404 rather than an
+    exception — the failure has to be diagnosable from the response."""
+    monkeypatch.setenv("API_BASE_PATH", "/wrong")
+    resp = m.handler(_v2_event("/api/health"), None)
+    assert resp["statusCode"] == 404

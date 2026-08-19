@@ -189,3 +189,16 @@ def test_the_api_behaviour_points_at_the_api_not_the_bucket(template):
 def test_the_distribution_serves_index_html_at_the_root(template):
     dist = one(template, "AWS::CloudFront::Distribution")["DistributionConfig"]
     assert dist["DefaultRootObject"] == "index.html"
+
+
+def test_the_stage_name_and_the_lambda_base_path_cannot_drift(template):
+    """A contract across two files: the stage name is the path prefix API
+    Gateway adds, and API_BASE_PATH is what Mangum strips before FastAPI
+    routes. If they disagree, every route 404s with FastAPI's own body — which
+    reads like an application bug and is a packaging one. It shipped that way.
+    """
+    stage = one(template, "AWS::ApiGatewayV2::Stage")["StageName"]
+    query_fn = next(r["Properties"] for r in template["Resources"].values()
+                    if r["Type"] == "AWS::Lambda::Function"
+                    and r["Properties"].get("Handler") == "api.api.handler")
+    assert query_fn["Environment"]["Variables"]["API_BASE_PATH"] == f"/{stage}"
