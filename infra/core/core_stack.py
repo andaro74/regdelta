@@ -371,7 +371,52 @@ class RegDeltaCoreStack(cdk.Stack):
         )
         self.corpus_bucket.grant_read(query_fn)
         self.registry_table.grant_read_data(query_fn)
-        self.state_table.grant_read_write_data(query_fn)
+        # THE REVIEW QUEUE IS NOT THIS ROLE'S TO READ. SPEC/05, deferred there
+        # from SPEC/04 which had no endpoint touching it.
+        #
+        # `write_review_item` (src/graph/checkpoint.py) writes the asker's
+        # QUESTION TEXT, verbatim and truncated to 2000 chars, under
+        # `pk=REVIEW#<thread_id>`. That queue belongs to the SME seat
+        # (docs/governance/ROLES.md). The query role is the one role in this
+        # account driven by anonymous HTTP, so "it can read anything in the
+        # table" means a bug in the query path can enumerate every question
+        # anyone has ever escalated for human review.
+        #
+        # ONE READ STATEMENT AND ONE WRITE STATEMENT, not one pair per prefix,
+        # and the shape is forced rather than chosen. `dynamodb:LeadingKeys`
+        # under `ForAllValues:StringLike` requires EVERY key in the request to
+        # match the statement's patterns, so a single `BatchWriteItem` carrying
+        # both a `THREAD#` and a `REVIEW#` key satisfies neither of two
+        # per-prefix statements and is denied. `delete_thread` issues exactly
+        # that batch. Splitting by ACTION instead of by prefix is both the
+        # literal spec sentence — "may read and write THREAD#*, and write
+        # REVIEW#*, and may not read REVIEW#*" — and the only form that survives
+        # a mixed batch.
+        #
+        # `Scan` is absent deliberately and is not an oversight: LeadingKeys
+        # cannot constrain a Scan, so granting it would hand back everything
+        # these two statements just took away. Nothing in `src/` scans.
+        state_table_arn = self.state_table.table_arn
+        query_fn.add_to_role_policy(iam.PolicyStatement(
+            actions=["dynamodb:GetItem", "dynamodb:BatchGetItem",
+                     "dynamodb:Query", "dynamodb:ConditionCheckItem"],
+            resources=[state_table_arn],
+            conditions={"ForAllValues:StringLike": {
+                "dynamodb:LeadingKeys": ["THREAD#*"]}}))
+        query_fn.add_to_role_policy(iam.PolicyStatement(
+            actions=["dynamodb:PutItem", "dynamodb:UpdateItem",
+                     "dynamodb:DeleteItem", "dynamodb:BatchWriteItem"],
+            resources=[state_table_arn],
+            conditions={"ForAllValues:StringLike": {
+                "dynamodb:LeadingKeys": ["THREAD#*", "REVIEW#*"]}}))
+        # Metadata, not data. `DescribeTable` does not accept a LeadingKeys
+        # condition — it has no keys — and it returns the schema and item COUNT,
+        # never an item. Granted separately and named here so that its absence
+        # from the two statements above reads as deliberate: `grant_read_write_data`
+        # included it, and dropping it silently would be a latent boto3 failure
+        # rather than a decision.
+        query_fn.add_to_role_policy(iam.PolicyStatement(
+            actions=["dynamodb:DescribeTable"], resources=[state_table_arn]))
         # ------------------------------------------------------------------
         # QUERY ROLE PERMISSIONS. This is the only role in the account driven by
         # ANONYMOUS requests — SPEC/04 declares /query unauthenticated and
