@@ -3,10 +3,17 @@
 Branch `m05-deploy-lifecycle`, cut from `m04-api-demo` at `8ac6c37`, rebased
 onto `main` after PR #11 merged. Live window run 2026-08-20.
 
-**Status: NOT closed.** Four of SPEC/05's four items are built and measured
-live. The Done-when's `make evals` green criterion is **pending an SME ruling
-on q03** (below), and I am not recording the milestone as done on a
-"green-modulo-a-known-false-fail" argument.
+**Status: NOT closed.** All four SPEC/05 items are built, deployed and measured
+live, and the lifecycle half of the Done-when passed end to end. The `make
+evals` green criterion is **still open**: q03 fails intermittently on a proven
+false fail, the SME seat ruled the fix belongs in the scorer, and the
+implementation of that ruling was reverted after review found it created four
+false passes (see below). CI is red on the q03 FRAGILE gate — one visible,
+gated false fail rather than four invisible false passes.
+
+I am not recording the milestone as done on a "green-modulo-a-known-false-fail"
+argument. What remains is a decision for the seat, set out in `q03-ruling.md`
+§10.
 
 ---
 
@@ -271,7 +278,7 @@ to does not exist until `make up` creates it.
 
 ---
 
-## q03 — an SME ruling is owed, and CI is red until it lands
+## q03 — ruled on, implemented, reverted; CI is red and honestly so
 
 The AOSS run 1 card recorded q03 failing on `forbidden text present: 'TTB
 requires'`. `sme-eval-triage` classified it **(c) BAD QUESTION — defective
@@ -307,15 +314,48 @@ and there is deliberately no admit path for it. So
 
 I have not touched `evals/golden_questions.json` and will not.
 
-**The recommendation is explicitly not a token edit.** Narrowing `"TTB
-requires"` reopens the false pass the 2026-08-12 ruling closed, and the q03
-note already predicted this exact failure in the mirror direction ("a ban
-cannot help, because 'you must file a new formula' is reproduced by the correct
-hedge"). The proposed lever is **negation-scope awareness in the scorer** —
-`run_evals.py`, not the golden set, so no CODEOWNERS gate — but it changes
-scoring semantics for every banned token and needs an SME ruling plus
-engineering review, with `make discrimination` replaying both a hedge specimen
-and a bare-assertion specimen before adoption.
+**The remedy was explicitly not a token edit.** Narrowing `"TTB requires"`
+reopens the false pass the 2026-08-12 ruling closed, and that note already
+predicted this failure in the mirror direction ("a ban cannot help, because
+'you must file a new formula' is reproduced by the correct hedge"). The lever
+was **negation-scope awareness in the scorer** — `run_evals.py`, not the golden
+set, so no CODEOWNERS gate.
+
+### What happened next — the full arc is in `q03-ruling.md`
+
+The seat **adopted with amendments** (two tightenings: an explicit-disclaimer
+cue list, and `whether` alone as the gate). A third tightening was found during
+implementation, flagged as unauthorised, and shipped because omitting it left a
+known false pass.
+
+**Then `eng-code-reviewer` reproduced four FALSE PASSES through the live
+scorer, and the rule was reverted the same day.** The decisive one:
+
+> "…I cannot confirm the filing deadline, but whether exempt or not, **TTB
+> requires** a revised formula." → **PASS**
+
+A fabricated TTB obligation, asserted as fact — the exact defect the 2026-08-12
+ruling closed, reopened by the fix for that same question. Three more: a
+repeated token self-satisfying its own window; the q18 collision reached by a
+different cue; and `flatten_answer` handing the scorer a JSON blob whose
+separators contain no `[.!?]`, so the whole `answer_rows` array is one
+"sentence".
+
+**The claim that failed was mine**, in code and to the seat: *"a tightening can
+only make a ban fire MORE often, so it cannot create a false pass."* True of the
+increment, false of the rule, which is a **loosening**. And the five specimens
+missed all four shapes because they were written after the rule but by its
+author — the 2026-08-15 failure one level up.
+
+`milestones/M05/negation_scope_false_passes.py` keeps the four reproductions as
+the **acceptance bar** for any future attempt: 0 false passes against today's
+scorer, and a rule that lets any through reopens the defect. The q18 collision
+specimen is a standing guard that must keep FAILING; q03's hedged answer is a
+declared `LIMIT_FALSE_FAIL`.
+
+**The seat's ruling on the substance stands** — q03's failure is a false fail,
+the ban is right, the question is right, and the fix belongs in the scorer.
+`evals/golden_questions.json` was never edited at any point.
 
 **A second finding, present in the *passing* 08-19 answer too:** both runs open
 with *"you mention this likely refers to the Alcohol and Tobacco Tax and Trade
@@ -434,6 +474,8 @@ and `make smoke` now resolve the environment the way the other targets do.
 | `m04_thread_mutations.py` + `.json` | 7 mutations, no survivors |
 | `deletion_role_mutations.py` + `.json` | 2 mutations, no survivors |
 | `review_fix_mutations.py` + `.json` | 8 mutations on the post-review fixes, no survivors |
+| `q03-ruling.md` | the SME ruling, its amendments, and why the implementation was reverted |
+| `negation_scope_false_passes.py` | the four false passes; the acceptance bar for any future negation-scope rule |
 | `evals/history/1f46b92-aoss-full.json` | AOSS run 2, 18/20, with `supersedes` trail |
 | `evals/history/superseded/1f46b92-aoss-full.run1.json` | AOSS run 1, 16/20, kept |
 | `evals/history/1f46b92-s3vectors-full.json` | S3 Vectors, 17/20 |
