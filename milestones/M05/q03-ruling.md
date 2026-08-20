@@ -384,3 +384,48 @@ I recommend **(1) or (2), not a fifth patch from me.** I have now been wrong
 about this rule's safety twice — first that the §3 collision did not occur, then
 that a tightening could not create a false pass — and both times the error ran
 in the direction of believing my own instrument.
+
+---
+
+## 11. Decision, 2026-08-20: option 3, leave it
+
+The seat asked for **(1) defer q03** if it was the recommended approach. On
+investigation it is not, and the reason is dispositive rather than a matter of
+taste:
+
+- **There is no deferral mechanism to follow.** q12 and q15 carry no marker of
+  any kind — not in `golden_questions.json`, not in `run_evals.py`, not in
+  `replay_history.py`. They are "deferred" purely as a standing seat decision
+  that 18/20 is the bar.
+- **That kind of deferral cannot clear this gate.** q12 and q15 never trip
+  FRAGILE because they fail *consistently*. q03 trips it because it is
+  *inconsistent*. FRAGILE detects non-determinism, not failure. Deferring q03
+  the way they are deferred leaves CI red and changes nothing.
+- **Making it clear the gate means building an admit path into FRAGILE**, which
+  `replay_history` was deliberately built without: "FRAGILE and REGRESSED are
+  defects a change either introduces or does not, so they fail the run." That
+  mechanism would then be permanently available to silence real
+  non-determinism, and the first thing it would silence is the detector that
+  just caught a real defect.
+
+**So: option 3.** q03 keeps failing, visibly and intermittently, on a gate that
+stops milestone close. Nothing is silently wrong, and the cost is one honest
+red check rather than a weakened instrument. `evals/golden_questions.json`
+remains unedited.
+
+### Where the real fix goes
+
+Not into this milestone, and not into a SPEC without the PM seat. Recorded as
+an M05 open thread, with the shape it should take:
+
+**Score the structure, not the characters.** The 2026-08-12 ruling already
+states the true invariant — the defect is *a TTB proposition carrying a Red
+No. 3 citation*, not the appearance of a phrase. The failing answer had
+`answer_rows[1].citations: []`, so the invariant is checkable structurally, and
+no paraphrase can bypass a check that never looks at wording. That needs a new
+check kind in `run_evals.check()`, an SME ruling on the semantics, a PM ruling
+to home it in a SPEC, and — per the review that killed the last attempt —
+specimens written by someone other than whoever writes the rule.
+
+Any attempt must clear `milestones/M05/negation_scope_false_passes.py`, which
+reports 0 false passes against today's scorer.

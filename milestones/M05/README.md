@@ -12,8 +12,18 @@ false passes (see below). CI is red on the q03 FRAGILE gate — one visible,
 gated false fail rather than four invisible false passes.
 
 I am not recording the milestone as done on a "green-modulo-a-known-false-fail"
-argument. What remains is a decision for the seat, set out in `q03-ruling.md`
-§10.
+argument.
+
+**The seat decided on 2026-08-20: leave it** (`q03-ruling.md` §11). Deferring
+q03 the way q12 and q15 are deferred was investigated and rejected — those two
+carry no marker anywhere, and they never trip FRAGILE because they fail
+*consistently*, whereas q03 trips it because it is *inconsistent*. Clearing the
+gate would have meant building an admit path into the one detector that caught
+real non-determinism. One honest red check is the cheaper price.
+
+So M05 ships with its lifecycle criteria met and its evals criterion openly
+unmet, and the real fix — scoring structure rather than characters — is open
+thread 7 below.
 
 ---
 
@@ -415,6 +425,23 @@ API) and passed run 2. Transport, not scoring.
    condition.
 6. **M04 threads 1 and 2 remain parked** behind the PM ruling on whether a
    `fail-declined` should block a milestone.
+7. **q03's real fix: score the structure, not the characters.** The 2026-08-12
+   ruling already names the true invariant — the defect is *a TTB proposition
+   carrying a Red No. 3 citation*, not the appearance of a phrase — and the
+   failing answer's `answer_rows[1].citations` was `[]`, so it is checkable
+   structurally. A check that never looks at wording cannot be bypassed by
+   paraphrase, which is what killed the substring attempt. Needs: a new check
+   kind in `run_evals.check()`, an SME ruling on the semantics, a PM ruling to
+   home it in a SPEC, and specimens written by someone other than the rule's
+   author. Must clear `negation_scope_false_passes.py`.
+8. **The TTB attribution finding** still owes its own SME ruling: both the
+   passing and failing answers open with *"you mention this likely refers to
+   … TTB"* when the 2026-08-12 ruling deliberately removed TTB from the stem.
+   The system attributes to the asker something they did not say. Present in
+   the **passing** 08-19 answer, so it is not part of this regression.
+9. **No recorded run yet shows a non-null `stop_reason`.** The `_shape` fix
+   landed after the last card. One `make smoke` closes it; not spent, because
+   it is Bedrock cost outside the approved window.
 
 ---
 
