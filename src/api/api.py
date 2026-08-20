@@ -290,6 +290,8 @@ def _shape(state: dict, thread_id: str) -> dict:
         # needs_input): a tier on a response no tier produced is the same
         # substitution one step further out. SPEC/04's UI tier indicator reads
         # this field, and it must be able to show "no retrieval" as itself.
+        "tier": state.get("retrieval_tier"),
+        "fallback_reason": state.get("retrieval_fallback"),
         # WHY THE MODEL STOPPED, carried to the scorecard rather than left in
         # the graph. `nodes.verdict` records `stop_reason`/`truncated` (M05,
         # the M04 thread), and the first live golden run after that change came
@@ -307,8 +309,6 @@ def _shape(state: dict, thread_id: str) -> dict:
         # was fine".
         "stop_reason": state.get("stop_reason"),
         "truncated": state.get("truncated"),
-        "tier": state.get("retrieval_tier"),
-        "fallback_reason": state.get("retrieval_fallback"),
         # RETRIEVAL latency, measured by the router inside this request — the
         # number SPEC/04's UI readout displays. The browser already knows the
         # round trip; what it cannot see is how much of it was retrieval, and

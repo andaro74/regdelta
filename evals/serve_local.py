@@ -153,6 +153,8 @@ def _shape(state: dict, thread_id: str) -> dict:
         # scorecard, and a field that exists on one side only is how
         # `dropped_citations` came to read as "nothing was dropped" on every
         # demo-parity response when nothing had been asked.
+        "tier": state.get("retrieval_tier"),
+        "fallback_reason": state.get("retrieval_fallback"),
         # WHY THE MODEL STOPPED, carried to the scorecard rather than left in
         # the graph. `nodes.verdict` records `stop_reason`/`truncated` (M05,
         # the M04 thread), and the first live golden run after that change came
@@ -170,8 +172,6 @@ def _shape(state: dict, thread_id: str) -> dict:
         # was fine".
         "stop_reason": state.get("stop_reason"),
         "truncated": state.get("truncated"),
-        "tier": state.get("retrieval_tier"),
-        "fallback_reason": state.get("retrieval_fallback"),
         # Same field, same name, same reason as the two above: SPEC/04's UI
         # readout reads `retrieval_ms` off the deployed API, and a field that
         # exists on one _shape only is how `dropped_citations` came to read as

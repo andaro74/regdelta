@@ -141,8 +141,12 @@ def test_the_shim_and_the_api_agree_on_the_tier_fields():
     # differently, so they are named exclusions rather than an untested gap.
     # A NAMED LIST, so adding a field to one side is a deliberate act. The
     # shim carries local-dev extras the deployed API has no business
-    # asserting — `provenance` (SPEC/00b: what produced a baseline card),
-    # the pause plumbing, and its own `cache` sentinel.
+    # asserting: `provenance` (SPEC/00b: what produced a baseline card) and the
+    # pause plumbing. `cache` is reported by BOTH ends but the deployed API
+    # sets it outside `_shape`, so it is shim-only at this seam.
+    #
+    # This compares `_shape` outputs, not response bodies — `api.py` adds
+    # trace_id/cache/resume_token/resumable afterwards.
     shim_only = {"provenance", "paused", "mode", "cache", "resume_with", "needs"}
     assert set(api_body) - set(shim_body) == set(), (
         "the deployed API returns fields the shim does not, so `make evals` "

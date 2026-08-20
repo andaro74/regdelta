@@ -260,12 +260,33 @@ def _caller_arn() -> str:
 # THAT IS A CLAIM ABOUT THE PARAMETER, NOT ABOUT ITS READERS, and the
 # difference is a real residual rather than a quibble. `router.py` memoises
 # the endpoint for `_TTL = 60` seconds per container, so for up to a minute
-# after the retire a WARM query container still routes to AOSS. The first
-# seconds of that are safe — `_create_index` has deleted the index, so the
-# tier raises and the router falls back with a `fallback_reason` — but once
-# `_bulk` starts landing batches those same containers see a PARTIAL index,
-# which answers with citations. That is the dangerous half, bounded at ~60s
-# per hydration.
+# after the retire a WARM query container still routes to AOSS. TWO failure
+# modes live in that window, and NEITHER of them raises:
+#
+#   EMPTY INDEX. `_create_index` DELETEs and immediately PUTs, so the index is
+#   missing for one round trip and then exists and is empty. A search against
+#   an existing empty index returns HTTP 200 with `hits: []` —
+#   `aoss_tier._hits` raises only on an `error` key, and `router._resolve`
+#   falls back only on `AossError`. So there is no raise and no fallback: the
+#   request returns zero chunks as `tier="aoss"` with `fallback_reason=None`,
+#   and the verdict node runs with `passages = "(none)"`. In the response and
+#   on the scorecard that is INDISTINGUISHABLE from a healthy AOSS query that
+#   legitimately found nothing.
+#
+#   PARTIAL INDEX. Once `_bulk` starts landing batches the same containers see
+#   some of the corpus and answer with citations, which is the M02 residue
+#   itself.
+#
+# The first is arguably worse for an operator: the second at least leaves
+# citations to check, while the first leaves no signal at all. Both are
+# bounded at ~60s per hydration.
+#
+# Two earlier drafts of this paragraph were wrong in the same direction — the
+# first claimed no exposure at all, the second claimed the early seconds were
+# safe because the tier would raise. It does not raise. Corrected by
+# security-reviewer twice; a comment about a deliberately-accepted risk has to
+# be exactly as true as it says it is, because the milestone's record depends
+# on it.
 #
 # NOT CLOSED HERE, deliberately. The fixes on the table — a hydration
 # sentinel the tier checks, or a document-count floor in `aoss_tier` — are

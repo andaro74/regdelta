@@ -158,6 +158,58 @@ because EventBridge discards return values.
 
 ---
 
+## The second review pass — one more false pass, caught before it shipped
+
+Both reviewers ran again on the post-window diff. `security-reviewer` confirmed
+the HIGH closed ("that is the test being right and me being wrong" about
+`PutRolePolicy`) and walked the whole search-stack resource set against the
+four deleter statements — every resource covered.
+
+`eng-code-reviewer` found a **blocker in my rewritten `make fault-drop`**. The
+rewrite dropped the endpoint guard and branched on a single grep for
+`count_parity`, so **every other refusal was read as proof the tier was out of
+service**. `check_hydration` can refuse on five checks, and only `endpoint`
+means the parameter is gone. A 403, a missing index, an unreadable mapping, or
+an unresolved `CORPUS_BUCKET` all leave the endpoint **live** while the index
+goes unverified — and the target would have printed *"✅ the gate REFUSED …
+Retrieval is on S3 Vectors"* and exited 0.
+
+That is the **third** wrong assertion this one target has carried, and the
+progression is the lesson: draft 1 claimed a refusal that was unreachable,
+draft 2 claimed one that rollback prevented, draft 3 conflated four refusals
+with one. Fixed by giving the gate a `--refusals` flag that prints the refusal
+**set**, and branching on the whole set with four named outcomes — the fourth
+being `INDETERMINATE`, which is the honest third state the greps had been
+reporting as success. All eleven refusal combinations were run through the
+classifier before committing.
+
+Also from this pass:
+
+- `RESOLVE_ENV_STRICT`. `eval "$(...)"` discards the exit code, so a throttled
+  `aws lambda list-functions` left `REGISTRY_TABLE` unset and
+  `corpus_drift()` silently switched off — the exact failure the new
+  `make evals` comment claimed to prevent. `evals`, `smoke` and `fault-drop`
+  now fail loudly instead.
+- `local_env.py`'s `_NOT_OURS` missed the **settable** redirect names
+  (`AWS_CONTAINER_CREDENTIALS_*`, `AWS_SHARED_CREDENTIALS_FILE`,
+  `NODE_OPTIONS`, `BASH_ENV` …); most of the original entries name variables
+  Lambda already refuses to set. This moved from noise to worth-fixing because
+  M05 put `RESOLVE_ENV` on the default path for `make evals`/`make smoke`.
+  Values were never injectable — `shlex.quote` — and the new test drives the
+  real emit path rather than asserting properties of `shlex` in the abstract.
+- The janitor's absence test now ANDs the structured `ValidationError` code
+  with the message, and `_IN_FLIGHT` gained the two update CLEANUP transients
+  (a healthy stack was landing in `unhandled-state` for a night).
+- `_foreign_role_imports` was widened to `ManagedPolicy` and the L1
+  `RolePolicy` — and **the test for the widening caught that I had half-done
+  it**: `AWS::IAM::RolePolicy` carries a scalar `RoleName:`, not a `Roles:`
+  list, so adding the type without reading its property changed nothing.
+
+8 mutations (`review_fix_mutations.py`), no survivors — after one honest
+survivor was made non-vacuous rather than argued away.
+
+---
+
 ## Teardown verified five ways
 
 | check | result |
@@ -282,12 +334,25 @@ API) and passed run 2. Transport, not scoring.
 1. **The router's 60s endpoint cache outlives the retire.** `reindex.py`
    claimed "every failure path leaves retrieval on the tier that still works".
    True of the parameter, not of its readers: a warm query container keeps the
-   memoised endpoint for up to `_TTL = 60`s, so once `_bulk` starts landing
-   batches it can see a **partial** index and answer with citations. Bounded at
-   ~60s per hydration. Fixes on the table — a hydration sentinel the tier
-   checks, or a doc-count floor in `aoss_tier` — are retrieval-path design, not
-   deploy lifecycle. Raised by `security-reviewer`; the comment now states the
-   residual instead of the stronger claim.
+   memoised endpoint for up to `_TTL = 60`s. **Two** failure modes live in that
+   window and neither raises:
+   - **Empty index.** `_create_index` DELETEs then immediately PUTs, so the
+     index is absent for one round trip and then exists and is empty. A search
+     against an empty index returns 200 with `hits: []`; `aoss_tier._hits`
+     raises only on an `error` key and `router._resolve` falls back only on
+     `AossError`. The request returns zero chunks as `tier: "aoss"` with
+     `fallback_reason: null` — indistinguishable on the scorecard from a
+     healthy query that legitimately found nothing.
+   - **Partial index.** Once `_bulk` lands batches, the same containers answer
+     with citations from an incomplete index — the M02 residue itself.
+
+   The first is arguably worse: the second at least leaves citations to check.
+   Both bounded at ~60s per hydration. Fixes on the table — a hydration
+   sentinel the tier checks, or a doc-count floor in `aoss_tier` (which covers
+   both modes) — are retrieval-path design, not deploy lifecycle. Raised by
+   `security-reviewer`, who had to correct the comment **twice**: the first
+   draft claimed no exposure, the second claimed the early seconds were safe
+   because the tier would raise. It does not raise.
 2. **`stop_reason` is recorded and nothing routes on it.** `_needs_review`
    never consults it; a truncated verdict reaches `pending_review` only
    incidentally via `_confidence({}) == 0.0`, and the reviewer is told
@@ -315,7 +380,7 @@ API) and passed run 2. Transport, not scoring.
 
 ## Instruments that lied, and were caught
 
-ADR-0013 says an instrument reads the field that describes its own claim. Six
+ADR-0013 says an instrument reads the field that describes its own claim. Eight
 instances this milestone, every one caught by running rather than reading:
 
 1. A template test filtered `AWS::IAM::Policy.Roles` on a full ARN; the field
@@ -341,6 +406,15 @@ instances this milestone, every one caught by running rather than reading:
    both shapes, and the shim/API parity test now compares **key sets** against a
    named exclusion list rather than two fields by name.
 
+7. `make fault-drop` read any refusal as "the tier is out of service" — four
+   of the five refusals leave the endpoint LIVE. It would have reported success
+   over an unverified index. The gate now exposes the refusal SET and the
+   target branches on all of it.
+8. The widening of `_foreign_role_imports` to `AWS::IAM::RolePolicy` was
+   half-done: that type carries a scalar `RoleName:`, not a `Roles:` list, so
+   the new type never had its role read. Caught by the test written for the
+   widening, in the same commit.
+
 And one in the evidence-gathering itself: the AOSS run-1 card was recorded
 without the environment resolved, so it carries `corpus: {"available": false}`.
 The corpus fingerprint exists precisely to answer "did the corpus move under
@@ -359,6 +433,7 @@ and `make smoke` now resolve the environment the way the other targets do.
 | `hydration_gate_mutations.py` + `.json` | 14 mutations, no survivors |
 | `m04_thread_mutations.py` + `.json` | 7 mutations, no survivors |
 | `deletion_role_mutations.py` + `.json` | 2 mutations, no survivors |
+| `review_fix_mutations.py` + `.json` | 8 mutations on the post-review fixes, no survivors |
 | `evals/history/1f46b92-aoss-full.json` | AOSS run 2, 18/20, with `supersedes` trail |
 | `evals/history/superseded/1f46b92-aoss-full.run1.json` | AOSS run 1, 16/20, kept |
 | `evals/history/1f46b92-s3vectors-full.json` | S3 Vectors, 17/20 |

@@ -141,6 +141,12 @@ _cache_state: dict = {"supported": True, "reason": None}
 # runs after it and resets immediately before its own call, so nothing that
 # site leaves behind can be read as the verdict's. An earlier version of this
 # comment said "each call site", which was not true of the code.
+# PRECONDITION, stated rather than assumed: one request at a time per
+# process. Lambda serves one request per execution environment and
+# evals/serve_local.py is a single-threaded HTTPServer, so nothing today can
+# mis-attribute one request's stop reason to another. Under any threaded
+# server this needs to become contextvars — `_cache_state` above has the same
+# property and the same precondition.
 _last_stop: dict = {"reason": None}
 
 

@@ -64,7 +64,8 @@ cfn = boto3.client("cloudformation")
 #: needs a retry into a silent no-action. Re-issuing DeleteStack on a
 #: DELETE_FAILED stack is the documented recovery, and with a role that can
 #: actually delete the resources it is now likely to succeed.
-#: THE *_FAILED STATES ARE HERE FOR THE SAME REASON DELETE_FAILED IS. All
+#:
+#: THE OTHER *_FAILED STATES ARE HERE FOR THE SAME REASON. All
 #: three are terminal, all three leave live resources behind, and DeleteStack
 #: is valid from all of them — so leaving them out sends a billing collection
 #: down the `unhandled-state` path forever, which is the DELETE_FAILED bug
@@ -81,11 +82,22 @@ _DELETABLE = (
     "CREATE_FAILED",
     "ROLLBACK_FAILED",
     "UPDATE_ROLLBACK_FAILED",
+    # Reachable with `--no-rollback`, and after a failed import. Same argument
+    # as the three above: terminal, live resources, DeleteStack is valid.
+    "UPDATE_FAILED",
+    "IMPORT_ROLLBACK_FAILED",
 )
 #: Already on its way down. Issuing a second delete would not be harmful, but
 #: reporting "requested" for a delete this run did not start would be.
+#:
+#: The two CLEANUP states are ordinary transients after ANY successful update.
+#: Leaving them out sent a perfectly healthy stack down the `unhandled-state`
+#: path for a night — a shrug rather than a false claim, but the same family as
+#: the DELETE_FAILED defect. security-reviewer, M05.
 _IN_FLIGHT = ("DELETE_IN_PROGRESS", "CREATE_IN_PROGRESS", "UPDATE_IN_PROGRESS",
-              "UPDATE_ROLLBACK_IN_PROGRESS", "ROLLBACK_IN_PROGRESS")
+              "UPDATE_ROLLBACK_IN_PROGRESS", "ROLLBACK_IN_PROGRESS",
+              "UPDATE_COMPLETE_CLEANUP_IN_PROGRESS",
+              "UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS")
 
 
 def handler(event, context):
@@ -103,7 +115,16 @@ def handler(event, context):
         #
         # Only "the stack is not there" is an observation of absence. Anything
         # else is a failure to look.
-        if "does not exist" not in str(e):
+        #
+        # MATCHED ON THE ERROR CODE AND THE MESSAGE, not the message alone.
+        # CloudFormation returns a generic 400 `ValidationError` for a missing
+        # stack — there is no modeled exception for it, so prose matching is
+        # the only complete discriminator available. AND-ing the structured
+        # code keeps the one branch that may claim `billing_stopped: True` from
+        # being reachable by some future non-ValidationError whose message
+        # happens to contain the phrase. SPEC/06's alarm will trust this line.
+        code = e.response.get("Error", {}).get("Code")
+        if code != "ValidationError" or "does not exist" not in str(e):
             return _log({"status": "unhandled-error", "billing_stopped": False,
                          "error": f"{type(e).__name__}: {e}"[:300],
                          "detail": "could not read the stack, so nothing is "

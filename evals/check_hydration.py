@@ -237,11 +237,26 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--json", action="store_true",
                     help="print the report as JSON and nothing else")
+    # WHICH refusals fired, as a set a shell can branch on.
+    #
+    # `make fault-drop` has to tell "the parameter is absent" (safe) from "the
+    # parameter is live and the index could not be verified" (not safe), and
+    # grepping the JSON for one check name got that wrong: it read any
+    # non-count_parity refusal as proof the tier was out of service, so a 403
+    # or a missing index printed "Retrieval is on S3 Vectors" while the
+    # endpoint was still live. Found by eng-code-reviewer. A caller that needs
+    # the refusal SET should be handed the set.
+    ap.add_argument("--refusals", action="store_true",
+                    help="print the names of the checks that refused, "
+                         "space-separated and sorted; empty if none. Same "
+                         "exit code as a normal run.")
     args = ap.parse_args()
 
     ok, report = run(config.CORPUS_BUCKET)
 
-    if args.json:
+    if args.refusals:
+        print(" ".join(sorted(r["check"] for r in report["refusals"])))
+    elif args.json:
         print(json.dumps(report, indent=2))
     elif ok:
         print(f"OK  hot tier hydrated: {report['indexed']} chunks indexed, "

@@ -31,6 +31,15 @@ CDK          := cd infra && npx cdk
 # stack does not export at all. Chasing outputs one at a time was the wrong fix.
 # See evals/local_env.py and evals/wait_ready.py.
 RESOLVE_ENV = eval "$$(python evals/local_env.py)";
+# The same thing, but FATAL when the resolve fails. `eval "$(...)"`
+# discards the exit code, so a throttled `aws lambda list-functions` leaves
+# REGISTRY_TABLE unset, `corpus_fingerprint()` records
+# `{"available": false}`, and `corpus_drift()` returns None with nothing
+# printed — the silent switch-off the targets below claim to prevent.
+# Used where a run PRODUCES EVIDENCE or gates on it; the deploy targets
+# keep the lenient form because the hydration gate already names an
+# unresolved bucket as a refusal in its own report.
+RESOLVE_ENV_STRICT = env=$$(python evals/local_env.py) || { echo "cannot resolve the deployed environment; refusing to record or gate on an unconfigured run" >&2; exit 1; }; eval "$$env";
 
 .PHONY: help bootstrap layer core up down status smoke evals agent-evals discrimination replay-history lint test demo ingest-backfill synth diff \
         retrieval-evals retrieval-parity preflight rebuild-vectors demo-parity fault-drop
@@ -174,12 +183,62 @@ up:
 # This target covers the case neither of those can: a real collection, a real
 # hydration, and a real CloudFormation failure.
 #
+# THREE OUTCOMES, NOT TWO, and conflating them is how draft 3 of this target
+# was wrong. `check_hydration` can refuse on five different checks, and only
+# `endpoint` means the tier is out of service. A 403, a missing index, an
+# unreadable mapping or an unresolved corpus bucket all leave the parameter
+# LIVE while the index goes unverified — reporting that as "retrieval is on S3
+# Vectors" is a false pass, and it is what grepping the report for one check
+# name produced. The case below branches on the whole refusal SET:
+#   ok, no refusals   -> rollback repaired it; the endpoint names a full index
+#   exactly {endpoint} -> the parameter is gone; retrieval fell back
+#   count_parity       -> FORBIDDEN; the endpoint names a mismatched index
+#   anything else      -> INDETERMINATE, and treated as a failure
+#
 # THE COLLECTION SURVIVES THIS and keeps billing at ~$0.24/hr, whichever way it
 # goes. `make down` or the janitor is what stops that.
 DROP ?= 3
 fault-drop:
-	@( $(CDK) deploy $(STACK_SEARCH) --require-approval never 	     -c faultDrop=$(DROP) 	     -c devPrincipalArn=$$(aws sts get-caller-identity --query Arn --output text) ); 	  deployed=$$?; 	  echo "--- cdk deploy exited $$deployed (a FAILING deploy is the point here)"; 	  if [ $$deployed -eq 0 ]; then 	    echo "❌ the deploy SUCCEEDED with $(DROP) records dropped."; 	    echo "   reindex.py's count assertion did not fire, which means the"; 	    echo "   fault hook or the assertion is broken — not the gate."; 	    exit 1; 	  fi; 	  $(RESOLVE_ENV) 	  report=$$(python evals/check_hydration.py --json); 	  gate=$$?; 	  echo "$$report"; 	  if [ $$gate -ne 0 ]; then 	    echo "✅ the gate REFUSED (exit $$gate): no usable endpoint after a"; 	    echo "   failed hydration. Retrieval is on S3 Vectors."; 	  else 	    echo "✅ rollback RE-HYDRATED and the gate verified count parity."; 	    echo "   CDK re-invoked the previous Lambda version, which has no"; 	    echo "   fault hook. The endpoint names a complete index."; 	  fi; 	  if echo "$$report" | grep -q '"count_parity"'; then 	    echo "❌ FORBIDDEN STATE: the endpoint names a SHORT index."; 	    echo "   This is the M02 residue — an index that answers with"; 	    echo "   citations while missing chunks. SPEC/05 item 4 has regressed."; 	    exit 1; 	  fi; 	  echo "   NEXT: 'make down'. The collection still exists and still bills;"; 	  echo "   and after a rollback the Trigger's HandlerArn is unchanged, so a"; 	  echo "   plain 'make up' will not re-fire hydration."
-
+	@( $(CDK) deploy $(STACK_SEARCH) --require-approval never \
+	     -c faultDrop=$(DROP) \
+	     -c devPrincipalArn=$$(aws sts get-caller-identity --query Arn --output text) ); \
+	  deployed=$$?; \
+	  echo "--- cdk deploy exited $$deployed (a FAILING deploy is the point here)"; \
+	  if [ $$deployed -eq 0 ]; then \
+	    echo "❌ the deploy SUCCEEDED with $(DROP) records dropped."; \
+	    echo "   reindex.py's count assertion did not fire, so the fault"; \
+	    echo "   hook or the assertion is broken — not the gate."; \
+	    exit 1; \
+	  fi; \
+	  $(RESOLVE_ENV_STRICT) \
+	  refused=$$(python evals/check_hydration.py --refusals); \
+	  gate=$$?; \
+	  python evals/check_hydration.py --json; \
+	  echo "--- gate exit $$gate; refusals: [$$refused]"; \
+	  case "$$gate|$$refused" in \
+	    "0|") \
+	      echo "✅ rollback RE-HYDRATED and the gate verified count parity."; \
+	      echo "   CDK re-invoked the previous Lambda version, which has no"; \
+	      echo "   fault hook. The endpoint names a complete index." ;; \
+	    "1|endpoint") \
+	      echo "✅ the gate REFUSED: the failed hydration left no endpoint."; \
+	      echo "   Retrieval is on S3 Vectors." ;; \
+	    *count_parity*) \
+	      echo "❌ FORBIDDEN STATE: the endpoint names a MISMATCHED index."; \
+	      echo "   This is the M02 residue — an index that answers with"; \
+	      echo "   citations while missing chunks. SPEC/05 item 4 regressed."; \
+	      exit 1 ;; \
+	    *) \
+	      echo "❌ INDETERMINATE: the gate could not verify the index the"; \
+	      echo "   endpoint names (refusals: [$$refused])."; \
+	      echo "   That is NOT evidence the tier is out of service — the"; \
+	      echo "   parameter may still be live and pointing at an index"; \
+	      echo "   nobody checked. Treat as a failure and run make down."; \
+	      exit 1 ;; \
+	  esac; \
+	  echo "   NEXT: make down. The collection still exists and still bills;"; \
+	  echo "   and after a rollback the Trigger's HandlerArn is unchanged, so"; \
+	  echo "   a plain make up will NOT re-fire hydration."
 down:
 	$(CDK) destroy $(STACK_SEARCH) --force
 	@echo "✅ Hot tier destroyed — OCU billing stopped"
@@ -202,10 +261,10 @@ status:
 # line. The daily poller changes the corpus unattended (52 documents on
 # 2026-08-19, from 4 on 2026-07-30), so this is the common case, not the edge.
 smoke:
-	@$(RESOLVE_ENV) python evals/run_evals.py --subset smoke
+	@$(RESOLVE_ENV_STRICT) python evals/run_evals.py --subset smoke
 
 evals:
-	@$(RESOLVE_ENV) python evals/run_evals.py $(ARGS)
+	@$(RESOLVE_ENV_STRICT) python evals/run_evals.py $(ARGS)
 
 # Measures the INSTRUMENT, not the system: replays run_evals.check() against
 # hand-written right and wrong answers and requires it to tell them apart. No

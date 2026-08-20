@@ -489,3 +489,51 @@ def test_a_longer_index_is_not_reported_as_short(gate, monkeypatch):
     assert "count_parity" in checks(report)
     assert "short" not in reasons(report), reasons(report)
     assert "601 indexed vs 600" in reasons(report)
+
+
+# `--refusals`: the refusal SET, for a caller that must branch on it
+
+
+def test_the_refusal_set_is_reported_sorted_and_space_separated(gate, monkeypatch):
+    """`make fault-drop` has to tell "the parameter is gone" (safe) from "the
+    parameter is live and the index is unverified" (not safe).
+
+    Grepping the JSON for one check name got that wrong: any non-count_parity
+    refusal read as proof the tier was out of service, so a 403 or a missing
+    index printed "Retrieval is on S3 Vectors" while the endpoint was still
+    live. A caller that needs the set should be handed the set.
+    """
+    wire_gate(monkeypatch, gate, corpus=600, count=599, embedding="float")
+    _, report = gate.run("corpus-bucket")
+    names = sorted(r["check"] for r in report["refusals"])
+    assert names == ["count_parity", "embedding_type"]
+    assert " ".join(names) == "count_parity embedding_type"
+
+
+def test_a_healthy_tier_has_an_empty_refusal_set(gate, monkeypatch):
+    """The empty set is what distinguishes "repaired" from every failure."""
+    wire_gate(monkeypatch, gate)
+    ok, report = gate.run("corpus-bucket")
+    assert ok
+    assert [r["check"] for r in report["refusals"]] == []
+
+
+def test_a_live_endpoint_over_an_unverifiable_index_is_not_an_endpoint_refusal(
+        gate, monkeypatch):
+    """The false pass, pinned.
+
+    A 403 leaves `/regdelta/search/endpoint` LIVE and the index unchecked.
+    Reading that as "the tier is out of service" is what made `make fault-drop`
+    report success over an unverified index.
+    """
+    wire_gate(monkeypatch, gate, raises="chunks/_count -> 403 Forbidden")
+    ok, report = gate.run("corpus-bucket")
+    assert not ok
+    names = {r["check"] for r in report["refusals"]}
+    # BOTH reads fail on a 403 — the count and the mapping — and both are
+    # reported, which is the multi-refusal behaviour working.
+    assert names == {"indexed", "embedding_type"}
+    assert "endpoint" not in names, (
+        "a 403 must NOT look like an absent endpoint — the parameter is still "
+        "live and pointing at an index nobody verified")
+    assert report["endpoint"]

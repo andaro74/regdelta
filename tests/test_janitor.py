@@ -25,7 +25,16 @@ ROLE = "arn:aws:iam::111122223333:role/regdelta-core-SearchStackDeletionRole-XYZ
 
 
 class _FakeClientError(Exception):
-    pass
+    """botocore's shape, minimally: the handler reads `.response` for the code.
+
+    `Error.Code` defaults to ValidationError because that is what
+    CloudFormation actually returns for a missing stack; cases that need a
+    different code pass one.
+    """
+
+    def __init__(self, message, code="ValidationError"):
+        super().__init__(message)
+        self.response = {"Error": {"Code": code, "Message": str(message)}}
 
 
 class _FakeCfn:
@@ -386,11 +395,26 @@ def _foreign_role_imports(search_template) -> list[str]:
     """Export names of roles the search stack attaches a policy to but does not own."""
     owned = {k for k, v in search_template["Resources"].items()
              if v["Type"] == "AWS::IAM::Role"}
+    # EVERY resource type that carries a `Roles:` list, not just the one the
+    # stack happens to use today. A future ManagedPolicy or L1 RolePolicy
+    # attached to a foreign role would otherwise pass this test vacuously and
+    # produce the same 01:00-UTC DELETE_FAILED it exists to prevent.
+    # eng-code-reviewer, M05.
+    # TWO PROPERTY SHAPES, not one. `Policy`/`ManagedPolicy` carry a `Roles:`
+    # LIST; the L1 `AWS::IAM::RolePolicy` carries a scalar `RoleName:`. Adding
+    # the type to this tuple without reading its property did nothing, and the
+    # test below caught exactly that.
+    attaches_to_roles = ("AWS::IAM::Policy", "AWS::IAM::ManagedPolicy",
+                         "AWS::IAM::RolePolicy")
     out = []
     for res in search_template["Resources"].values():
-        if res["Type"] != "AWS::IAM::Policy":
+        if res["Type"] not in attaches_to_roles:
             continue
-        for entry in res["Properties"].get("Roles", []):
+        props = res["Properties"]
+        entries = list(props.get("Roles") or [])
+        if "RoleName" in props:
+            entries.append(props["RoleName"])
+        for entry in entries:
             if isinstance(entry, dict) and entry.get("Ref") in owned:
                 continue  # a role this stack creates; the name prefix covers it
             out.extend(_import_names(entry))
@@ -453,7 +477,8 @@ def test_a_failure_to_look_is_not_a_claim_that_billing_stopped(load):
 
     def denied(StackName):
         raise _FakeClientError(
-            "An error occurred (AccessDenied) when calling DescribeStacks")
+            "An error occurred (AccessDenied) when calling DescribeStacks",
+            code="AccessDeniedException")
 
     fake.describe_stacks = denied
     out = mod.handler({}, None)
@@ -486,3 +511,74 @@ def test_terminal_failed_states_are_deleted_rather_than_shrugged_at(load, state)
     out = mod.handler({}, None)
     assert out["status"] == "delete-requested", out
     assert fake.deletes == [{"StackName": "regdelta-search", "RoleARN": ROLE}]
+
+
+@pytest.mark.parametrize("state", ["UPDATE_FAILED", "IMPORT_ROLLBACK_FAILED"])
+def test_the_remaining_terminal_failed_states_are_deleted(load, state):
+    """`UPDATE_FAILED` is reachable with `--no-rollback`. Same argument as the
+    other *_FAILED states: terminal, live resources, DeleteStack is valid."""
+    mod, fake = load(state)
+    assert mod.handler({}, None)["status"] == "delete-requested"
+    assert fake.deletes == [{"StackName": "regdelta-search", "RoleARN": ROLE}]
+
+
+@pytest.mark.parametrize("state", ["UPDATE_COMPLETE_CLEANUP_IN_PROGRESS",
+                                   "UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS"])
+def test_ordinary_update_transients_are_not_unhandled(load, state):
+    """Both are routine after any update. Left out of `_IN_FLIGHT` they sent a
+    perfectly healthy stack down the `unhandled-state` path for a night — a
+    shrug rather than a false claim, but the same family as the DELETE_FAILED
+    defect."""
+    mod, fake = load(state)
+    out = mod.handler({}, None)
+    assert out["status"] == "no-action", out
+    assert fake.deletes == []
+
+
+def test_a_validationerror_is_required_not_just_the_phrase(load):
+    """`billing_stopped: True` is the one claim SPEC/06's alarm will trust.
+
+    Message matching alone would let any future error whose prose happens to
+    contain "does not exist" reach the fail-open branch. The structured error
+    code is AND-ed with it.
+    """
+    mod, fake = load("CREATE_COMPLETE")
+
+    def throttled(StackName):
+        raise _FakeClientError(
+            "Rate exceeded; the requested throughput does not exist yet",
+            code="Throttling")
+
+    fake.describe_stacks = throttled
+    out = mod.handler({}, None)
+    assert out["status"] == "unhandled-error", out
+    assert out["billing_stopped"] is False
+
+
+def test_the_foreign_role_walk_sees_every_type_that_attaches_to_a_role():
+    """Directly, against a hand-built template.
+
+    `test_the_deletion_role_reaches_every_foreign_role_search_writes_to` runs
+    against the REAL search stack, which today creates only `AWS::IAM::Policy`
+    — so narrowing this walk back to that one type changes nothing there and
+    the mutation survives. It would stop being vacuous the day someone adds a
+    ManagedPolicy, which is exactly when a missed foreign role becomes a
+    01:00-UTC DELETE_FAILED. Pinned here instead.
+    """
+    template = {"Resources": {
+        "OwnRole": {"Type": "AWS::IAM::Role", "Properties": {}},
+        "OwnPolicy": {"Type": "AWS::IAM::Policy",
+                      "Properties": {"Roles": [{"Ref": "OwnRole"}]}},
+        "ForeignInline": {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {"Roles": [{"Fn::ImportValue": "other:InlineRole"}]}},
+        "ForeignManaged": {
+            "Type": "AWS::IAM::ManagedPolicy",
+            "Properties": {"Roles": [{"Fn::ImportValue": "other:ManagedRole"}]}},
+        "ForeignL1": {
+            "Type": "AWS::IAM::RolePolicy",
+            "Properties": {"RoleName": {"Fn::ImportValue": "other:L1Role"}}},
+    }}
+    found = set(_foreign_role_imports(template))
+    assert found == {"other:InlineRole", "other:ManagedRole", "other:L1Role"}, (
+        f"the walk missed a role-attaching resource type: {found}")
