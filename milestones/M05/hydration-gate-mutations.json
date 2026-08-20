@@ -1,0 +1,56 @@
+{
+  "A1 no retire (parameter stays up during the rebuild)": [
+    "test_a_healthy_hydration_publishes_the_endpoint_last",
+    "test_no_failure_path_publishes_an_endpoint[corpus",
+    "test_no_failure_path_publishes_an_endpoint[count",
+    "test_no_failure_path_publishes_an_endpoint[index",
+    "test_no_failure_path_publishes_an_endpoint[mapping"
+  ],
+  "A2 publish BEFORE the assertions (restores the M02 bug)": [
+    "test_a_healthy_hydration_publishes_the_endpoint_last",
+    "test_no_failure_path_publishes_an_endpoint[corpus",
+    "test_no_failure_path_publishes_an_endpoint[count",
+    "test_no_failure_path_publishes_an_endpoint[index",
+    "test_no_failure_path_publishes_an_endpoint[mapping",
+    "test_the_fault_hook_cannot_publish"
+  ],
+  "A3 publish without Overwrite": [
+    "test_publish_overwrites"
+  ],
+  "A4 reindex spells the parameter name itself": [
+    "test_the_published_parameter_is_the_one_the_router_reads"
+  ],
+  "B1 trigger no longer ordered after the parameter": [
+    "test_the_trigger_runs_after_the_parameter_exists"
+  ],
+  "B2 no ssm grant on the reindex role": [
+    "test_the_reindex_role_may_write_only_that_parameter"
+  ],
+  "B3 ssm grant widened to every /regdelta parameter": [
+    "test_the_reindex_role_may_write_only_that_parameter"
+  ],
+  "C1 short count is a warning, not a refusal": [
+    "test_refuses_a_short_index",
+    "test_reports_every_refusal_not_only_the_first"
+  ],
+  "C2 mapping never checked": [
+    "test_refuses_a_dynamic_mapping_the_count_cannot_see",
+    "test_refuses_an_unreadable_mapping",
+    "test_reports_every_refusal_not_only_the_first"
+  ],
+  "C3 endpoint read without dropping the 60s cache": [
+    "test_the_gate_reads_the_parameter_the_router_reads"
+  ],
+  "C4 stops at the first refusal": [
+    "test_reports_every_refusal_not_only_the_first"
+  ],
+  "C5 empty corpus passes 0 == 0": [
+    "test_refuses_an_empty_corpus_rather_than_passing_zero_against_zero"
+  ],
+  "C6 guard holds its own copy of the expected mapping type": [
+    "test_the_expected_mapping_is_read_off_the_one_the_stack_ships"
+  ],
+  "C7 absent endpoint accepted": [
+    "test_refuses_when_the_endpoint_parameter_is_absent"
+  ]
+}

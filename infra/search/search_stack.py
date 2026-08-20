@@ -351,10 +351,62 @@ class RegDeltaSearchStack(cdk.Stack):
             policy=json.dumps(statements))
         access.add_dependency(collection)
 
+        # ---------------------------------------------------------------
+        # THE HYDRATION GATE (SPEC/05 item 4; the M02 deferral at
+        # milestones/M02/README.md:591).
+        # ---------------------------------------------------------------
+        #
+        # CREATED HERE, ABOVE THE TRIGGER, AND THE ORDER IS LOAD-BEARING.
+        # `retrieval/reindex.py` deletes this parameter as hydration's first
+        # act and writes it back only after count-parity and the kNN mapping
+        # assert have both passed. If CloudFormation were still free to create
+        # it afterwards — and it was: `EndpointParam` carried no `DependsOn` at
+        # all — the create would land on a name the Lambda had just published
+        # and fail with ParameterAlreadyExists.
+        #
+        # So the parameter is created first and the Trigger is ordered after
+        # it. CloudFormation still OWNS it, which is what makes `cdk destroy`
+        # (and the janitor) remove it and return retrieval to S3 Vectors; the
+        # Lambda only takes it away and gives it back.
+        #
+        # Two behaviours that make that split safe were RUN, not assumed —
+        # milestones/M05/orphan_param_probe.py: DeleteStack succeeds when the
+        # parameter is already gone (otherwise a failed hydration would strand
+        # the stack in DELETE_FAILED with a collection billing), and an UPDATE
+        # that does not change the parameter does not re-create it (otherwise
+        # the gate would leak on the next redeploy).
+        #
+        # ONE WINDOW REMAINS, deliberately. On a fresh CREATE, CloudFormation
+        # writes this parameter as soon as the collection has an endpoint —
+        # minutes before the Trigger fires — so for that gap it names an index
+        # that does not exist yet. That is the safe half of the failure space:
+        # an ABSENT index makes the AOSS tier raise and `router.retrieve()`
+        # falls back to S3 Vectors with a `fallback_reason`, where a PARTIAL
+        # index answers with citations and looks healthy. Closing it entirely
+        # would mean CloudFormation not owning the parameter, which costs the
+        # `cdk destroy` guarantee above — a worse trade.
+        endpoint_param = ssm.StringParameter(
+            self, "EndpointParam",
+            parameter_name=SSM_ENDPOINT_PARAM,
+            string_value=collection.attr_collection_endpoint)
+
+        # The Lambda's half of the same split. Delete and Put on THIS parameter
+        # and nothing else under /regdelta/ — the reindex role is the one role
+        # here that can flip the retrieval tier, and it should be able to flip
+        # exactly the one that names the collection it just hydrated.
+        reindex.add_to_role_policy(iam.PolicyStatement(
+            actions=["ssm:PutParameter", "ssm:DeleteParameter"],
+            resources=[self.format_arn(
+                service="ssm", resource="parameter",
+                resource_name=SSM_ENDPOINT_PARAM.lstrip("/"))]))
+
         triggers.Trigger(
             self, "HydrateOnDeploy",
             handler=reindex,
-            execute_after=[access],
+            # `endpoint_param` is here for the ordering argued above, not for
+            # the invocation: the Lambda reads the parameter NAME from
+            # shared.config, never this resource.
+            execute_after=[access, endpoint_param],
             execute_on_handler_change=True,
             # The Trigger's INVOCATION timeout, which defaults to 2 minutes and
             # is separate from the function's own 15. Hydration can legitimately
@@ -365,11 +417,6 @@ class RegDeltaSearchStack(cdk.Stack):
             # reports it as a hydration failure. Kept under the provider
             # handler's own 900s.
             timeout=Duration.minutes(14))
-
-        ssm.StringParameter(
-            self, "EndpointParam",
-            parameter_name=SSM_ENDPOINT_PARAM,
-            string_value=collection.attr_collection_endpoint)
 
         cdk.CfnOutput(self, "CollectionEndpoint",
                       value=collection.attr_collection_endpoint)

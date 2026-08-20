@@ -44,14 +44,24 @@ def records(n: int) -> list[dict]:
 
 
 def wire(monkeypatch, mod, source: list[dict], indexed_count):
-    """Stand in for S3 and AOSS. `indexed_count` may be an int or a callable."""
+    """Stand in for S3, AOSS and SSM. `indexed_count` may be int or callable.
+
+    The two SSM seams are stubbed here only so these tests keep measuring what
+    they are about — counts. `handler` now retires the endpoint parameter
+    before touching the index and republishes it after both assertions pass
+    (SPEC/05 item 4); unstubbed, every test below would reach real SSM. WHICH
+    of those calls happens on which path is tested in
+    tests/test_hydration_gate.py, not here.
+    """
     sent: list[dict] = []
-    monkeypatch.setattr(mod, "_iter_chunk_records", lambda bucket: iter(source))
+    monkeypatch.setattr(mod, "iter_chunk_records", lambda bucket: iter(source))
     monkeypatch.setattr(mod, "_create_index", lambda ep: None)
     monkeypatch.setattr(mod, "_bulk", lambda ep, docs: sent.extend(docs))
     monkeypatch.setattr(mod, "_count", lambda ep: (
         indexed_count(sent) if callable(indexed_count) else indexed_count))
     monkeypatch.setattr(mod, "_assert_knn_mapping", lambda ep: None)
+    monkeypatch.setattr(mod, "_retire_endpoint", lambda: False)
+    monkeypatch.setattr(mod, "_publish_endpoint", lambda ep: None)
     return sent
 
 
@@ -66,11 +76,13 @@ def test_a_complete_hydration_returns_both_counts(reindex, monkeypatch):
 
 def test_bulk_batches_at_500(reindex, monkeypatch):
     sizes = []
-    monkeypatch.setattr(reindex, "_iter_chunk_records", lambda b: iter(records(1200)))
+    monkeypatch.setattr(reindex, "iter_chunk_records", lambda b: iter(records(1200)))
     monkeypatch.setattr(reindex, "_create_index", lambda ep: None)
     monkeypatch.setattr(reindex, "_bulk", lambda ep, docs: sizes.append(len(docs)))
     monkeypatch.setattr(reindex, "_count", lambda ep: 1200)
     monkeypatch.setattr(reindex, "_assert_knn_mapping", lambda ep: None)
+    monkeypatch.setattr(reindex, "_retire_endpoint", lambda: False)
+    monkeypatch.setattr(reindex, "_publish_endpoint", lambda ep: None)
     reindex.handler({}, None)
     assert sizes == [500, 500, 200]
 
@@ -475,5 +487,5 @@ def test_iter_chunk_records_skips_non_jsonl_keys(reindex, monkeypatch):
     monkeypatch.setattr(reindex, "_s3_client", lambda: SimpleNamespace(
         get_paginator=lambda op: SimpleNamespace(paginate=lambda **kw: pages),
         get_object=lambda Bucket, Key: {"Body": body}))
-    got = list(reindex._iter_chunk_records("corpus"))
+    got = list(reindex.iter_chunk_records("corpus"))
     assert [r["chunk_id"] for r in got] == ["a#0000"]

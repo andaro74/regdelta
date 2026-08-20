@@ -98,11 +98,40 @@ core: layer
 # design (SPEC/02), which means it runs as whoever invoked it. Resolved from
 # STS at deploy time rather than hardcoded, and empty in CI — where nothing
 # calls AOSS from a laptop.
+#
+# SPEC/05 item 4 — THIS TARGET GATES ON THE INDEX, NOT ON `cdk deploy`.
+# The deploy's exit code answers "did CloudFormation reach UPDATE_COMPLETE",
+# and the question `make up` is asked is "can retrieval use the hot tier".
+# M02 recorded a case where those differ (milestones/M02/README.md:591): a
+# Trigger failure on an UPDATE rolls the Lambda's environment back but not the
+# AOSS index contents, and the endpoint parameter from the previous successful
+# deploy survives — so retrieval routes to a short index and answers with
+# citations. `evals/check_hydration.py` reads the parameter the router reads
+# and counts the index it names against the corpus.
+#
+# The gate runs EITHER WAY, which is why the deploy's status is captured
+# instead of chained with &&. A failed deploy still gets a diagnosis rather
+# than a stack trace, and — the case that matters — a deploy that exits 0 over
+# an index nobody hydrated is refused.
+#
+# The deploy is SUBSHELLED. `$(CDK)` is `cd infra && npx cdk`, and everything
+# here is one shell; without the parentheses the `cd` leaks and the gate runs
+# from infra/, where `evals/check_hydration.py` does not exist.
 up:
-	$(CDK) deploy $(STACK_SEARCH) --require-approval never \
-	  -c devPrincipalArn=$$(aws sts get-caller-identity --query Arn --output text)
-	@echo "✅ Hot tier up ($(SSM_ENDPOINT))"
-	@echo "   next: make retrieval-evals   (records the aoss scorecard)"
+	@( $(CDK) deploy $(STACK_SEARCH) --require-approval never \
+	     -c devPrincipalArn=$$(aws sts get-caller-identity --query Arn --output text) ); \
+	  deployed=$$?; \
+	  echo "--- cdk deploy exited $$deployed; the hydration gate below decides."; \
+	  $(RESOLVE_ENV) \
+	  python evals/check_hydration.py; \
+	  gate=$$?; \
+	  if [ $$gate -ne 0 ]; then \
+	    echo "❌ Hot tier NOT usable (gate $$gate, deploy $$deployed)."; \
+	    echo "   OCU is billing if the collection exists — 'make down' stops it."; \
+	    exit $$gate; \
+	  fi; \
+	  echo "✅ Hot tier up and hydrated ($(SSM_ENDPOINT))"; \
+	  echo "   next: make retrieval-evals   (records the aoss scorecard)"
 
 down:
 	$(CDK) destroy $(STACK_SEARCH) --force
