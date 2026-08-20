@@ -15,7 +15,6 @@ import datetime as dt
 import hashlib
 import json
 import os
-import re
 import subprocess
 import sys
 import time
@@ -430,110 +429,6 @@ def flatten_answer(resp: dict) -> str:
     return " ".join(parts)
 
 
-# ------------------------------------------- must_not_contain, negation scope
-#
-# SME-SEAT RULING 2026-08-20, adopted with amendments. The full ruling, its
-# evidence and its declared limits are in milestones/M05/q03-ruling.md; this is
-# the part of it that is code.
-#
-# THE DEFECT. `must_not_contain` was a bare case-folded substring test, so it
-# could not tell an ASSERTION from a REFUSAL TO ASSERT. q03 bans `TTB requires`
-# because an earlier version of that question scored a fabricated TTB
-# obligation as correct — no TTB document exists anywhere in the corpus. But
-# the ban then failed this, which is the behaviour the question wants:
-#
-#     "I cannot confirm from these sources whether TTB requires a formula
-#      amendment filing..."
-#
-# The 2026-08-12 ruling had predicted exactly this one step away: "a ban cannot
-# help, because 'you must file a new formula' is reproduced by the correct
-# hedge 'I cannot confirm whether you must file a new formula'." It was written
-# as a false-PASS risk; this was the same structural fact producing a
-# false-FAIL.
-#
-# THE RULE. A ban is suppressed only when EVERY occurrence of it sits inside a
-# hedged interrogative: a cue, then `whether`, then the token, in that order,
-# within one sentence. The ordering is the whole safety argument —
-#
-#     "TTB requires a filing."                          -> fires (no cue)
-#     "I cannot confirm the date, and TTB requires..."   -> fires (no `whether`)
-#     "I cannot confirm ... whether TTB requires ..."    -> suppressed
-#     one hedged mention AND one bare assertion          -> fires
-#
-# WHY IT IS NOT SIMPLY "SUPPRESS INSIDE A HEDGE", which is what the triage
-# recommended: 17 of the golden set's 81 banned tokens are THEMSELVES
-# negation- or hedge-shaped. q18 bans `cannot determine` — a ban whose entire
-# purpose is to fail an answer that hedges — and q14 and q19 are the same
-# shape. A blanket rule would fire exactly when those questions want a failure,
-# i.e. it would fix one honesty question by defanging three others. The
-# ordering requirement is what avoids that, and `make discrimination` is what
-# confirms it rather than my say-so.
-#
-# TWO AMENDMENTS BY THE SEAT, both tightenings, both away from suppression:
-#   * the cue list holds only EXPLICIT first-person disclaimers. `my sources`,
-#     `no source` and `not in the corpus` were dropped: they match as bare noun
-#     phrases ("my sources include...") rather than as refusals.
-#   * the gate is `whether` alone. ` if ` was dropped as too common a word to
-#     carry the interrogative weight the rule rests on.
-# A tightening can only make a ban fire MORE often, so both amendments move
-# toward the pre-ruling behaviour and neither can create a false pass.
-#
-# A THIRD TIGHTENING, NOT AUTHORISED BY THE SEAT — flagged here and in the
-# ruling for confirmation or reversal. Implementing the two amendments above
-# and then PROBING the collision §3 feared showed it was still live:
-#
-#     "You are affected, but I cannot confirm whether the rule applies,
-#      so I cannot determine your deadline."
-#
-# q18 bans `cannot determine` and wants that answer to FAIL. The rule
-# suppressed the ban, because a `whether` belonging to a DIFFERENT CLAUSE sat
-# between an unrelated cue and the token. q14 and q19 are reachable the same
-# way. `make discrimination` did not catch it: no specimen had that shape,
-# which is the 2026-08-15 failure exactly — specimens written before the rule
-# cannot be adversarial to it.
-#
-# So `whether` must GOVERN the token, not merely precede it: at most
-# _GATE_WINDOW_WORDS between them. "whether TTB requires" is nil; "whether the
-# rule applies, so I cannot determine" is five and fires. Same direction as the
-# seat's own two amendments — it can only make a ban fire more often — but it
-# is beyond the two dials they set, so it does not get adopted silently.
-_HEDGE_CUES = (
-    "cannot confirm", "unable to confirm", "can't confirm", "cannot determine",
-    "cannot tell", "cannot say", "do not say", "does not say", "do not address",
-    "does not address", "do not speak", "does not speak", "sources do not",
-    "sources are silent", "not in my sources", "cannot be confirmed",
-)
-# Regex-based, and that is safe in one direction only: an abbreviation like
-# "21 CFR 74.303." splits a sentence early, which can only STRAND a cue from
-# its token and make the ban fire. It cannot merge two sentences into one.
-_GATE_WINDOW_WORDS = 3
-_SENTENCES = re.compile(r"(?<=[.!?])\s+")
-
-
-def _hedged_mention_only(low: str, needle: str) -> bool:
-    """True if EVERY occurrence of `needle` sits inside a hedged interrogative.
-
-    Returns False the moment one bare occurrence is found, so an answer that
-    hedges once and asserts once still fails the ban. Returns False for a
-    needle that does not occur at all, which the caller never asks about.
-    """
-    seen = False
-    for sentence in _SENTENCES.split(low):
-        start = 0
-        while (i := sentence.find(needle, start)) != -1:
-            seen = True
-            prefix = sentence[:i]
-            cue = max((prefix.rfind(c) for c in _HEDGE_CUES), default=-1)
-            gate = prefix.rfind("whether")
-            if cue == -1 or gate == -1 or cue >= gate:
-                return False          # a bare assertion; the ban stands
-            between = prefix[gate + len("whether"):].split()
-            if len(between) > _GATE_WINDOW_WORDS:
-                return False          # the `whether` governs a different clause
-            start = i + 1
-    return seen
-
-
 def check(q: dict, resp: dict) -> list[str]:
     """Return list of failure reasons (empty = pass)."""
     fails: list[str] = []
@@ -550,7 +445,7 @@ def check(q: dict, resp: dict) -> list[str]:
                 fails.append(f"none of {group} present")
 
     for needle in q.get("must_not_contain", []):
-        if needle.lower() in low and not _hedged_mention_only(low, needle.lower()):
+        if needle.lower() in low:
             fails.append(f"forbidden text present: {needle!r}")
 
     cite_text = " ".join(json.dumps(c) for c in resp.get("citations", []))

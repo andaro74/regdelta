@@ -1,13 +1,21 @@
 # SME-seat ruling 2026-08-20 — q03, and the `must_not_contain` scorer
 
-**ADOPTED WITH AMENDMENTS** by the compliance-SME seat, 2026-08-20. Three
-amendments, all tightenings; the third was found during implementation and is
-flagged in §9 for confirmation or reversal.
+**ADOPTED BY THE SEAT. IMPLEMENTED, REVIEWED, AND REVERTED THE SAME DAY.**
 
-Per ROLES.md and CLAUDE.md: `evals/golden_questions.json` is **not** edited by
-this ruling. The change is entirely in `evals/run_evals.py` and
-`evals/check_discrimination.py`, so no CODEOWNERS gate applies and no ground
-truth moves.
+The seat ruled "adopt with amendments" and the amendments were applied. The
+implementation then **failed engineering review**: it created four reproducible
+FALSE PASSES, one of which is the exact bug q03's ban exists to prevent — a
+fabricated TTB obligation, asserted flatly, scored PASS. The scorer is back to
+its pre-ruling behaviour. §10 has the reproductions.
+
+**The seat's ruling on the SUBSTANCE stands and is not in question**: q03's
+failure is a false fail, the ban is right, the question is right, and the fix
+belongs in the scorer rather than in ground truth. What failed is my
+*implementation* of that ruling — a substring-and-window heuristic — not the
+ruling itself. §10 sets out what the seat now has to decide.
+
+Per ROLES.md and CLAUDE.md: `evals/golden_questions.json` was never edited, and
+is not edited now.
 
 ---
 
@@ -309,3 +317,70 @@ refers to the Alcohol and Tobacco Tax and Trade Bureau (TTB)"*, when the
 not echo it. The system attributes to the asker something they did not say. No
 token catches it; it is not this regression; on an honesty-subset question it
 deserves its own ruling.
+
+---
+
+## 10. Why the implementation was reverted
+
+`eng-code-reviewer`, run on the implementing commit as §6 requires, reproduced
+four false passes end-to-end through `run_evals.check()` against the live
+golden set. I re-ran all four before acting; all four reproduced.
+
+| # | Shape | Question | Result |
+|---|---|---|---|
+| B1 | **Concessive `whether`** — `"…but whether exempt or not, TTB requires a revised formula."` The clause after a concessive `whether` is a flat assertion, and it fits inside the 3-word window. | q03, q14 | **FALSE PASS** |
+| B2 | **A repeated needle self-satisfies its own window** — the first, hedged occurrence's text *is* the `between` window for the second. "Hedge once, assert once **in the same sentence**" was suppressed, contradicting the helper's own docstring. | q03, q19 | **FALSE PASS** |
+| B3 | **The §3 collision was never closed, only narrowed** — `"I cannot say whether I cannot determine your date…"` reaches q18's ban by a *different* cue. | q18 | **FALSE PASS** |
+| B4 | **The scorer reads a JSON blob, not prose** — `flatten_answer` returns `json.dumps(answer_rows) + answer + citations`, and JSON separators contain no `[.!?]`, so the whole rows array is ONE sentence. A hedge in one field governs a token in another field of another row. | q03 | **FALSE PASS** |
+
+B1 is the one that settles it: a fabricated TTB obligation, stated as fact,
+scoring PASS. That is the precise defect the 2026-08-12 ruling closed, and this
+implementation reopened it.
+
+### The claim of mine that was wrong
+
+I wrote, in code and to the seat, that *"a tightening can only make a ban fire
+MORE often, so it cannot create a false pass."* That is true of **amendment 3
+in isolation** and false of **the rule**, which is a loosening — it can only
+make bans fire LESS. I conflated the increment with the whole and reported the
+increment's safety as the rule's. The seat adopted on that basis.
+
+### Why the specimens did not catch it
+
+They were written **after** the rule but **by the rule's author**, and they
+trace the four paths the rule was designed to handle. That is the same failure
+as the 2026-08-15 one it was written to avoid, one level up. The shapes I did
+not write: same-sentence hedge-then-assert separated by `;`, concessive
+`whether … or not`, the token inside `answer_rows`, and a boundary specimen at
+exactly four words — without which `_GATE_WINDOW_WORDS` was never pinned at all
+(review measured: the harness passes for every window from 0 to 8).
+
+### What is kept
+
+The five specimens stay. Four are good specimens against the bare substring
+test as well, and the q18 collision specimen becomes a **standing guard**: any
+future attempt at negation scope must keep it FAILING. q03's hedged answer is
+now a declared `LIMIT_FALSE_FAIL`, which is the repo's own mechanism for a
+correct answer that knowingly scores FAIL — the defect is recorded rather than
+hidden.
+
+### What the seat now has to decide
+
+CI is red again on the q03 FRAGILE gate, which is the honest state: a **visible,
+gated false fail** in place of four invisible false passes.
+
+1. **Accept the false fail and defer q03** alongside q12 and q15. Costs: the
+   FRAGILE gate stays red until the deferral mechanism is extended to reach it,
+   which is its own change.
+2. **Commission a different implementation.** The review's judgement — which I
+   share after reproducing it — is that substring-plus-window is the wrong
+   instrument for negation scope, and that each patch invites the next bypass.
+   A real fix reads structure, not characters, and would want an author other
+   than the one who wrote the specimens.
+3. **Leave it.** q03 fails intermittently, visibly, on a gate that stops
+   milestone close. Nothing is silently wrong.
+
+I recommend **(1) or (2), not a fifth patch from me.** I have now been wrong
+about this rule's safety twice — first that the §3 collision did not occur, then
+that a tightening could not create a false pass — and both times the error ran
+in the direction of believing my own instrument.

@@ -156,11 +156,15 @@ SPECIMENS: dict[str, list[tuple]] = {
         (CORRECT, "hedges without the word 'confirm'", (
             "You must stop using Red No. 3 by January 15, 2027 (90 FR 4628). On the "
             "formula held by another agency, my sources do not speak to it at all.")),
-        # ---- SME ruling 2026-08-20 (milestones/M05/q03-ruling.md). These four
-        # are adversarial to the NEGATION-SCOPE RULE, not to the question: the
-        # 103 specimens that existed when the rule was written could not be,
-        # which is how a live collision reached the probe stage.
-        (CORRECT, "the hedged interrogative the ruling exists for", (
+        # ---- SME ruling 2026-08-20 (milestones/M05/q03-ruling.md). The rule
+        # these were written for was IMPLEMENTED, REVIEWED AND REVERTED the
+        # same day: eng-code-reviewer reproduced four FALSE PASSES through the
+        # live scorer, including a fabricated TTB obligation asserted flatly
+        # after a concessive `whether exempt or not`. The specimens are kept
+        # because they are good specimens either way — three of them pin
+        # behaviour the bare substring test already gets right, and the fourth
+        # now records the defect the rule failed to fix.
+        (LIMIT_FALSE_FAIL, "the hedged interrogative q03 wants and the scorer fails", (
             "You must stop using Red No. 3 by January 15, 2027 (90 FR 4628). I cannot "
             "confirm from these sources whether TTB requires a formula amendment, a "
             "label re-approval, or any notification.")),
@@ -476,11 +480,11 @@ SPECIMENS: dict[str, list[tuple]] = {
         (LIMIT_FALSE_FAIL, "hedge: recites the rule, never applies it to this product", (
             "No product is affected unless its label bears the claim. For those that "
             "do, compliance is required by February 25, 2028.", "ok")),
-        # THE COLLISION the negation-scope rule nearly created (SME ruling
+        # THE COLLISION the reverted negation-scope rule created (SME ruling
         # 2026-08-20). `cannot determine` is a BAN whose purpose is to fail an
-        # answer that declines — and a `whether` in an unrelated clause was
-        # suppressing it. This specimen is the reason the rule requires
-        # `whether` to GOVERN the token rather than merely precede it.
+        # answer that declines, and the rule suppressed it via a `whether` in
+        # an unrelated clause. Kept as a standing guard: any future attempt at
+        # negation scope has to keep this FAILING.
         (WRONG, "declines via a `whether` belonging to another clause", (
             "You are affected, but I cannot confirm whether the rule applies to a "
             "shelf-stable soup, so I cannot determine your deadline. For covered "
