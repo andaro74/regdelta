@@ -1,0 +1,38 @@
+{
+  "D1 record() overwrites, as it did before": [
+    "test_a_corrupt_previous_card_is_archived_rather_than_blocking",
+    "test_a_second_run_at_one_sha_does_not_erase_the_first",
+    "test_different_tiers_at_one_sha_are_not_supersessions",
+    "test_the_first_card_at_a_sha_supersedes_nothing",
+    "test_the_trail_accumulates_across_repeated_runs"
+  ],
+  "D2 the losing card is archived beside the winner, not beneath it": [
+    "test_a_corrupt_previous_card_is_archived_rather_than_blocking",
+    "test_a_second_run_at_one_sha_does_not_erase_the_first",
+    "test_archives_are_invisible_to_the_readers_of_history"
+  ],
+  "D3 the file is kept but the card does not say so": [
+    "test_a_corrupt_previous_card_is_archived_rather_than_blocking",
+    "test_a_second_run_at_one_sha_does_not_erase_the_first",
+    "test_the_trail_accumulates_across_repeated_runs"
+  ],
+  "E1 _text_of throws the stop reason away again": [
+    "test_a_complete_verdict_is_not_flagged",
+    "test_a_truncated_verdict_says_so",
+    "test_the_reading_does_not_survive_into_the_next_call",
+    "test_the_stop_reason_is_carried_out_of_converse"
+  ],
+  "E2 no reset, so a stale reason leaks into the next verdict": [
+    "test_the_reading_does_not_survive_into_the_next_call"
+  ],
+  "E3 unobserved reported as not-truncated": [
+    "test_an_unobserved_stop_reason_is_none_not_false"
+  ],
+  "E4 verdict drops the fields on the floor": [
+    "test_a_complete_verdict_is_not_flagged",
+    "test_a_truncated_verdict_says_so",
+    "test_an_unobserved_stop_reason_is_none_not_false",
+    "test_the_control_and_the_system_now_report_the_same_thing",
+    "test_the_reading_does_not_survive_into_the_next_call"
+  ]
+}

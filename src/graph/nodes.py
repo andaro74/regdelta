@@ -116,8 +116,39 @@ def _converse(model: str, system: str, prompt: str, *, max_tokens: int) -> str:
 
 _cache_state: dict = {"supported": True, "reason": None}
 
+# WHY THE MODEL STOPPED, from the last Converse call.
+#
+# `src/baseline/naive.py` has recorded this since M00b — `"truncated":
+# stop_reason == "max_tokens"` — and the agent path threw it away, so the
+# FROZEN CONTROL was better instrumented than the system ADR-0002 measures
+# against it. M04 found that and left it unhomed.
+#
+# It is not cosmetic here. The verdict node asks for JSON within 2000 tokens
+# and `_json_object` returns {} when it cannot find a closing brace, so a
+# max_tokens cut-off mid-object produces an EMPTY ANSWER with status "ok" —
+# the pause-shaped failure, indistinguishable from a model that had nothing to
+# say. The stop reason is the field that tells those apart, which is exactly
+# ADR-0013.
+#
+# Module-level for the same reason `_cache_state` is: both call sites are
+# written `(invoke or _converse)(...)`, and widening the return to a tuple
+# would break every injected fake in the suite. `reset_stop_reason()` is
+# called at each call site rather than inside `_converse`, so that a run with
+# an injected `invoke` reports None — NOT OBSERVED — instead of inheriting a
+# stale reading from some earlier real call.
+_last_stop: dict = {"reason": None}
+
+
+def reset_stop_reason() -> None:
+    _last_stop["reason"] = None
+
+
+def last_stop_reason() -> str | None:
+    return _last_stop["reason"]
+
 
 def _text_of(resp: dict) -> str:
+    _last_stop["reason"] = resp.get("stopReason")
     blocks = resp["output"]["message"]["content"]
     return next((b["text"] for b in blocks if "text" in b), "")
 
@@ -534,6 +565,7 @@ def verdict(state: RegDeltaState, invoke=None) -> dict:
     # defect security review found in the reranker at M02.
     context = list(rows_in) + list(state.get("crossref_chunks") or [])
     passages = _passages([(c.chunk_id, c.text) for c in context]) or "(none)"
+    reset_stop_reason()
     raw = (invoke or _converse)(
         config.MODEL_VERDICT, _VERDICT_SYSTEM,
         _VERDICT_PROMPT.format(
@@ -549,6 +581,7 @@ def verdict(state: RegDeltaState, invoke=None) -> dict:
     claimed = [str(c) for c in (parsed.get("citations") or [])]
     kept = [c for c in dict.fromkeys(claimed) if c in supported]
 
+    stop = last_stop_reason()
     return {
         "answer": answer,
         "verdict_rows": _rows(parsed.get("rows"), supported),
@@ -556,6 +589,13 @@ def verdict(state: RegDeltaState, invoke=None) -> dict:
         "confidence": _confidence(parsed),
         "dropped_citations": [c for c in claimed if c not in supported],
         "status": "ok",
+        # The raw observation and the reading of it, both. `truncated` is None
+        # rather than False when nothing was observed (an injected `invoke`,
+        # a fixture): "we did not look" and "we looked and it was fine" are
+        # different claims, and only one of them should reassure a reader of
+        # an empty answer.
+        "stop_reason": stop,
+        "truncated": (stop == "max_tokens") if stop else None,
     }
 
 
