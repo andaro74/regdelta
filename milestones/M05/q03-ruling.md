@@ -1,11 +1,13 @@
-# DRAFT for the compliance-SME seat — q03, and the `must_not_contain` scorer
+# SME-seat ruling 2026-08-20 — q03, and the `must_not_contain` scorer
 
-**This is a draft, not a ruling.** Nothing here is adopted. It is written so
-the seat can adopt, amend, or reject it in one pass; the measurements are all
-reproducible at $0 and named so they can be re-run rather than trusted.
+**ADOPTED WITH AMENDMENTS** by the compliance-SME seat, 2026-08-20. Three
+amendments, all tightenings; the third was found during implementation and is
+flagged in §9 for confirmation or reversal.
 
-Per ROLES.md and CLAUDE.md: `evals/golden_questions.json` has **not** been
-edited, and the change proposed below does not edit it either.
+Per ROLES.md and CLAUDE.md: `evals/golden_questions.json` is **not** edited by
+this ruling. The change is entirely in `evals/run_evals.py` and
+`evals/check_discrimination.py`, so no CODEOWNERS gate applies and no ground
+truth moves.
 
 ---
 
@@ -120,19 +122,43 @@ replay_history        ->  exit 0
     (the `!!` FRAGILE marker is gone; q14 remains IMPROVED, reported not gated)
 ```
 
-So the narrow rule:
+**CORRECTION, 2026-08-20.** The paragraph that stood here read "the collision
+feared in §3 does not occur under the ordering requirement," on the strength of
+that clean `make discrimination` run. **That was wrong**, and the clean run did
+not support it: no specimen in the 103 had the collision's shape, so the
+harness could not have caught it either way. Probing the shape directly after
+implementation found it live —
+
+> "You are affected, but I cannot confirm whether the rule applies, so I
+> cannot determine your deadline."
+
+q18 bans `cannot determine` and wants that answer to FAIL; the rule suppressed
+the ban, because a `whether` belonging to a **different clause** sat between an
+unrelated cue and the token. q14 and q19 are reachable the same way. This is
+the 2026-08-15 failure mode exactly: specimens written before a rule cannot be
+adversarial to it, and a green run over them proves only that the rule did not
+break what was already there.
+
+Fixed by the third amendment in §9 (`whether` must GOVERN the token, not merely
+precede it). With all three amendments applied and the five new specimens
+added:
+
+```
+make discrimination   ->  exit 0   108 specimens over 20 questions
+replay_history        ->  exit 0   q03's `!!` FRAGILE marker gone
+pytest                ->  956 passed, 1 skipped, 0 failed
+```
+
+So the rule as adopted:
 
 - fixes q03's false fail;
-- leaves **all twenty** questions still discriminating, including q14, q18 and
-  q19 with their negation-shaped bans — the collision feared in §3 does not
-  occur under the ordering requirement;
+- leaves all twenty questions still discriminating, **and** now carries a
+  specimen for the collision so it cannot come back silently;
 - clears the CI gate;
-- **does not touch `evals/golden_questions.json`**, so no ground truth changes
-  and no CODEOWNERS gate applies.
+- **does not touch `evals/golden_questions.json`**.
 
 The per-token opt-in fallback (marking q03's four tokens in the golden set) is
-therefore **not needed**, and is not proposed. It would have cost a golden-set
-edit for no additional safety.
+not needed and was not adopted: the seat chose global scope in §9.
 
 ---
 
@@ -145,14 +171,22 @@ _HEDGE_CUES = (
     "cannot confirm", "unable to confirm", "can't confirm", "cannot determine",
     "cannot tell", "cannot say", "do not say", "does not say", "do not address",
     "does not address", "do not speak", "does not speak", "sources do not",
-    "my sources", "sources are silent", "not in my sources",
-    "cannot be confirmed", "no source", "not in the corpus",
+    "sources are silent", "not in my sources", "cannot be confirmed",
 )
+# Regex-based, and that is safe in one direction only: an abbreviation like
+# "21 CFR 74.303." splits a sentence early, which can only STRAND a cue from
+# its token and make the ban fire. It cannot merge two sentences into one.
+_GATE_WINDOW_WORDS = 3
 _SENTENCES = re.compile(r"(?<=[.!?])\s+")
 
 
 def _hedged_mention_only(low: str, needle: str) -> bool:
-    """True if EVERY occurrence of `needle` sits inside a hedged interrogative."""
+    """True if EVERY occurrence of `needle` sits inside a hedged interrogative.
+
+    Returns False the moment one bare occurrence is found, so an answer that
+    hedges once and asserts once still fails the ban. Returns False for a
+    needle that does not occur at all, which the caller never asks about.
+    """
     seen = False
     for sentence in _SENTENCES.split(low):
         start = 0
@@ -160,9 +194,12 @@ def _hedged_mention_only(low: str, needle: str) -> bool:
             seen = True
             prefix = sentence[:i]
             cue = max((prefix.rfind(c) for c in _HEDGE_CUES), default=-1)
-            gate = max(prefix.rfind("whether"), prefix.rfind(" if "))
+            gate = prefix.rfind("whether")
             if cue == -1 or gate == -1 or cue >= gate:
                 return False          # a bare assertion; the ban stands
+            between = prefix[gate + len("whether"):].split()
+            if len(between) > _GATE_WINDOW_WORDS:
+                return False          # the `whether` governs a different clause
             start = i + 1
     return seen
 ```
@@ -173,6 +210,10 @@ def _hedged_mention_only(low: str, needle: str) -> bool:
 +        if needle.lower() in low and not _hedged_mention_only(low, needle.lower()):
              fails.append(f"forbidden text present: {needle!r}")
 ```
+
+The block above is the code **as shipped**, with all three amendments applied —
+not the version this section proposed before the seat ruled. The long rationale
+comment that accompanies it in `evals/run_evals.py` is not reproduced here.
 
 The cue list is a **scorer** constant, deliberately not read from each
 question's own `must_contain_any`. Coupling them would mean a question's accept
@@ -226,18 +267,43 @@ established still fails; only declining to assert them stops being punished.
 
 ---
 
-## 9. For the seat
+## 9. The ruling as adopted
 
-- [ ] **Adopt** as written — I implement §5, add §6's specimens, re-run both
-      harnesses, and route the `run_evals.py` diff through `eng-code-reviewer`.
-- [ ] **Adopt with amendments** — the cue list and the `whether`/`if` gate are
-      the two dials.
-- [ ] **Reject** — q03 stays failing and CI stays red; the alternative on the
-      table is deferring q03 alongside q12/q15, which does **not** clear the
-      FRAGILE gate and so does not unblock the branch.
+Selected by the seat, 2026-08-20: **Adopt with amendments.**
+
+| # | Amendment | Effect | Authorised |
+|---|---|---|---|
+| 1 | Cue list holds only explicit first-person disclaimers. `my sources`, `no source`, `not in the corpus` dropped — they match as bare noun phrases ("my sources include…") rather than as refusals. 16 cues remain. | tightening | seat |
+| 2 | The gate is `whether` alone. ` if ` dropped as too common a word to carry the interrogative weight the rule rests on. | tightening | seat |
+| 3 | `whether` must **govern** the token: at most `_GATE_WINDOW_WORDS` (3) between them. | tightening | **not authorised — see below** |
+
+**Amendment 3 was not asked for, and is flagged rather than folded in.** It was
+found by probing after implementing 1 and 2: the collision §3 feared was still
+live, because a `whether` in an unrelated clause could reach across and
+suppress a ban. "whether TTB requires" has nil words between; "whether the rule
+applies, so I cannot determine" has five and now fires.
+
+It moves in the same direction as the seat's own two amendments — a tightening
+can only make a ban fire **more** often, so it cannot create a false pass, and
+the worst case is a hedge that gets failed. Shipping the rule without it would
+have put a known false pass into the honesty questions, which is why it is in
+the code; leaving it undocumented would have been substituting my judgement for
+the seat's, which is why it is here. **One word reverses it.**
+
+### Verification performed
+
+- `make discrimination` — 108 specimens over 20 questions, exit 0.
+- Both mutations killed by the specimen written for them: removing amendment 3
+  turns the q18 collision specimen into a **FALSE PASS**; removing the rule
+  entirely turns q03's hedged specimen into a **FALSE FAIL**.
+- `replay_history` exit 0; q03's FRAGILE marker gone.
+- Full suite 956 passed, 1 skipped, 0 failed. Lint clean.
+- `eng-code-reviewer` on the `run_evals.py` diff, per §6.
+
+### Still owed the same seat, separately
 
 A second, separate matter is owed the same seat and is **not** part of this
-draft: both the passing and failing answers open with *"you mention this likely
+ruling: both the passing and failing answers open with *"you mention this likely
 refers to the Alcohol and Tobacco Tax and Trade Bureau (TTB)"*, when the
 2026-08-12 ruling deliberately removed TTB from the stem so the answer could
 not echo it. The system attributes to the asker something they did not say. No

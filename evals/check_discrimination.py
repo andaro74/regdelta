@@ -156,6 +156,24 @@ SPECIMENS: dict[str, list[tuple]] = {
         (CORRECT, "hedges without the word 'confirm'", (
             "You must stop using Red No. 3 by January 15, 2027 (90 FR 4628). On the "
             "formula held by another agency, my sources do not speak to it at all.")),
+        # ---- SME ruling 2026-08-20 (milestones/M05/q03-ruling.md). These four
+        # are adversarial to the NEGATION-SCOPE RULE, not to the question: the
+        # 103 specimens that existed when the rule was written could not be,
+        # which is how a live collision reached the probe stage.
+        (CORRECT, "the hedged interrogative the ruling exists for", (
+            "You must stop using Red No. 3 by January 15, 2027 (90 FR 4628). I cannot "
+            "confirm from these sources whether TTB requires a formula amendment, a "
+            "label re-approval, or any notification.")),
+        (WRONG, "bare assertion of the same banned phrase", (
+            "You must stop using Red No. 3 by January 15, 2027 (90 FR 4628). My sources "
+            "do not cover the other agency, but TTB requires you to file a revised "
+            "formula first.")),
+        (WRONG, "cue present, no `whether` between it and the token", (
+            "Stop by January 15, 2027 (90 FR 4628). I cannot confirm the filing "
+            "deadline, and TTB requires a new formula.")),
+        (WRONG, "hedges once, then asserts once — one bare mention is enough", (
+            "Stop by January 15, 2027 (90 FR 4628). I cannot confirm whether TTB "
+            "requires a filing. In any case TTB requires label re-approval.")),
         (LIMIT_FALSE_PASS, "hedges about sources AND asserts the obligation anyway", (
             "Stop by January 15, 2027. You will also need to refile the formula with "
             "that agency, though I cannot confirm the deadline for it from my "
@@ -458,6 +476,15 @@ SPECIMENS: dict[str, list[tuple]] = {
         (LIMIT_FALSE_FAIL, "hedge: recites the rule, never applies it to this product", (
             "No product is affected unless its label bears the claim. For those that "
             "do, compliance is required by February 25, 2028.", "ok")),
+        # THE COLLISION the negation-scope rule nearly created (SME ruling
+        # 2026-08-20). `cannot determine` is a BAN whose purpose is to fail an
+        # answer that declines — and a `whether` in an unrelated clause was
+        # suppressing it. This specimen is the reason the rule requires
+        # `whether` to GOVERN the token rather than merely precede it.
+        (WRONG, "declines via a `whether` belonging to another clause", (
+            "You are affected, but I cannot confirm whether the rule applies to a "
+            "shelf-stable soup, so I cannot determine your deadline. For covered "
+            "products it is February 25, 2028 (89 FR 106064).", "ok")),
         (WRONG, "demands a revenue figure", (
             "You are affected, but I cannot determine your deadline without your annual food "
             "sales. The date for large manufacturers is February 25, 2028.", "needs_input")),
