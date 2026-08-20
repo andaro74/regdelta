@@ -41,7 +41,8 @@ help:
 	@echo "make up / make down  - create/destroy AOSS hot tier"
 	@echo "make status          - tier state"
 	@echo "make fault-drop      - deploy with hydration deliberately broken;"
-	@echo "                       PASSES only if the gate refuses (SPEC/05)"
+	@echo "                       FAILS if the endpoint ends up naming a short"
+	@echo "                       index (SPEC/05 item 4)"
 	@echo "make smoke / evals   - golden-set checks (definition of done)"
 	@echo "make agent-evals     - golden set vs the LOCAL agent graph (SPEC/03)"
 	@echo "make discrimination  - can each question tell right from wrong? (no API)"
@@ -138,64 +139,46 @@ up:
 # SPEC/05's other half of the gate: prove it FAILS SAFE, with a real failed
 # deploy rather than a unit test asserting that a raise raises.
 #
-# WHAT IT ACTUALLY PROVES, stated exactly, because the first version of this
-# comment claimed the count-parity refusal and could not reach it.
+# WHAT AN UPDATE-TIME FAULT ACTUALLY DOES, MEASURED 2026-08-20. Two earlier
+# versions of this comment asserted outcomes this target cannot produce, and
+# both were written from reading rather than running. Recorded in full because
+# the mistake is more instructive than the fix:
 #
-# reindex.py retires the endpoint parameter BEFORE it touches the index and
-# raises on the short count BEFORE it republishes — so by the time the gate
-# runs there is no parameter, and check_hydration refuses at the `endpoint`
-# check and never evaluates count_parity. That is not a weaker result, it is
-# the RIGHT one: the property SPEC/05 needs is that a deploy whose hydration
-# failed leaves retrieval on S3 Vectors rather than on a partial index, and
-# this exercises exactly that, end to end, against a real collection.
+#   Draft 1 claimed the COUNT-PARITY refusal. Unreachable: reindex retires the
+#   parameter before touching the index and raises before republishing, so the
+#   gate refuses at `endpoint` and never evaluates count_parity.
+#   (eng-code-reviewer caught this before it ran.)
 #
-# The count_parity branch is covered offline in tests/test_hydration_gate.py
-# and cannot be reached live while the retire-first ordering holds. Caught by
-# eng-code-reviewer; the target now ASSERTS which refusal fired rather than
-# accepting any non-zero exit, so if that ordering ever changes this stops
-# quietly passing for the wrong reason.
+#   Draft 2 then claimed the ENDPOINT refusal. Also wrong, and only the live
+#   run showed why. On an UPDATE of a healthy stack the deploy does fail — but
+#   CloudFormation then rolls the Trigger back, and CDK's Trigger re-invokes
+#   the PREVIOUS Lambda version, which has no REINDEX_FAULT_DROP. That version
+#   re-hydrates completely and republishes the endpoint. Observed: version :2
+#   failed, version :1 was invoked, and the gate found 1157/1157 with a live
+#   endpoint. The gate was right; the assertion was wrong.
 #
-# THE EXIT CODE IS INVERTED, deliberately. A failing deploy is the expected
-# outcome here, so this target succeeds when the GATE REFUSES and fails when it
-# does not. `make fault-drop` returning 0 is the evidence; returning 1 means a
-# deliberately broken hydration was accepted, which is the defect SPEC/05 item
-# 4 exists to close.
+# So a failed update does not merely fail safe, it SELF-REPAIRS to the last
+# known-good index. That is a stronger property than the one this target was
+# written to demonstrate, and it is the reason the assertion below is stated as
+# a FORBIDDEN STATE rather than an expected outcome.
 #
-# THE COLLECTION SURVIVES THIS. A failed Trigger rolls the stack back to
-# UPDATE_ROLLBACK_COMPLETE — the AOSS collection is still there and still
-# billing. Only `make down` (or the janitor) stops that; the gate's refusal
-# means retrieval will not USE it, not that it went away.
+# THE PROPERTY, which holds under both outcomes: after a deploy whose hydration
+# was deliberately broken, `/regdelta/search/endpoint` must never name an index
+# that is short. Either the parameter is absent (retrieval falls to S3 Vectors)
+# or it names a fully-hydrated index (rollback repaired it). What must never
+# happen is an endpoint over a partial index answering with citations — the M02
+# residue this milestone closed.
+#
+# The endpoint-absent refusal is exercised live and free with the tier simply
+# down, and count_parity is exercised offline in tests/test_hydration_gate.py.
+# This target covers the case neither of those can: a real collection, a real
+# hydration, and a real CloudFormation failure.
+#
+# THE COLLECTION SURVIVES THIS and keeps billing at ~$0.24/hr, whichever way it
+# goes. `make down` or the janitor is what stops that.
 DROP ?= 3
 fault-drop:
-	@( $(CDK) deploy $(STACK_SEARCH) --require-approval never \
-	     -c faultDrop=$(DROP) \
-	     -c devPrincipalArn=$$(aws sts get-caller-identity --query Arn --output text) ); \
-	  deployed=$$?; \
-	  echo "--- cdk deploy exited $$deployed (a FAILING deploy is the point here)"; \
-	  $(RESOLVE_ENV) \
-	  report=$$(python evals/check_hydration.py --json); \
-	  gate=$$?; \
-	  echo "$$report"; \
-	  if [ $$gate -eq 0 ]; then \
-	    echo "❌ THE GATE ACCEPTED A DELIBERATELY BROKEN HYDRATION."; \
-	    echo "   $(DROP) chunk records were dropped before indexing and"; \
-	    echo "   check_hydration.py still reported the hot tier usable."; \
-	    exit 1; \
-	  fi; \
-	  if ! echo "$$report" | grep -q '"check": "endpoint"'; then \
-	    echo "❌ the gate refused, but NOT on the endpoint check."; \
-	    echo "   This target's evidence is 'a failed hydration leaves no"; \
-	    echo "   endpoint'. Some other refusal fired, so it is proving"; \
-	    echo "   something else and the comment above is now wrong."; \
-	    exit 1; \
-	  fi; \
-	  echo "✅ the gate refused on the endpoint check, as it must (exit $$gate)."; \
-	  echo "   A failed hydration left NO endpoint, so retrieval is on S3 Vectors."; \
-	  echo "   NEXT: 'make down' — and it is required, not optional. The rollback"; \
-	  echo "   restores the Lambda's previous config, so the Trigger's HandlerArn"; \
-	  echo "   is unchanged and the next 'make up' will NOT re-fire hydration;"; \
-	  echo "   the parameter would stay absent. 'make down && make up' is the way"; \
-	  echo "   back. The COLLECTION also still exists and still bills until then."
+	@( $(CDK) deploy $(STACK_SEARCH) --require-approval never 	     -c faultDrop=$(DROP) 	     -c devPrincipalArn=$$(aws sts get-caller-identity --query Arn --output text) ); 	  deployed=$$?; 	  echo "--- cdk deploy exited $$deployed (a FAILING deploy is the point here)"; 	  if [ $$deployed -eq 0 ]; then 	    echo "❌ the deploy SUCCEEDED with $(DROP) records dropped."; 	    echo "   reindex.py's count assertion did not fire, which means the"; 	    echo "   fault hook or the assertion is broken — not the gate."; 	    exit 1; 	  fi; 	  $(RESOLVE_ENV) 	  report=$$(python evals/check_hydration.py --json); 	  gate=$$?; 	  echo "$$report"; 	  if [ $$gate -ne 0 ]; then 	    echo "✅ the gate REFUSED (exit $$gate): no usable endpoint after a"; 	    echo "   failed hydration. Retrieval is on S3 Vectors."; 	  else 	    echo "✅ rollback RE-HYDRATED and the gate verified count parity."; 	    echo "   CDK re-invoked the previous Lambda version, which has no"; 	    echo "   fault hook. The endpoint names a complete index."; 	  fi; 	  if echo "$$report" | grep -q '"count_parity"'; then 	    echo "❌ FORBIDDEN STATE: the endpoint names a SHORT index."; 	    echo "   This is the M02 residue — an index that answers with"; 	    echo "   citations while missing chunks. SPEC/05 item 4 has regressed."; 	    exit 1; 	  fi; 	  echo "   NEXT: 'make down'. The collection still exists and still bills;"; 	  echo "   and after a rollback the Trigger's HandlerArn is unchanged, so a"; 	  echo "   plain 'make up' will not re-fire hydration."
 
 down:
 	$(CDK) destroy $(STACK_SEARCH) --force
@@ -209,11 +192,20 @@ status:
 	  --query "Parameter.{endpoint:Value,since:LastModifiedDate}" --output table \
 	  2>/dev/null || echo "Hot tier: DOWN → retrieval on S3 Vectors"
 
+# RESOLVE_ENV, and it is not cosmetic. `corpus_fingerprint()` needs
+# REGISTRY_TABLE to record WHICH corpus answered, and without it a card carries
+# `corpus: {"available": false}` — so two cards cannot be compared and
+# `corpus_drift()` silently stops warning. Measured the hard way during the M05
+# window: the first AOSS card of the run was recorded without it, and when a
+# question regressed there was no fingerprint to rule the corpus in or out. The
+# S3 Vectors card, recorded with the environment resolved, settled it in one
+# line. The daily poller changes the corpus unattended (52 documents on
+# 2026-08-19, from 4 on 2026-07-30), so this is the common case, not the edge.
 smoke:
-	python evals/run_evals.py --subset smoke
+	@$(RESOLVE_ENV) python evals/run_evals.py --subset smoke
 
 evals:
-	python evals/run_evals.py
+	@$(RESOLVE_ENV) python evals/run_evals.py $(ARGS)
 
 # Measures the INSTRUMENT, not the system: replays run_evals.check() against
 # hand-written right and wrong answers and requires it to tell them apart. No

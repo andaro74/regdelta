@@ -132,6 +132,66 @@ def test_the_shim_and_the_api_agree_on_the_tier_fields():
     for field in ("tier", "fallback_reason"):
         assert api_body[field] == shim_body[field], field
 
+    # THE KEY SETS, not a named pair. Checking two fields by name only catches
+    # the fields someone remembered to add to the list — a new field added to
+    # one mapping and not the other passes, which is the exact way
+    # `dropped_citations` went missing. `provenance` is the shim's alone
+    # (SPEC/00b records what produced a baseline card; the deployed API has no
+    # business asserting it), and `cache` is reported by both ends but sourced
+    # differently, so they are named exclusions rather than an untested gap.
+    # A NAMED LIST, so adding a field to one side is a deliberate act. The
+    # shim carries local-dev extras the deployed API has no business
+    # asserting — `provenance` (SPEC/00b: what produced a baseline card),
+    # the pause plumbing, and its own `cache` sentinel.
+    shim_only = {"provenance", "paused", "mode", "cache", "resume_with", "needs"}
+    assert set(api_body) - set(shim_body) == set(), (
+        "the deployed API returns fields the shim does not, so `make evals` "
+        f"cannot see them: {set(api_body) - set(shim_body)}")
+    assert set(shim_body) - set(api_body) == shim_only, (
+        "the shim/API field sets diverged outside the named list — "
+        f"unexpected shim-only: {set(shim_body) - set(api_body) - shim_only}; "
+        f"expected but absent: {shim_only - (set(shim_body) - set(api_body))}")
+
+
+def test_a_truncated_verdict_reaches_the_response_body():
+    """The graph recording a field is not the same as a scorecard seeing it.
+
+    `nodes.verdict` began recording `stop_reason`/`truncated` at M05, and the
+    first live golden run afterwards came back with `stop_reason: null` on all
+    twenty questions — because `_shape` is an ALLOWLIST and nobody had added
+    it. The instrument existed and reached no one; only running it showed that.
+
+    Third time for this function: `dropped_citations` and `retrieval_ms` were
+    both lost the same way, and both notes sit beside this field in the source.
+    """
+    sys.path.insert(0, str(ROOT / "evals"))
+    import serve_local
+
+    from api.api import _shape as api_shape
+
+    # `retrieval_tier` is supplied so the shim's provenance does not fall
+    # through to `router.active_tier()`, which is a live SSM read.
+    state = {"answer": "", "status": "ok", "retrieval_tier": "s3vectors",
+             "stop_reason": "max_tokens", "truncated": True}
+    for name, shape in (("api", api_shape), ("shim", serve_local._shape)):
+        body = shape(state, "t1")
+        assert body["stop_reason"] == "max_tokens", name
+        assert body["truncated"] is True, name
+
+
+def test_an_unobserved_stop_reason_stays_none_through_the_response():
+    """"Not looked at" must not arrive at a scorecard as "looked at, fine"."""
+    sys.path.insert(0, str(ROOT / "evals"))
+    import serve_local
+
+    from api.api import _shape as api_shape
+
+    for shape in (api_shape, serve_local._shape):
+        body = shape({"answer": "x", "status": "ok",
+                      "retrieval_tier": "s3vectors"}, "t1")
+        assert body["stop_reason"] is None
+        assert body["truncated"] is None
+
 
 def test_the_shim_provenance_tier_is_observed_not_configured(monkeypatch):
     """The shim reported `provenance.tier` from `router.active_tier()` — an SSM
