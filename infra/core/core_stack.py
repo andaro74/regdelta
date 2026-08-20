@@ -630,6 +630,90 @@ class RegDeltaCoreStack(cdk.Stack):
         # TODO SPEC/06: nightly eval Lambda + regression alarm + dashboard.
 
         # ------------------------------------------------------------------
+        # THE SEARCH STACK'S DELETION ROLE. SPEC/05, closing the TODO that
+        # stood here.
+        #
+        # WHY IT IS A DELETION ROLE AND NOT A DEPLOYMENT ROLE — measured, not
+        # chosen. The obvious reading of SPEC/05 is that `make up` deploys
+        # regdelta-search with `--role-arn` pointing here. It cannot: the CDK
+        # bootstrap deploy role that `cdk deploy` assumes carries exactly one
+        # PassRole grant,
+        #
+        #     "Action": "iam:PassRole",
+        #     "Resource": ".../cdk-hnb659fds-cfn-exec-role-<acct>-<region>"
+        #
+        # (read off `cdk-hnb659fds-deploy-role-581208540944-us-west-2`), so
+        # passing any other role is denied before CloudFormation is reached.
+        # The fixes for that are all worse: re-bootstrapping the account, or
+        # hand-editing a bootstrap role four other stacks in this account share
+        # and the next `cdk bootstrap` overwrites.
+        #
+        # It does not matter, because the spec's stated purpose is deletion —
+        # "so the janitor can delete via PassRole". `DeleteStack`'s RoleARN
+        # OVERRIDES the role a stack was created with, so the stack may be
+        # created by the bootstrap role and torn down by this one. That is the
+        # better split anyway: the nightly, unattended, automatic path is the
+        # one that should not wield AdministratorAccess, and it is the only
+        # path here that does not have a human watching it.
+        #
+        # Consequently this grants DELETE-side actions only. It cannot create
+        # anything, which is a property worth keeping: nothing in this account
+        # can use it to stand a collection up.
+        # ------------------------------------------------------------------
+        search_deleter = iam.Role(
+            self, "SearchStackDeletionRole",
+            assumed_by=iam.ServicePrincipal("cloudformation.amazonaws.com"),
+            description="CloudFormation execution role used ONLY to delete "
+                        "regdelta-search (SPEC/05). Delete-side actions only.",
+        )
+        # AOSS control-plane. `Resource: "*"` and it is not a shrug: the
+        # collection's ARN embeds an id AWS generates at creation, and the
+        # policy resources (`regdelta-enc`, `regdelta-net`, `regdelta-access`)
+        # are account-level objects that these actions do not accept resource
+        # ARNs for at all. The narrowing that is available is the ACTION list —
+        # no Create*, no UpdateCollection, and deliberately no
+        # `aoss:APIAccessAll`, so this role can delete the collection and can
+        # never read a document out of it.
+        search_deleter.add_to_policy(iam.PolicyStatement(
+            actions=["aoss:DeleteCollection", "aoss:BatchGetCollection",
+                     "aoss:ListCollections",
+                     "aoss:DeleteSecurityPolicy", "aoss:GetSecurityPolicy",
+                     "aoss:DeleteAccessPolicy", "aoss:GetAccessPolicy"],
+            resources=["*"]))
+        # CFN names resources `<stack>-<logicalId>-<random>`, verified against
+        # this account's live `regdelta-core-JanitorFnServiceRoleE528E41E-...`,
+        # so the stack name is a real prefix rather than a hopeful one.
+        search_deleter.add_to_policy(iam.PolicyStatement(
+            actions=["lambda:DeleteFunction", "lambda:GetFunction",
+                     "lambda:GetFunctionConfiguration", "lambda:RemovePermission",
+                     # The Custom::Trigger's DeletionPolicy is Delete, so
+                     # CloudFormation invokes the provider function with
+                     # RequestType=Delete and the exec role is what invokes it.
+                     # Without this the stack sticks in DELETE_FAILED on the
+                     # custom resource — the shape this whole role exists to
+                     # stop.
+                     "lambda:InvokeFunction"],
+            resources=[self.format_arn(service="lambda", resource="function",
+                                       resource_name="regdelta-search-*",
+                                       arn_format=cdk.ArnFormat.COLON_RESOURCE_NAME)]))
+        search_deleter.add_to_policy(iam.PolicyStatement(
+            actions=["iam:DeleteRole", "iam:GetRole", "iam:DeleteRolePolicy",
+                     "iam:GetRolePolicy", "iam:ListRolePolicies",
+                     "iam:DetachRolePolicy", "iam:ListAttachedRolePolicies",
+                     "iam:UntagRole"],
+            resources=[self.format_arn(service="iam", region="", resource="role",
+                                       resource_name="regdelta-search-*")]))
+        # The endpoint parameter, and nothing else under /regdelta/. Deleting it
+        # is what returns retrieval to the S3 Vectors tier.
+        search_deleter.add_to_policy(iam.PolicyStatement(
+            actions=["ssm:DeleteParameter", "ssm:GetParameter",
+                     "ssm:GetParameters", "ssm:RemoveTagsFromResource"],
+            resources=[self.format_arn(
+                service="ssm", resource="parameter",
+                resource_name=SSM_ENDPOINT_PARAM.lstrip("/"))]))
+        self.search_deletion_role_arn = search_deleter.role_arn
+
+        # ------------------------------------------------------------------
         # Janitor: nightly, deletes regdelta-search if left up (forgotten
         # AOSS dev collection ≈ $175/month).
         # ------------------------------------------------------------------
@@ -639,14 +723,24 @@ class RegDeltaCoreStack(cdk.Stack):
             handler="handler.handler",
             code=asset_policy.python_source(JANITOR_SRC),
             timeout=Duration.minutes(2),
-            environment={"SEARCH_STACK_NAME": "regdelta-search"},
+            environment={
+                "SEARCH_STACK_NAME": "regdelta-search",
+                # PINNED into the environment for the same reason the model ids
+                # are (see QueryFn): the role the handler names and the role
+                # this stack grants PassRole on must be the same string by
+                # construction, not by two edits staying in step.
+                "SEARCH_CFN_ROLE_ARN": search_deleter.role_arn,
+            },
         )
         janitor.add_to_role_policy(iam.PolicyStatement(
             actions=["cloudformation:DeleteStack", "cloudformation:DescribeStacks"],
             resources=[self.format_arn(service="cloudformation", resource="stack",
                                        resource_name="regdelta-search/*")]))
-        # TODO SPEC/05: dedicated CFN execution role for regdelta-search +
-        # iam:PassRole here, so deletion of the stack's resources succeeds.
+        # The other half of the pair. `DeleteStack` with an explicit RoleARN is
+        # a PassRole, and without this the janitor's own call is denied before
+        # CloudFormation starts.
+        janitor.add_to_role_policy(iam.PolicyStatement(
+            actions=["iam:PassRole"], resources=[search_deleter.role_arn]))
         events.Rule(
             self, "NightlyJanitor",
             schedule=events.Schedule.cron(minute="0", hour="1"),
