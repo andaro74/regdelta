@@ -1,0 +1,15 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "M05 janitor probe. Inert stack deliberately named regdelta-search so the deployed JanitorFn (SEARCH_STACK_NAME=regdelta-search) exercises its real IAM and code path with no AOSS and no OCU cost. Safe to delete.",
+  "Resources": {
+    "ProbeParam": {
+      "Type": "AWS::SSM::Parameter",
+      "Properties": {
+        "Name": "/regdelta/probe/janitor-m05",
+        "Type": "String",
+        "Value": "inert-probe-delete-me",
+        "Description": "M05 janitor probe. Not read by anything."
+      }
+    }
+  }
+}

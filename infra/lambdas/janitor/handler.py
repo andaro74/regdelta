@@ -14,6 +14,31 @@ the stronger claim, and it treated `DELETE_FAILED` as `no-action` — so a stack
 that had failed to delete was reported as needing nothing, nightly, forever,
 while the collection billed. That is the exact failure mode the janitor exists
 to prevent, wearing the janitor's own success message.
+
+## What was NOT wrong with it, measured 2026-08-19
+
+The M04 pack records (README:860) that this function "does not work at all —
+it calls `delete_stack` with no `RoleARN` while holding only `DeleteStack` and
+`DescribeStacks`, so it reports `delete-initiated` and lands in
+`DELETE_FAILED`". **That is false, and it was reasoned rather than run.**
+
+Probed against the live account: an inert CloudFormation stack named
+`regdelta-search` holding one SSM parameter, created with the same
+`cdk-hnb659fds-cfn-exec-role` every `cdk deploy` in this account associates,
+then this function invoked against it unchanged. The stack was **deleted**, and
+so was the parameter — `ParameterNotFound` afterwards, so the resource went and
+not merely the stack record. CloudFormation reuses a stack's associated role
+for later operations and does not re-check `iam:PassRole`, exactly as its docs
+say.
+
+So the RoleARN change below is a NARROWING, not a repair: it swaps an
+`AdministratorAccess` bootstrap role for a delete-only one on the unattended
+nightly path. The two defects above are the real breakage, and they are
+unaffected by this correction.
+
+What the probe does not establish is that deleting the REAL search stack
+succeeds — an AOSS collection, two Lambdas, two roles and a custom resource are
+not one SSM parameter. That is settled by the live teardown, not here.
 """
 import json
 import os

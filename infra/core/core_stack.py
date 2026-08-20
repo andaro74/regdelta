@@ -396,6 +396,25 @@ class RegDeltaCoreStack(cdk.Stack):
         # `Scan` is absent deliberately and is not an oversight: LeadingKeys
         # cannot constrain a Scan, so granting it would hand back everything
         # these two statements just took away. Nothing in `src/` scans.
+        #
+        # ALL OF THE ABOVE IS MEASURED, not reasoned. Every claim in this
+        # comment is a claim about IAM's evaluation, and IAM does not read
+        # comments. Probed 2026-08-19 against a throwaway table with this key
+        # schema, as a role holding exactly these statements:
+        #
+        #   Query THREAD#                              ALLOW
+        #   Query REVIEW#                              DENY
+        #   GetItem REVIEW#                            DENY
+        #   PutItem REVIEW#                            ALLOW
+        #   BatchWriteItem, THREAD# and REVIEW# mixed  ALLOW
+        #   Scan                                       DENY
+        #
+        # And the rejected design was probed too, because "two per-prefix
+        # statements would deny the mixed batch" is the REASON for the shape
+        # here and would otherwise be a story: under a THREAD#-everything /
+        # REVIEW#-writes split, a single-prefix BatchWriteItem is ALLOWED
+        # (the control, ruling out "BatchWriteItem simply is not granted") and
+        # the mixed one is DENIED. The argument holds.
         state_table_arn = self.state_table.table_arn
         query_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["dynamodb:GetItem", "dynamodb:BatchGetItem",
