@@ -49,6 +49,12 @@ def one_question(monkeypatch, tmp_path):
     monkeypatch.setattr(run_evals, "corpus_fingerprint", lambda: {"documents": 1})
 
     def run(resp):
+        # A real ask() bypasses the response cache and the API reports that it
+        # did; main() refuses to record a card without it (see
+        # run_evals.cache_control_violations). Defaulted here rather than
+        # written into every canned response so each test below stays about the
+        # one property it names.
+        resp = {"cache": "bypass", **resp}
         monkeypatch.setattr(run_evals, "ask", lambda *a, **k: resp)
         monkeypatch.setattr(sys, "argv", ["run_evals.py", "--record"])
         run_evals.main()
@@ -89,7 +95,7 @@ def two_questions(monkeypatch, tmp_path):
             r = next(seq)
             if r == "boom":
                 raise RuntimeError("connection refused")
-            return r
+            return {"cache": "bypass", **r}
 
         monkeypatch.setattr(run_evals, "ask", ask)
         monkeypatch.setattr(sys, "argv", ["run_evals.py", "--record"])
@@ -176,3 +182,65 @@ def test_refusing_to_record_is_distinguishable_from_recording_a_failure(two_ques
     assert two_questions([{"answer": "wrong", "citations": [], "status": "ok"},
                           {"answer": "wrong", "citations": [], "status": "ok"}],
                          want_status=1) is not None
+
+
+# ------------------------------------------- the control must stay recordable
+def test_the_offline_shim_reports_a_cache_state_at_all():
+    """`make baseline` could not record a card, and nothing said so.
+
+    `cache_control_violations` refuses to record answers that did not
+    demonstrably bypass the response cache — added at e9ba788 after a Tier B
+    scorecard read 5/5 from Tier A's cached answers. `evals/serve_local.py`
+    emitted no `cache` field at all, so every response read `None`, which is
+    not in `_BYPASSED`, and the guard rejected all twenty.
+
+    The effect was that **the M00b naive control became unrecordable**, which is
+    the one card ADR-0002 makes every progress claim a delta against. Nothing
+    noticed, because nothing re-ran the baseline between e9ba788 and the M04
+    close — the last naive card, `2cea737`, predates the guard and carries
+    `cache_statuses: null`.
+
+    The shim has no response cache: it invokes the graph directly and never
+    touches `api.response_cache`. `disabled` is SPEC/04's own word for that, and
+    is one of the four legal values rather than a fifth invented for the shim.
+    """
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).parent.parent
+    sys.path.insert(0, str(root / "evals"))
+    sys.path.insert(0, str(root / "src"))
+    import run_evals
+    import serve_local
+
+    body = serve_local._shape(
+        {"answer": "a", "citations": [], "retrieval_tier": "s3vectors"}, "t1")
+    assert body.get("cache") is not None, \
+        "the shim reports no cache state, so no baseline card can be recorded"
+    assert body["cache"] in run_evals._BYPASSED, (
+        f"the shim reports cache={body['cache']!r}, which "
+        "cache_control_violations refuses — `make baseline` cannot record")
+
+
+def test_a_shim_run_is_recordable_by_the_cache_guard():
+    """The guard's own verdict on a full shim-shaped run, not just the field.
+
+    Asserting the field alone would pass if `_BYPASSED` were later narrowed;
+    this drives `cache_control_violations` itself, which is what actually
+    decides whether the control can be filed.
+    """
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).parent.parent
+    sys.path.insert(0, str(root / "evals"))
+    sys.path.insert(0, str(root / "src"))
+    import run_evals
+    import serve_local
+
+    shaped = serve_local._shape(
+        {"answer": "a", "citations": [], "retrieval_tier": "s3vectors"}, "t1")
+    per_q = [{"id": f"q{i:02d}", "pass": True, "response": shaped}
+             for i in range(1, 21)]
+    assert run_evals.cache_control_violations(per_q) == [], \
+        "a clean baseline run is still refused by the cache-control guard"

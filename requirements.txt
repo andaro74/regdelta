@@ -23,3 +23,17 @@ boto3==1.43.54
 # provider wrapper would add a second way to do the thing this repo already
 # does one way.
 langgraph==1.2.11
+
+# API surface (SPEC/04, M04). The stack is the spec's choice, not the
+# implementer's: SPEC/04 line 3 names "src/api/api.py — FastAPI + Mangum on
+# Lambda". Mangum is the ASGI-to-Lambda adapter, so one app object serves both
+# the deployed function and the local test client with no second code path —
+# which matters here because the loopback shim (evals/serve_local.py) already
+# exists and a second HTTP implementation is a second thing to keep honest.
+#
+# Pulls starlette and pydantic; both were already present transitively and are
+# now first-order. No uvicorn: nothing in this repo serves ASGI over a socket.
+# The deployed path is Mangum-on-Lambda and the test path is
+# fastapi.testclient, which drives the app in-process without a server.
+fastapi==0.141.1
+mangum==0.21.0

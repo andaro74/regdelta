@@ -1,6 +1,166 @@
-<!doctype html><html><head><meta charset="utf-8"><title>RegDelta</title></head>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RegDelta — regulatory change, with citations</title>
+<link rel="stylesheet" href="app.css">
+<!-- Shipped rather than left to 404. A browser asks for /favicon.ico
+     unprompted on every load and the private bucket answers 403 through
+     OAC, so the demo logged a console error on every page view. Its own
+     file, not a `data:` URI, because `img-src 'self'` is the policy and
+     widening it to `data:` for decoration is the wrong trade. -->
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+
+<!--
+  SPEC/04's demo UI. Static, no dependencies, no build step: this file is what
+  `s3deploy.BucketDeployment` puts in the private UI bucket, and CloudFront
+  serves it at `/` from that bucket while proxying `/api/*` to the HTTP API.
+  Same origin by construction, so there is no CORS policy anywhere to get wrong
+  (infra/core/core_stack.py says why at length).
+
+  ────────────────────────────────────────────────────────────────────────────
+  THE RULE THIS WHOLE FILE IS WRITTEN AGAINST.
+
+  Every instrument on this page reads the FIELD THAT DESCRIBES THE REQUEST IT
+  IS LABELLING, and nothing adjacent to it. M04 found four defects of one
+  shape — an instrument measuring something next to the claim, reading exactly
+  like one that measures the claim:
+
+    · a parity gate that would have passed comparing nothing
+    · an asset-allowlist test that was green in a clean checkout
+    · "verified end-to-end" that never invoked the deployed function
+    · a 5/5 Tier B scorecard whose five answers were Tier A cache hits
+
+  So, concretely, on this page:
+
+    · THE TIER BADGE COMES FROM THE RESPONSE (`tier`), never from `/health`.
+      `/health` reports what SSM is CONFIGURED to. The router falls back to S3
+      Vectors on any AOSS error, so the two disagree in exactly the case a
+      viewer would want to know about. `/health` IS shown — on its own line,
+      labelled `configured`, next to the observed one, and the page says so out
+      loud when they differ. That disagreement is information; substituting one
+      for the other is the defect.
+
+    · A CACHE HIT IS NOT EVIDENCE ABOUT A TIER. On `cache: hit` the API returns
+      the STORED body, so `tier`, `fallback_reason` and `retrieval_ms` describe
+      the request that populated the cache — possibly the other tier, up to an
+      hour ago (TTL 1h). Nothing was retrieved for this request. Every readout
+      is therefore rendered as provenance-of-the-stored-answer, and a hit is
+      REFUSED as a cross-tier observation rather than being recorded as one.
+      That refusal is control 1 of SPEC/04's comparability criterion, in the
+      browser: without it the second tier's answer is the first tier's answer
+      and the panel reports `equal` by construction.
+
+    · THE LATENCY READOUT IS RETRIEVAL, NOT ROUND TRIP. `retrieval_ms` is
+      measured by `router.retrieve_traced` inside the request — the same span
+      `make demo-parity` records for the artifact. The browser's own stopwatch
+      is shown too, separately labelled, because on a miss it is 10-13 seconds
+      of which retrieval is a few hundred milliseconds: it is a number about
+      Bedrock, and printing it under "retrieval latency" would be defect five.
+      Both are REPORTED, not asserted — ADR-0012 retired Tier B's latency
+      justification, and displaying a number is not claiming one.
+
+  WHAT IS DELIBERATELY NOT HERE. The resume capability. A `needs_input`
+  response carries `resume_token`, a bearer credential bound to that thread;
+  this page renders the pause and says a capability was minted, and never
+  prints it. A screenshot of this page goes into `milestones/M04/`.
+  ────────────────────────────────────────────────────────────────────────────
+-->
+
+</head>
 <body>
-<h1>RegDelta — demo UI placeholder (SPEC/04)</h1>
-<p>Question box · 3 canned scenarios · verdict table · citation links ·
-confidence badges · active-tier + latency indicator.</p>
-</body></html>
+<div class="wrap">
+
+  <header class="card">
+    <div>
+      <h1>RegDelta</h1>
+      <p class="sub">What changed, does it apply to us, and what is the real deadline —
+        with a citation on every claim.</p>
+    </div>
+    <div class="hint right">
+      <div>FDA food-labeling corpus · SPEC/04 demo</div>
+      <div id="configured-tier">configured tier: <span class="pill flat">checking…</span></div>
+    </div>
+  </header>
+
+  <!-- The instrument strip. Every value here is filled from the /query
+       response body of the LAST request, or shows an em dash. Nothing on this
+       strip is inferred, defaulted, or read from a different endpoint. -->
+  <div class="instruments" id="instruments">
+    <div class="inst dim">
+      <div class="label">tier that answered</div>
+      <div class="value" id="i-tier">—</div>
+      <div class="note" id="i-tier-note">from the response, not /health</div>
+    </div>
+    <div class="inst dim">
+      <div class="label">response cache</div>
+      <div class="value" id="i-cache">—</div>
+      <div class="note" id="i-cache-note">hit · miss · bypass · disabled</div>
+    </div>
+    <div class="inst dim">
+      <div class="label">retrieval latency</div>
+      <div class="value" id="i-retrieval">—</div>
+      <div class="note" id="i-retrieval-note">server, router.retrieve — reported, not a claim</div>
+    </div>
+    <div class="inst dim">
+      <div class="label">round trip</div>
+      <div class="value" id="i-roundtrip">—</div>
+      <div class="note">client stopwatch, incl. generation</div>
+    </div>
+  </div>
+
+  <div class="spacer"></div>
+
+  <div class="layout" id="layout">
+    <!-- ------------------------------------------------------ scenarios -->
+    <div class="card flush">
+      <h2>Canned scenarios</h2>
+      <div id="scenarios"><span class="hint">loading…</span></div>
+      <p class="hint tight">One button per entry in
+        <code>evals/scenarios.json</code>, fetched — not transcribed.</p>
+    </div>
+
+    <!-- ----------------------------------------------------------- ask -->
+    <div class="flush">
+      <div class="card">
+        <h2>Question</h2>
+        <textarea id="question" placeholder="e.g. The effective date of the new 'healthy' claim rule was delayed. Did the compliance deadline change?"></textarea>
+        <div class="hint gap-sm" id="profile-line">company profile: <span class="pill flat">none</span></div>
+        <div class="row">
+          <button class="primary" id="ask">Ask</button>
+          <label class="check">
+            <input type="checkbox" id="bypass" checked>
+            bypass the response cache
+          </label>
+          <span class="hint" id="bypass-hint">sends <code>no_cache: true</code></span>
+        </div>
+      </div>
+
+      <div id="result"></div>
+
+      <!-- ------------------------------------------------ compare panel -->
+      <div class="card">
+        <h2>Cross-tier comparison</h2>
+        <div id="compare"></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="hint gap-lg">
+    Tier B is <b>the same retrieval algorithm on different infrastructure</b> —
+    not hybrid, and not faster (ADR-0009 Ruling 3(a); ADR-0012). The latency
+    numbers above are reported so a viewer can see them, not offered as a claim
+    about either tier.
+  </p>
+</div>
+
+<!-- The panel's JUDGEMENT, in a file that can be exercised without a
+     browser: citation URLs, what may be recorded as a tier observation,
+     and the equal/differs verdict itself. Loaded from the same bucket,
+     same origin, no build step. tests/ui_verdict_spec.js drives it
+     directly; see ui/verdict.js for why it is not inline here. -->
+<script src="verdict.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

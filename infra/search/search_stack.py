@@ -13,8 +13,8 @@ ENABLED + VPC network policy + never destroyed.
 import json
 import os
 import re
-from pathlib import Path
 
+import asset_policy
 import aws_cdk as cdk
 from aws_cdk import (
     Duration,
@@ -27,6 +27,47 @@ from aws_cdk import (
 )
 from constructs import Construct
 
+# WHAT THE REINDEX LAMBDA IS ALLOWED TO SHIP. The policy itself now lives in
+# infra/asset_policy.py, because the core stack packages the same tree and had
+# no filter at all — two copies of a packaging rule is the shape that drifted
+# _EDGE_PREDICATE at M01c. Re-exported here so callers and tests can keep
+# reading the policy off the stack that applies it.
+#
+# Everything below is the reasoning, kept where the reader of this stack meets
+# it; asset_policy.py carries the same argument for the same reason.
+#
+# IGNORE MODE IS LOAD-BEARING, and the default is wrong for an allowlist.
+# Measured at M04, not reasoned about: the deploy failed with "No module named
+# 'retrieval'" and the staged asset held two files — src/__init__.py and
+# .pytest_cache/.gitignore.
+#
+# Under the default (IgnoreMode.GLOB) these patterns go through minimatch,
+# where `*` matches every top-level ENTRY including directories, and a pruned
+# directory can never be re-entered by a later negation — so `!**/*.py` reached
+# nothing below the root. And minimatch's `*` does not match a dot-prefixed
+# name, so a ROOT-LEVEL `.env` was staged. (Only root level: the same pruning
+# that dropped the source tree also kept the walker out of `.aws/`. The first
+# version of this comment said `.aws/credentials` and `.git/` leaked too, which
+# the security review measured and refuted — an allowlist's rationale is a
+# security claim and has to be exactly as true as it says it is.)
+#
+# DOCKER is .dockerignore semantics: every path is tested on its own, so a
+# negation re-includes files under an excluded directory, and `*` matches
+# dotfiles. Verified against a tree containing .env, .aws/credentials, dev.env,
+# secrets.json, a `credentials` file with no extension and __pycache__: only
+# **/*.py ships, at every depth. GIT mode prunes directories the way GLOB does.
+#
+# The third pattern closes the one hole the review found in the second: `*`
+# excludes a DIRECTORY named `keys.py`, `!**/*.py` then matches that directory
+# and re-includes its whole subtree, so `keys.py/secret.txt` shipped. Last
+# match wins, so re-excluding anything BELOW a `.py` path component costs one
+# pattern and cannot affect a real module, which has nothing below it.
+#
+# Symlinks are not a hole here: follow_symlinks defaults to
+# SymlinkFollowMode.NEVER, so a link is copied as a link and never dereferenced.
+ASSET_EXCLUDE = asset_policy.ASSET_EXCLUDE
+ASSET_IGNORE_MODE = asset_policy.ASSET_IGNORE_MODE
+
 COLLECTION_NAME = "regdelta"
 SSM_ENDPOINT_PARAM = "/regdelta/search/endpoint"
 
@@ -36,13 +77,6 @@ SSM_ENDPOINT_PARAM = "/regdelta/search/endpoint"
 # reads like policy propagation.
 _DEV_PRINCIPAL_RE = re.compile(
     r"arn:aws[a-z-]*:iam::(?P<account>\d{12}):(?:user|role)/[\w+=,.@/-]+")
-
-# Resolved from this file, not from the process CWD. `Code.from_asset("../src")`
-# only works when cdk is invoked from infra/, which is what the Makefile does
-# and what nothing else does — `cdk synth` from the repo root, and any test
-# that synthesises this stack, both look for ../src one level too high. jsii
-# runs Node in its own process, so a chdir on the Python side does not move it.
-SRC = str(Path(__file__).resolve().parents[2] / "src")
 
 
 class RegDeltaSearchStack(cdk.Stack):
@@ -142,7 +176,14 @@ class RegDeltaSearchStack(cdk.Stack):
             # src/ contains no non-.py runtime file. Adding a data file to the
             # Lambda later means adding it here deliberately, which is the
             # intended cost.
-            code=_lambda.Code.from_asset(SRC, exclude=["*", "!**/*.py"]),
+            # The allowlist and the mode it is read under are module
+            # constants (ASSET_EXCLUDE / ASSET_IGNORE_MODE, above) so the test
+            # can assert the POLICY rather than a copy of it. A test carrying
+            # its own copy of these patterns passes while the stack ships
+            # something else.
+            # Through the helper, not by hand: `ASSET_EXCLUDE` without
+            # `ASSET_IGNORE_MODE` reads as correct and stages two files.
+            code=asset_policy.python_source(),
             timeout=Duration.minutes(15), memory_size=1024,
             environment=reindex_env)
         corpus_bucket.grant_read(reindex)
@@ -173,7 +214,25 @@ class RegDeltaSearchStack(cdk.Stack):
         # branch (M1) was right that a *new* widening must not ride out on an
         # existing TODO — and read-only for this one principal does not need the
         # SPEC/05 split, only a second statement with a different principal list.
-        lambda_principals = [reindex.role.role_arn, query_lambda_role_arn]
+        # SPLIT, not one list. The reindex role BUILDS the index — it creates,
+        # writes and deletes documents — and the query role only reads it.
+        #
+        # They shared one `aoss:*` statement until M04 on the SPEC/05 write/read
+        # deferral. That stopped being tenable when `core_stack` scoped the
+        # query role's IAM grant to `collection/*` and justified the remaining
+        # breadth by citing THIS policy as "the control that actually admits the
+        # request" — a citation that was false while this granted it `aoss:*`.
+        # The internet-facing role could DeleteIndex and WriteDocument on the
+        # corpus index the cited deadlines are drawn from.
+        #
+        # The narrowing needed no SPEC/05 split after all, for the same reason
+        # the operator's statement below did not: a second statement with a
+        # different principal list. Security review of the M04 IAM scoping.
+        index_writers = [reindex.role.role_arn]
+        # src/retrieval/aoss_tier.py issues `_search` and `_msearch`, both
+        # index-level reads, and nothing else — the same two permissions the
+        # operator's read-only statement has been running the probe harness on.
+        index_readers = [query_lambda_role_arn]
         dev_principal = (self.node.try_get_context("devPrincipalArn")
                          or os.environ.get("REGDELTA_DEV_PRINCIPAL_ARN"))
         if dev_principal:
@@ -230,9 +289,19 @@ class RegDeltaSearchStack(cdk.Stack):
                  "Permission": ["aoss:*"]},
                 {"ResourceType": "index",
                  "Resource": [f"index/{COLLECTION_NAME}/*"],
-                 "Permission": ["aoss:*"]},  # TODO SPEC/05: split write/read
+                 "Permission": ["aoss:*"]},
             ],
-            "Principal": lambda_principals,
+            "Principal": index_writers,
+        }, {
+            # INDEX-LEVEL ONLY. A collection-level rule would carry
+            # CreateCollectionItems and DeleteCollectionItems, which is how a
+            # read-only intent turns back into index deletion by another route.
+            "Rules": [
+                {"ResourceType": "index",
+                 "Resource": [f"index/{COLLECTION_NAME}/*"],
+                 "Permission": ["aoss:DescribeIndex", "aoss:ReadDocument"]},
+            ],
+            "Principal": index_readers,
         }]
         if dev_principal:
             # Read-only, and separate. The eval harness only ever issues

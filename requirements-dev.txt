@@ -12,3 +12,47 @@
 # version fixes what the rules mean, ruff.toml fixes which rules apply.
 ruff==0.16.2
 pytest==9.1.1
+
+# Drives the SPEC/04 FastAPI app in-process — `fastapi.testclient.TestClient`
+# is an httpx transport over the ASGI app, with no server and no socket.
+# TEST-ONLY, which is why it is here and not in requirements.txt: nothing in
+# the deployed path makes an outbound HTTP request through it.
+#
+# Pinned after checking it is not transitive: none of fastapi, starlette,
+# mangum, langgraph or boto3 requires httpx, so it was present on the laptop by
+# accident and tests/test_api.py would have imported fine here and failed in
+# CI. That is the drift this file was created at M03 to end.
+httpx==0.28.1
+
+# The infra tests. `tests/test_search_stack_access.py` opens with
+# `pytest.importorskip("aws_cdk")`, and aws-cdk-lib lived only in
+# infra/requirements.txt — which the eval gate's unit job does not install. So
+# the whole module reported as `1 skipped` in CI while passing locally: 713
+# tests there against 733 here.
+#
+# That is this file's stated purpose failing in the direction it was written to
+# prevent, and the skip is the dangerous shape of it — a red test says
+# something, a silent skip says nothing. What was not running: the AOSS
+# data-access policy tests, which are the whole of AOSS authorization, and the
+# two written at M04 after the reindex Lambda shipped an asset containing no
+# source and leaking a root-level .env. Neither would have caught a
+# re-introduction of that defect on the machine that gates merges.
+#
+# Pinned to what the laptop resolves, like everything else here. It satisfies
+# the >=2.230.0 floor infra/requirements.txt carries.
+#
+# WHAT THIS PIN DOES NOT COVER, said plainly because the header above claims
+# this file gives you "exactly what the eval gate runs". aws-cdk-lib pulls eight
+# packages named nowhere here, and three of them FLOAT:
+# aws-cdk.asset-node-proxy-agent-v6, aws-cdk.cloud-assembly-schema (>=54.11.0)
+# and — the one that matters — jsii (>=1.138.0,<2.0.0). jsii is the Python-to-
+# Node bridge that runs the bundled JavaScript doing asset staging, which is
+# precisely what tests/test_search_stack_access.py's allowlist tests exercise.
+# A jsii release can therefore move staging behaviour under a frozen
+# aws-cdk-lib pin, and CI would be testing something the laptop is not. Today
+# only two jsii versions satisfy the range, so the exposure is narrow — but
+# that is a property of this week, not of the constraint. security-reviewer M1;
+# whether to pin the transitives too is a dependency decision, so it is on file
+# in milestones/M04/README.md rather than taken here.
+aws-cdk-lib==2.263.0
+constructs==10.8.1

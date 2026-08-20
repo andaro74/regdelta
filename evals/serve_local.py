@@ -81,6 +81,35 @@ def resume_agent(thread_id: str, decision: dict) -> dict:
     return _shape(state, thread_id)
 
 
+# THERE IS NO RESPONSE CACHE ON THIS PATH, and saying so is not cosmetic.
+#
+# `run_evals.cache_control_violations` refuses to record a card whose answers
+# did not demonstrably bypass the response cache — added at e9ba788, because a
+# Tier B scorecard had read 5/5 from Tier A's cached answers. The shim emitted
+# no `cache` field at all, so every response read `None`, which is not in
+# `_BYPASSED`, and the guard rejected all twenty questions.
+#
+# The effect: `make baseline` could not record a card at all after e9ba788, so
+# the M00b control that ADR-0002 makes every progress claim a delta against
+# became unrecordable. Nothing noticed, because nothing re-ran the baseline in
+# between — the last naive card, 2cea737, predates the guard and carries
+# `cache_statuses: null`.
+#
+# `disabled` is SPEC/04's own word for "the response cache is off by
+# configuration", which is exactly this path: the shim invokes the graph (or
+# the baseline) directly and never consults `api.response_cache`. One of the
+# four legal values rather than a fifth invented for the shim. Silence was the
+# only dishonest option — it left the guard unable to tell "no cache on this
+# path" from "cache not bypassed".
+#
+# IT IS SET HERE, IN THE SHIM, AND NOT IN `src/baseline/naive.py`. That file is
+# the frozen control (ADR-0002) and is not touched. It does not belong there on
+# the merits either: a cache status describes the serving path, not an answer —
+# the deployed API sets it in the endpoint and not in the graph, and this is the
+# same seam one layer out.
+SHIM_CACHE_STATE = "disabled"
+
+
 def _shape(state: dict, thread_id: str) -> dict:
     """Map graph state onto the response the eval runner reads.
 
@@ -119,10 +148,28 @@ def _shape(state: dict, thread_id: str) -> dict:
         # A model that reached for authority the sources did not carry is a
         # finding about the answer, not noise — q03 is why it is surfaced.
         "dropped_citations": state.get("dropped_citations") or [],
+        # Same two fields the deployed API returns, for the same reason and by
+        # the same name — this mapping is the contract between the graph and the
+        # scorecard, and a field that exists on one side only is how
+        # `dropped_citations` came to read as "nothing was dropped" on every
+        # demo-parity response when nothing had been asked.
+        "tier": state.get("retrieval_tier"),
+        "fallback_reason": state.get("retrieval_fallback"),
+        # Same field, same name, same reason as the two above: SPEC/04's UI
+        # readout reads `retrieval_ms` off the deployed API, and a field that
+        # exists on one _shape only is how `dropped_citations` came to read as
+        # "nothing was dropped" where nothing had been asked.
+        "retrieval_ms": state.get("retrieval_ms"),
+        "cache": SHIM_CACHE_STATE,
         "provenance": {
             "model_fast": config.MODEL_FAST,
             "model_verdict": config.MODEL_VERDICT,
-            "tier": router.active_tier(),
+            # OBSERVED, not configured. This was `router.active_tier()` — an
+            # SSM read — so a card recorded through the shim inherited the same
+            # untruth the deployed API told: a silent fallback to S3 Vectors
+            # still filed under `aoss`. Falls back to the SSM answer only when
+            # the run never retrieved and there is nothing observed to report.
+            "tier": state.get("retrieval_tier") or router.active_tier(),
             "top_k": config.NAIVE_TOP_K,
             "rerank": config.RERANK,
             "lexical_lane": config.RETRIEVAL_LEXICAL_LANE,
@@ -216,7 +263,10 @@ class Handler(BaseHTTPRequestHandler):
             if mode == "agent":
                 return self._send(200, answer_agent(question, profile))
             from baseline.naive import answer_naive
-            self._send(200, answer_naive(question))
+            # The control's own dict, plus the serving path's cache status.
+            # `answer_naive` is not modified and must not be — ADR-0002.
+            self._send(200, {**answer_naive(question),
+                             "cache": SHIM_CACHE_STATE})
         except Exception as e:  # noqa: BLE001 — surface as a failed answer
             # Detail to stderr only: botocore error strings embed the account
             # id, role ARN and bucket name. This handler is the template

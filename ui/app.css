@@ -1,0 +1,133 @@
+  :root {
+    --bg: #f6f6f4;
+    --card: #ffffff;
+    --ink: #1c1c1a;
+    --muted: #6b6b66;
+    --line: #e0e0da;
+    --accent: #1c4f8b;
+    --ok: #1a6b45;
+    --ok-bg: #e6f3ec;
+    --warn: #8a5a00;
+    --warn-bg: #fdf3e0;
+    --bad: #9b2c2c;
+    --bad-bg: #fbeaea;
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 24px 20px 64px; }
+  h1 { font-size: 21px; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em;
+       color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  .sub { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+  .card { background: var(--card); border: 1px solid var(--line);
+          border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  header.card { display: flex; justify-content: space-between;
+                align-items: flex-start; gap: 24px; flex-wrap: wrap; }
+
+  /* ---------------------------------------------------------- instruments */
+  .instruments { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                 gap: 1px; background: var(--line); border: 1px solid var(--line);
+                 border-radius: 8px; overflow: hidden; }
+  .inst { background: var(--card); padding: 11px 13px; }
+  .inst .label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em;
+                 color: var(--muted); font-weight: 600; }
+  .inst .value { font-family: var(--mono); font-size: 19px; margin-top: 3px;
+                 line-height: 1.2; }
+  .inst .note { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+  .inst.dim .value { color: var(--muted); }
+
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px;
+          font-size: 11.5px; font-weight: 600; font-family: var(--mono);
+          border: 1px solid transparent; vertical-align: 2px; }
+  .pill.ok   { background: var(--ok-bg);   color: var(--ok);   border-color: #bfe0cd; }
+  .pill.warn { background: var(--warn-bg); color: var(--warn); border-color: #ecd9ae; }
+  .pill.bad  { background: var(--bad-bg);  color: var(--bad);  border-color: #eec4c4; }
+  .pill.flat { background: #eeeeea; color: var(--muted); border-color: var(--line); }
+
+  /* ------------------------------------------------------------- controls */
+  textarea { width: 100%; min-height: 74px; padding: 10px 12px; font: inherit;
+             border: 1px solid var(--line); border-radius: 6px; resize: vertical;
+             background: #fff; color: var(--ink); }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  button { font: inherit; padding: 7px 14px; border-radius: 6px; cursor: pointer;
+           border: 1px solid var(--line); background: #fff; color: var(--ink); }
+  button:hover:not(:disabled) { border-color: #b9b9b1; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover:not(:disabled) { background: #17406f; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.scenario { text-align: left; display: block; width: 100%; margin-bottom: 8px;
+                    padding: 10px 12px; }
+  button.scenario .sid { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  button.scenario .slabel { display: block; margin-top: 2px; }
+  label.check { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px;
+                cursor: pointer; user-select: none; }
+  .hint { font-size: 12px; color: var(--muted); }
+
+  /* ---------------------------------------------------------------- table */
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th { text-align: left; font-size: 10.5px; text-transform: uppercase;
+       letter-spacing: 0.07em; color: var(--muted); font-weight: 600;
+       border-bottom: 1px solid var(--line); padding: 6px 10px 6px 0; }
+  td { padding: 10px 10px 10px 0; border-bottom: 1px solid var(--line);
+       vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td.deadline { font-family: var(--mono); white-space: nowrap; }
+  .cites { display: flex; flex-direction: column; gap: 3px; }
+  .cites a, .cites span.nolink { font-family: var(--mono); font-size: 12px;
+                                 white-space: nowrap; }
+  th:last-child, td:last-child { padding-right: 0; }
+  td.deadline, th:nth-child(4) { min-width: 96px; }
+  .cites a { color: var(--accent); }
+  span.nolink { color: var(--muted); }
+  span.nolink::after { content: " (no canonical URL)"; font-size: 10.5px; }
+
+  .banner { border-radius: 6px; padding: 12px 14px; margin-bottom: 14px;
+            border: 1px solid; font-size: 13.5px; }
+  .banner.warn { background: var(--warn-bg); border-color: #ecd9ae; color: #6b4700; }
+  .banner.bad  { background: var(--bad-bg);  border-color: #eec4c4; color: #7a2323; }
+  .banner.info { background: #eef3f9; border-color: #cfdcec; color: #1b3c61; }
+  .banner b { display: block; margin-bottom: 3px; }
+
+  .answer { font-size: 14px; white-space: pre-wrap; }
+  .meta { font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+          margin-top: 12px; word-break: break-all; }
+
+  /* ------------------------------------------------------ compare panel */
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+             background: var(--line); border: 1px solid var(--line);
+             border-radius: 6px; overflow: hidden; }
+  .side { background: var(--card); padding: 12px 14px; }
+  .side h3 { margin: 0 0 8px; font-size: 12px; font-family: var(--mono);
+             text-transform: uppercase; letter-spacing: 0.05em; }
+  .side ul { margin: 4px 0 0; padding-left: 18px; font-family: var(--mono);
+             font-size: 12px; }
+  .side .when { font-size: 11px; color: var(--muted); }
+  .verdictline { margin-top: 12px; font-size: 15px; display: flex;
+                 align-items: center; gap: 10px; flex-wrap: wrap; }
+  .verdictline .big { font-family: var(--mono); font-weight: 700; font-size: 17px; }
+  @media (max-width: 720px) { .compare { grid-template-columns: 1fr; } }
+
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line);
+             border-top-color: var(--accent); border-radius: 50%;
+             animation: spin 0.7s linear infinite; vertical-align: -1px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ------------------------------------------------------------- layout bits
+   These were literal `style=` attributes in the markup until the page moved
+   behind a Content-Security-Policy. `style-src 'self'` blocks a style
+   attribute exactly as it blocks an inline <style> block, so they are classes
+   now. Element.style assignments from app.js are unaffected — CSP governs
+   markup and stylesheets, not CSSOM. */
+.right { text-align: right; }
+.spacer { height: 16px; }
+.flush { margin: 0; }
+.tight { margin: 10px 0 0; }
+.gap-sm { margin-top: 8px; }
+.gap-lg { margin-top: 24px; }
+.layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px;
+          align-items: start; }
+@media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }

@@ -28,12 +28,12 @@ Python 3.14 · LangGraph · Bedrock (Claude + Titan v2 embeddings, 1024-dim)
   by default. Do not re-enable it to "fix" a probe — the reversal condition is
   a probe the lexical lane *wins*, and it is written beside the flag.
   Consequently both tiers now run the same algorithm on different
-  infrastructure. Tier B's remaining *candidate* justification is latency —
-  **unmeasured, and the only proxy in the repo points the other way** (`wall_s`
-  has AOSS slower in every recorded pair: 11.6 vs 6.7 at `b16f596`; that is
-  whole-run wall clock, not per-query latency, so it settles nothing either
-  way). SPEC/04 homes the criterion. Until it passes, say "same algorithm,
-  different infrastructure" — do **not** say "hybrid", and do not say "faster".
+  infrastructure. Tier B's latency justification was measured at M04
+  and **retired**: 889.3 ms median against Tier A's 354.1 ms
+  (`milestones/M04/answer-parity-3966b47.json`, ADR-0012). Say "same algorithm,
+  different infrastructure" — do **not** say "hybrid", and do **not** say
+  "faster". Its remaining case is concurrency, and SPEC/06 carries the bar that
+  keeps or retires it.
 - Embeddings are computed once at ingest and persisted with chunks. Never
   re-embed during index hydration.
 - Every answer must cite FR doc number and/or CFR section for each claim.

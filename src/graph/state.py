@@ -27,6 +27,24 @@ class RegDeltaState(TypedDict, total=False):
 
     # --- parallel branches
     retrieved: list[Chunk]
+    #: Which tier ACTUALLY answered — "aoss" | "s3vectors" — straight from
+    #: `router.Resolution`, never from `active_tier()`. The difference is the
+    #: whole point: `active_tier()` reads SSM and reports what the system is
+    #: CONFIGURED to, while the router falls back to S3 Vectors on any AOSS
+    #: error. Reporting the former is how two Tier A runs get scored as
+    #: two-tier coverage, which is the failure router.py's own docstring names.
+    #: Absent on a run that never reached retrieval (rejected, needs_input).
+    retrieval_tier: str
+    #: Why the hot tier did not answer, when it was configured and did not.
+    #: None on a clean run; a silent fallback is the thing being made loud.
+    retrieval_fallback: str | None
+    #: How long the router call took, in ms, from `router.Resolution`. SPEC/04's
+    #: UI readout reads this — a real per-query retrieval measurement through
+    #: the deployed API. NOT the request's wall time: the browser can measure
+    #: that for itself, and it is dominated by generation, so displaying it as
+    #: "retrieval latency" would be a number about Bedrock wearing a retrieval
+    #: label. Absent on a run that never reached retrieval, like `retrieval_tier`.
+    retrieval_ms: float | None
     timeline_facts: list[dict]   # from the amendment graph, never from prose
     #: True when documents WERE in play and the graph produced no dated fact for
     #: any of them. `timeline_facts == []` cannot express this: it is also what
@@ -34,6 +52,12 @@ class RegDeltaState(TypedDict, total=False):
     #: Set by `timeline_agent`, read by `_needs_review`.
     timeline_degraded: bool
     crossrefs: list[dict]
+    #: The cross-referenced sections as TEXT, ready to fence into the verdict
+    #: prompt. Separate from `crossrefs` because that field is the audit trail —
+    #: which citation resolved, to what, or why it did not — and this is the
+    #: payload. Until 2026-08-16 only the audit trail existed and nothing read
+    #: it, so the node resolved references and threw the answer away.
+    crossref_chunks: list
 
     # --- synthesis
     applicability: dict

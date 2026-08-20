@@ -12,7 +12,7 @@ question set, and journaled — the repo history IS the demo.
 | 01 | Ingestion + amendment graph | `m01` | n/a | n/a | ✅ |
 | 02 | Two-tier retrieval (S3 Vectors / AOSS) | `m02` | n/a ** | 9/9 probes ** | ✅ |
 | 03 | Agent graph + HITL | `m03` | 4/4 | 100% *** | ✅ |
-| 04 | API + demo UI | `m04` | – | – | ⬜ |
+| 04 | API + demo UI | `m04` | 4/4 | 90% **** | ✅ |
 | 05 | Deploy + lifecycle | `m05` | – | – | ⬜ |
 | 06 | Load + observability | `m06` | – | – | ⬜ |
 | 07 | Governance layer (three doors) | `m07` | – | – | ⬜ |
@@ -53,6 +53,37 @@ delta this row claims. Re-running the control is not improving it (ADR-0002);
 clean tree, both carrying the corpus fingerprint that makes them comparable.
 The corpus changed *during* the closing session — 34 documents to 49 — which
 is why that fingerprint now exists (ADR-0011).
+
+\*\*\*\* **M04's 90% is against a control re-run at M04's own corpus**, the
+same discipline as the row above. All three cards carry corpus fingerprint
+`35a293e17117` (52 documents) and the same twenty questions: `naive` scores
+**4/20, traps q01-q04 0/4**; the agent scores **18/20, traps 4/4 — on BOTH
+tiers**, S3 Vectors and AOSS, identically. Re-running the control is not
+improving it (ADR-0002); `src/baseline/naive.py` is untouched on this branch.
+Evidence: `evals/history/6fad8f6-naive-full.json` and
+`evals/history/1fa942a-{s3vectors,aoss}-full.json`.
+
+The control card sits two commits after the agent cards, and that gap is inert:
+those two commits change only `evals/serve_local.py`, the offline shim, which
+the deployed API does not use — the agent cards were measured against the
+deployed API. What the gap fixed is why it exists at all: **the control had
+become unrecordable.** `cache_control_violations`, added at `e9ba788` to stop a
+Tier B scorecard reading 5/5 from Tier A's cached answers, rejects any response
+whose cache state is not one of `bypass|disabled|uncacheable` — and the shim
+emitted no cache state at all, so every naive answer was refused. Nothing
+noticed for three days because nothing re-ran the baseline. A guard written to
+protect card honesty had silently disabled the one card ADR-0002 makes every
+other claim a delta against.
+
+The two failures are `q12` and `q15`, both **deferred by the human seat with
+evidence** and neither in a gated subset (milestones/M04). The 90% is 18/20 with
+those two standing, not a rounded 20/20.
+
+**Read the trap column carefully.** The naive control's trap score is not
+stable: it scored 4/8 on the traps subset at `2cea737` and 2/8 here, on the same
+frozen code. The `q01-q04` column reads 0/4 both times. A control that varies
+run to run is a control whose single-run delta is worth less than the direction
+it shows — recorded rather than smoothed over.
 
 The intended arc: baseline fails the trap questions → retrieval fixes
 recall → the agent graph fixes the traps → the rest makes it production-

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="RegDelta">
+  <rect width="32" height="32" rx="6" fill="#1c4f8b"/>
+  <path d="M16 7 L25 24 H7 Z" fill="none" stroke="#ffffff" stroke-width="2.5"
+        stroke-linejoin="round"/>
+  <path d="M11.5 18.5 H20.5" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

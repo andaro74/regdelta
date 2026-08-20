@@ -32,10 +32,11 @@ CDK          := cd infra && npx cdk
 # See evals/local_env.py and evals/wait_ready.py.
 RESOLVE_ENV = eval "$$(python evals/local_env.py)";
 
-.PHONY: help bootstrap core up down status smoke evals agent-evals discrimination replay-history lint test demo ingest-backfill synth diff \
-        retrieval-evals retrieval-parity preflight rebuild-vectors
+.PHONY: help bootstrap layer core up down status smoke evals agent-evals discrimination replay-history lint test demo ingest-backfill synth diff \
+        retrieval-evals retrieval-parity preflight rebuild-vectors demo-parity
 
 help:
+	@echo "make layer           - build the Lambda dependency layer (needed by core)"
 	@echo "make core            - deploy/update persistent stack"
 	@echo "make up / make down  - create/destroy AOSS hot tier"
 	@echo "make status          - tier state"
@@ -46,6 +47,8 @@ help:
 	@echo "make retrieval-evals - probe set vs the CURRENT tier (SPEC/02 A)"
 	@echo "make retrieval-parity- cross-tier gate; needs both runs recorded"
 	@echo "                       (ARGS=\"--rerank 1\" gates the RERANK=1 pair)"
+	@echo "make demo-parity     - answer-level cross-tier gate + Tier B latency"
+	@echo "                       (SPEC/04; run once per tier, then it judges)"
 	@echo "make preflight       - date-attribution check alone (cheap)"
 	@echo "make rebuild-vectors - rebuild S3 Vectors from the corpus (no re-embed)"
 	@echo "make lint            - ruff (same scope as the eval gate)"
@@ -56,7 +59,31 @@ help:
 bootstrap:
 	$(CDK) bootstrap
 
-core:
+# THE DEPLOYED FUNCTION'S DEPENDENCIES. src/ ships first-party Python only
+# (infra/asset_policy.py), so fastapi, mangum, langgraph and the pinned boto3
+# reach Lambda through this layer or not at all. Until M04 they did not: the
+# deployed query function answered every invoke with "No module named
+# 'fastapi'", invisible because every end-to-end run drives the graph in-process
+# with the function's environment rather than invoking the function.
+#
+# --platform/--implementation/--python-version because this is built from a
+# Windows laptop for a linux runtime; without them pip resolves win_amd64 wheels
+# and pydantic_core's compiled extension is the wrong architecture — a failure
+# that only appears at invoke time, in the region, on the demo.
+#
+# --only-binary=:all: so a missing wheel FAILS here rather than silently
+# building a source distribution against the local Python and shipping that.
+LAYER_DIR := build/lambda-layer
+layer:
+	@rm -rf $(LAYER_DIR)
+	python -m pip install --quiet \
+	  --platform manylinux2014_x86_64 --implementation cp --python-version 3.14 \
+	  --only-binary=:all: --target $(LAYER_DIR)/python -r requirements.txt
+	@echo "✅ layer built → $(LAYER_DIR)/python ($$(du -sh $(LAYER_DIR) | cut -f1))"
+
+# Depends on `layer`: the stack refuses to synth without it, which is better
+# than deploying a function whose imports fail in the region.
+core: layer
 	$(CDK) deploy $(STACK_CORE) --require-approval never
 
 # Deploys and prints the endpoint. It used to run `smoke` — i.e. the golden
@@ -150,6 +177,43 @@ retrieval-evals:
 # rebuild-vectors.
 retrieval-parity:
 	python evals/run_parity.py $(ARGS)
+
+# SPEC/04's answer-level comparability criterion, and the Tier B latency number
+# ADR-0001 asked for at M02. Writes milestones/M04/answer-parity-<sha>.json.
+#
+# Cross-run for the same reason retrieval-parity is: one invocation cannot see
+# the other tier, and the tier only changes when `make up` / `make down` moves
+# the SSM parameter. Run it with the hot tier DOWN, then UP, on the same
+# commit; each run merges its half into the one artifact and re-judges. Exit 2
+# means "only one tier recorded", which is not a pass.
+#
+# The tier is DERIVED from the live SSM parameter and then ASSERTED, copied
+# from retrieval-evals above including MSYS_NO_PATHCONV — Git Bash rewrites
+# `--name /regdelta/...` into a Windows path and the lookup returns
+# ParameterNotFound, which reads as "hot tier down" while it is up. An
+# unexpected error fails rather than defaulting, because defaulting to
+# s3vectors is what made that mangled path invisible.
+#
+# RESOLVE_ENV because this drives the real graph in-process: same buckets,
+# tables and search parameter the deployed function has.
+#
+# RERANK and LEXICAL_LANE are PASSED EXPLICITLY, exactly as retrieval-evals
+# passes them. The criterion says a citation that changes "when only the
+# infrastructure changed" is a bug, which is only a statement about the tiers
+# if the retrieval configuration is held equal across the two halves — and
+# those halves are minutes-to-hours apart across a `make up`, with an exported
+# RERANK able to reach one and not the other. The harness also gates on it: the
+# recorded configs must match or the comparison fails.
+demo-parity:
+	@out=$$(MSYS_NO_PATHCONV=1 aws ssm get-parameter --name $(SSM_ENDPOINT) \
+	    --region $(REGION) --query Parameter.Value --output text 2>&1); \
+	  if echo "$$out" | grep -q '^https://'; then tier=aoss; \
+	  elif echo "$$out" | grep -q 'ParameterNotFound'; then tier=s3vectors; \
+	  else echo "cannot determine the search tier: $$out" >&2; exit 1; fi; \
+	  echo "→ hot tier $$tier (RERANK=$(RERANK) LEXICAL_LANE=$(LEXICAL_LANE))"; \
+	  $(RESOLVE_ENV) \
+	  RERANK=$(RERANK) RETRIEVAL_LEXICAL_LANE=$(LEXICAL_LANE) \
+	  python evals/run_demo_parity.py --tier $$tier $(ARGS)
 
 preflight:
 	python evals/run_retrieval.py --tier s3vectors --preflight-only

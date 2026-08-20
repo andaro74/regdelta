@@ -73,6 +73,10 @@ scorecards agree to sixteen digits of MRR.
    not support the claim either. **The rejection of the simplest alternative now
    rests entirely on an unmeasured assertion.** That is the uncomfortable sentence
    in this amendment and it should not be softened.
+
+   **Updated at M04.** The latency half of this leg is measured and gone; only
+   concurrency and scale remain unmeasured, and SPEC/06 carries the bar that
+   disposes of them (ADR-0012).
 3. **Consequences: "Two retrieval code paths to keep at eval parity (enforced by
    CI matrix)."** There is no CI matrix. `.github/workflows/evals.yml` contains no
    tier matrix and never has. Cross-tier eval parity is enforced by
@@ -118,6 +122,11 @@ That is the alternative this document rejected, and two of the three reasons it
 gave for rejecting it have now weakened. Symmetric with Ruling 3(a)'s own
 reversal condition: the decision is conditional on evidence that does not exist
 yet, and saying so is what keeps it a decision rather than a preference.
+
+**Fired at M04.** SPEC/04's latency measurement showed Tier B ~2.5x slower at the
+median (`milestones/M04/answer-parity-3966b47.json`). Leg 2 is gone; this
+reopening is disposed of by **ADR-0012**, which keeps leg 1, retires the latency
+claim, and homes a keep-or-retire bar in SPEC/06.
 
 **What this amendment does NOT do.** It does not reverse the decision, does not
 touch the cost argument (always-on AOSS at ~$175+/mo idle, and the 20–40 minute

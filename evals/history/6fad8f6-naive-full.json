@@ -1,0 +1,437 @@
+{
+  "sha": "6fad8f6",
+  "dirty": false,
+  "at": "2026-08-19T17:03:18+00:00",
+  "tier": "naive",
+  "tier_source": "mode=naive",
+  "cache_statuses": [
+    "disabled"
+  ],
+  "fallbacks": [],
+  "mode": "naive",
+  "subset": null,
+  "corpus": {
+    "available": true,
+    "documents": 52,
+    "documents_sha": "35a293e17117",
+    "newest_pub_date": "2026-08-19",
+    "oldest_pub_date": "2024-12-27"
+  },
+  "provenance": {
+    "model": "us.anthropic.claude-opus-4-6-v1",
+    "top_k": 8
+  },
+  "passed": 4,
+  "total": 20,
+  "wall_s": 194.4,
+  "questions": [
+    {
+      "id": "q01",
+      "pass": false,
+      "fails": [
+        "missing required: 'February 25, 2028'",
+        "no citation from ['89 FR 106064', '2024-29957']"
+      ],
+      "response": {
+        "answer": "No, the compliance deadline did not change. According to the Federal Register notice (90 FR 10592), while the effective date of the final rule was delayed from February 25, 2025, to April 28, 2025, in accordance with the President's \"Regulatory Freeze Pending Review\" memorandum, the document explicitly states: \"We note that the compliance date remains unchanged at this time.\" The compliance date is 3 years after the effective date, which is the date on which FDA would begin enforcing the rule.",
+        "answer_rows": null,
+        "citations": [
+          "90 FR 10592"
+        ],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q02",
+      "pass": false,
+      "fails": [
+        "no citation from ['21 CFR 74.303', '90 FR 4628']"
+      ],
+      "response": {
+        "answer": "# When You Must Stop Using FD&C Red No. 3 in Your Strawberry Frosting\n\n## The Deadline\n\nThe effective date for the removal of \u00a7 74.303 (the food use authorization) is **January 15, 2027**. On that date, all certificates for existing batches of FD&C Red No. 3 will cease to be effective for use in food, and any lots of FD&C Red No. 3 will be regarded as uncertified after that date.\n\nAfter January 15, 2027, using FD&C Red No. 3 in food will result in that food being considered **adulterated**.\n\n## What About Product Already on Shelves?\n\nAccording to the FDA's conclusion:\n\n> \"When FD&C Red No. 3 has been used in food or ingested drugs **while its certificate is still effective**, such food or ingested drugs **will not be regarded as adulterated** by reason of the use of such color additive.\"\n\nThis means that if your strawberry frosting was manufactured using FD&C Red No. 3 **before** January 15, 2027 (i.e., while the certificate was still effective), that product **is not illegal** even if it remains on store shelves after that date. The product is not considered adulterated simply because the authorization was later revoked.\n\n## Summary\n\n| Action | Date |\n|--------|------|\n| Last day to use FD&C Red No. 3 in food manufacturing | Before January 15, 2027 |\n| Product made before that date still on shelves | **Not adulterated** |\n| Any food use of FD&C Red No. 3 after that date | **Adulterated** |\n\nYou should plan to reformulate your frosting before January 15, 2027, but you do not need to pull already-manufactured product from shelves after that date.",
+        "answer_rows": null,
+        "citations": [],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q03",
+      "pass": false,
+      "fails": [
+        "missing required: 'January 15, 2027'"
+      ],
+      "response": {
+        "answer": "## When You Must Stop Using Red No. 3\n\nBased on the available information, you must stop using FD&C Red No. 3 in your fruit-flavored cocktail mixer by the **effective date for the removal of \u00a7 74.303** (the food-use authorization). The final rule published at 90 FR 4628 revokes the authorization for FD&C Red No. 3 in food (including dietary supplements). On that effective date:\n\n- FDA will no longer provide certification for FD&C Red No. 3 for food use.\n- All existing certificates for batches of FD&C Red No. 3 will **cease to be effective for use in food**.\n- Any food containing FD&C Red No. 3 used after its certificate ceases to be effective will be considered **adulterated**.\n\nHowever, if FD&C Red No. 3 was incorporated into your cocktail mixer while its certificate was still effective (i.e., before the effective date), that product will **not** be regarded as adulterated by reason of the use of that color additive.\n\n**Note:** The specific calendar date of the effective date for removal of \u00a7 74.303 is not stated in the passages provided to me, so I cannot confirm the exact date from my sources.\n\n## What Else You May Be Obliged to Do\n\nYou mention that your formula is on file with another federal agency. Based on the passages available to me, I **cannot confirm** any obligations you may have with respect to that other agency \u2014 such as whether you need to:\n\n- Amend or update a formula filing (e.g., with the Alcohol and Tobacco Tax and Trade Bureau (TTB), if applicable to an alcoholic cocktail mixer),\n- Obtain new formula approval reflecting the removal of Red No. 3, or\n- Comply with any separate labeling or notification requirements imposed by that agency.\n\nThese obligations would fall outside the FDA regulatory texts provided and would need to be confirmed directly with the relevant federal agency that holds your formula on file.",
+        "answer_rows": null,
+        "citations": [
+          "90 FR 4628"
+        ],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q04",
+      "pass": false,
+      "fails": [
+        "none of ['not binding', 'not legally binding', 'no legal force', 'not mandatory', 'not enforceable', 'not a legal requirement', 'not a rule', 'voluntary', 'does not change your legal deadline', 'legal deadline remains'] present"
+      ],
+      "response": {
+        "answer": "Based on the passages provided, there is no mention of HHS asking manufacturers to phase out Red No. 3 sooner than 2027. The passages only discuss the formal FDA regulatory actions:\n\n1. The **January 2025 order** (90 FR 4628) revoked the color additive listings with specific effective dates: **January 15, 2027** for food (\u00a7 74.303) and **January 18, 2028** for ingested drugs (\u00a7 74.1303).\n\n2. The passages make clear that the **legally binding** requirements are tied to those effective dates. Specifically, the January 2025 order states that certificates for existing batches \"will cease to be effective for use in food on the effective date for the removal of \u00a7 74.303,\" and that use of FD&C Red No. 3 after its certificate ceases to be effective \"will result in such food or ingested drugs being adulterated.\" Conversely, food or drugs in which FD&C Red No. 3 was used \"while its certificate is still effective...will not be regarded as adulterated by reason of the use of such color additive.\"\n\nBased on the regulatory text in these passages, any informal request by HHS to phase out Red No. 3 sooner than the stated effective dates would **not be legally binding**. The binding obligations are established by the formal order published in the Federal Register, which sets January 15, 2027, as the effective date for food and January 18, 2028, for ingested drugs. Until those dates, use of FD&C Red No. 3 with a valid certificate remains lawful under the terms of the order. The passages contain no authority for an earlier mandatory phase-out, nor do they reference any such HHS request.",
+        "answer_rows": null,
+        "citations": [
+          "90 FR 4628"
+        ],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q05",
+      "pass": false,
+      "fails": [
+        "none of ['contain a food group', 'contains a food group', 'containing a food group', 'include a food group', 'includes a food group', 'at least one food group', 'a food group equivalent'] present",
+        "no citation from ['21 CFR 101.65', '89 FR 106064']"
+      ],
+      "response": {
+        "answer": "Based on the passages, the two main criteria a food must meet to use the \"healthy\" claim under the updated rule are:\n\n1. **Food Group Equivalents (FGEs):** The food must contain a qualifying amount of food from one or more of the recommended food groups (vegetables, fruits, dairy, grains, protein foods, and oils) as identified in the Dietary Guidelines, 2020-2025.\n\n2. **Nutrients to Limit (NTL):** The food must meet specific limits for **added sugars, saturated fat, and sodium** based on a percentage of the Daily Value (DV) for these nutrients.\n\nAs stated in the Summary of the Major Provisions: the rule requires \"that, to bear a claim subject to this rule, individual food products, mixed products, main dishes, and meals must meet FGEs and specific limits for added sugars, saturated fat, and sodium based on a percentage of the Daily Value (DV) for these nutrients.\"\n\nIn essence, the updated rule establishes a dual framework: foods must both (1) contain meaningful amounts of nutrient-dense food groups and (2) stay within limits on nutrients that should be restricted in a healthy diet.",
+        "answer_rows": null,
+        "citations": [],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q06",
+      "pass": true,
+      "fails": [],
+      "response": {
+        "answer": "The \"healthy\" implied nutrient content claim is governed by **21 CFR \u00a7 101.65**, specifically paragraph (d) (\"General nutritional claims\"). This section sets forth the criteria that a food must meet in order to use the term \"healthy\" or its derivative terms (such as \"health,\" \"healthful,\" \"healthier,\" \"healthiest,\" etc.) as an implied nutrient content claim on the label or in labeling. The claim must also be made in accordance with the general requirements for nutrient content claims in **21 CFR \u00a7 101.13**.",
+        "answer_rows": null,
+        "citations": [
+          "21 CFR 101.65",
+          "21 CFR 101.13"
+        ],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q07",
+      "pass": false,
+      "fails": [
+        "missing required: 'February 25, 2028'",
+        "none of ['uniform', 'same compliance date', 'same date for all', 'one compliance date', 'no extension', 'no size', 'no additional year', 'no small-business extension', 'does not provide', 'did not provide', 'declined to provide', 'not eligible for an extension', 'regardless of size', 'regardless of company size', 'regardless of your size', 'regardless of annual sales', 'regardless of how large'] present",
+        "no citation from ['89 FR 106064', '2024-29957', '21 CFR 101.65']"
+      ],
+      "response": {
+        "answer": "Based on the passages provided, there is **no special extended compliance date for small businesses** under this rule. FDA explicitly declined to grant additional time for small businesses.\n\nAs stated in Response 135, FDA acknowledged the request for an additional 2 years for small businesses but rejected it, stating:\n\n> \"we do not have information that would enable us to determine whether all or merely some small businesses need additional time to comply with the rule, nor do we have information that would enable us to determine how much, if any, additional time is needed for small businesses generally.\"\n\nFDA also noted that extending the compliance date for small businesses could cause consumer confusion because \"different versions of the 'healthy' claim would exist in the market for a longer period of time.\"\n\nTherefore, **your compliance date is the same as everyone else's: 3 years after the effective date.**\n\nHowever, there is an important wrinkle: the effective date was originally set at 60 days after publication in the Federal Register, but a subsequent notice (90 FR 10592) delayed the effective date to **April 28, 2025**, pursuant to the January 20, 2025 Presidential \"Regulatory Freeze Pending Review\" memorandum.\n\nSo your compliance date would be **3 years after April 28, 2025 \u2014 i.e., April 28, 2028** (assuming no further delays or changes).\n\nAdditionally, note that:\n- The compliance date applies to the **date your product is labeled** (not the date it enters interstate commerce).\n- You may continue using the original \"healthy\" definition until the compliance date.\n- You may also voluntarily comply with the new definition before the compliance date if you choose.\n\nYour $8M in annual sales and small-business status does not entitle you to any additional time under this rule.",
+        "answer_rows": null,
+        "citations": [
+          "90 FR 10592"
+        ],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q08",
+      "pass": false,
+      "fails": [
+        "missing required: 'January 15, 2027'",
+        "missing required: 'January 16, 2025'",
+        "none of ['no compliance date', 'does not set a compliance date', 'no separate compliance date', 'deadline is the effective date', 'none stated', 'none is stated', 'not stated', 'does not establish a compliance date', 'no compliance date is set'] present",
+        "forbidden text present: 'January 15, 2025'"
+      ],
+      "response": {
+        "answer": "Based on the passages provided, here are the dates for the FD&C Red No. 3 revocation as they apply to food:\n\n**Publication date:** January 15, 2025 (the document is cited as 90 FR 4628, and based on context this is the publication date in the Federal Register)\n\n**Effective date:** The passages state that the effective date for the removal of \u00a7 74.303 (the food use listing) will occur before the effective date for the removal of \u00a7 74.1303 (the ingested drug listing). However, the specific effective date for food is not explicitly stated in the provided passages. Based on the general statement that the rule becomes effective and that certificates for FD&C Red No. 3 \"will cease to be effective for use in food on the effective date for the removal of \u00a7 74.303,\" the exact date is not provided in these excerpts.\n\n**Compliance date:** The passages do not specify a separate compliance date distinct from the effective date for the Red No. 3 revocation as they apply to food. The passages indicate that upon the effective date for removal of \u00a7 74.303, certificates cease to be effective for use in food, and use of FD&C Red No. 3 after that point would render food adulterated. However, food or ingested drugs in which FD&C Red No. 3 was used while its certificate was still effective \"will not be regarded as adulterated by reason of the use of such color additive.\"\n\nThe passages provided do not contain the specific effective/compliance dates (i.e., the actual calendar dates) for the food portion of the Red No. 3 revocation beyond the publication date.",
+        "answer_rows": null,
+        "citations": [
+          "90 FR 4628"
+        ],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q09",
+      "pass": true,
+      "fails": [],
+      "response": {
+        "answer": "# The \"Healthy\" Rule Does Not Apply to Dog Treat Products\n\nBased on the final rule and its supporting documents, the updated \"healthy\" nutrient content claim regulation applies exclusively to **human food products**. It does not affect pet food or animal feed labeling.\n\nKey evidence from the rule:\n\n- The rule explicitly states it \"updates the requirements for when the term 'healthy' can be used as an implied nutrient content claim in the labeling of **human food products**\" (89 FR 106064, Purpose of the Final Rule).\n\n- The framework is built around the **Dietary Guidelines for Americans, 2020-2025**, which provides dietary recommendations for humans (adults and children 2 years of age and older), not animals.\n\n- The food group equivalents (FGEs) and nutrient-to-limit (NTL) criteria are based on human Daily Values (DVs) for added sugars, saturated fat, and sodium.\n\n## Bottom Line\n\n**No, the new \"healthy\" rule does not change anything for your dog treat product line.** The regulation governs nutrient content claims on food intended for human consumption. Pet food labeling is subject to different regulatory frameworks (including AAFCO guidelines and separate FDA regulations for animal food). If you are using the term \"healthy\" on dog treats, that would be governed by pet food labeling regulations, not this rule.",
+        "answer_rows": null,
+        "citations": [
+          "89 FR 106064"
+        ],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q10",
+      "pass": false,
+      "fails": [
+        "status='answered', expected one of ['pending_review', 'needs_input']"
+      ],
+      "response": {
+        "answer": "Based on the passages provided, I cannot determine whether \"we\" (your specific organization, company, or situation) are affected by the healthy-claim changes, because I don't have information about who you are or what products you manufacture or sell. However, here are the key points from the rule that can help you assess whether you're affected:\n\n**You may be affected if:**\n\n1. **You manufacture or sell food products in the United States that currently bear a \"healthy\" claim** \u2014 The updated definition changes the criteria from focusing primarily on individual nutrient levels to incorporating food group equivalents (FGEs) and nutrients to limit (NTL), aligned with the Dietary Guidelines, 2020-2025.\n\n2. **Your products currently qualify under the old definition but may not qualify under the new one** \u2014 Some products that met the 1994 criteria (based on fat, saturated fat, cholesterol, vitamin A, vitamin C, calcium, iron, protein, and fiber levels) may no longer qualify under the updated food-group-based approach.\n\n**You may NOT be significantly affected if:**\n\n- **You don't use the \"healthy\" claim** \u2014 This is a **voluntary** claim, not a mandatory labeling requirement. It does not apply to all products (Response 162).\n\n- **FDA estimates indicate only a small number of products will need to be relabeled or reformulated** to comply with the new definition (Response 162).\n\n**Key compliance details:**\n\n- There is a **3-year compliance period** from the effective date of the rule.\n- The rule applies equally to foods manufactured anywhere in the world that are sold in the United States.\n\nTo determine if you're affected, you would need to evaluate whether any of your products currently use (or plan to use) the \"healthy\" claim and whether those products meet the updated criteria based on food group equivalents and nutrient-to-limit thresholds.",
+        "answer_rows": null,
+        "citations": [],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q11",
+      "pass": true,
+      "fails": [],
+      "response": {
+        "answer": "Based on the passages, your colleague is partially right that the order was administratively stayed, but wrong about the duration and the impact on the deadlines.\n\n**What happened:** The January 16, 2025 order (90 FR 4628) revoking FD&C Red No. 3 was administratively stayed as of **February 18, 2025**, due to objections filed under section 701(e)(2) of the FD&C Act. However, the stay lasted only until **August 5, 2026** \u2014 roughly 17 months, not a year and a half in the colloquial sense, but close.\n\n**Did the suspension change the deadlines?** No. According to 91 FR 50475, FDA **lifted the administrative stay as of August 5, 2026** and explicitly **confirmed the original effective dates**:\n\n- **January 15, 2027** \u2014 for the removal of \u00a7 74.303 (use in foods, including dietary supplements). After this date, FD&C Red No. 3 can no longer be used in food, and existing certificates cease to be effective for food use.\n- **January 18, 2028** \u2014 for the removal of \u00a7 74.1303 (use in ingested drugs). After this date, FD&C Red No. 3 can no longer be used in ingested drugs.\n\n**Bottom line:** The dates you work to are **January 15, 2027** (for food) and **January 18, 2028** (for ingested drugs). The administrative stay did **not** push these deadlines back \u2014 FDA confirmed them unchanged when it lifted the stay.",
+        "answer_rows": null,
+        "citations": [
+          "90 FR 4628",
+          "91 FR 50475"
+        ],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q12",
+      "pass": false,
+      "fails": [
+        "missing required: 'August 5, 2026'",
+        "none of ['was fair', 'fair at the time', 'was reasonable', 'reasonable at the time', 'accurate at the time', 'was a fair reading', 'fair reading at the time', 'fair then', 'correct at the time'] present"
+      ],
+      "response": {
+        "answer": "## Analysis: Was the Claim That Red No. 3's Removal \"Was Not Final and Might Never Take Effect\" a Fair Reading in Mid-2025?\n\n### The Procedural Context in Mid-2025\n\nThe January 2025 order (90 FR 4628) revoked the color additive listings for FD&C Red No. 3 in food (\u00a7 74.303, effective January 15, 2027) and ingested drugs (\u00a7 74.1303, effective January 18, 2028). However, under sections 701(e)(2) and 721(d) of the FD&C Act, the filing of objections **automatically stayed** the effectiveness of the order. As the later document confirms:\n\n> \"Under sections 701(e)(2) and 721(d) of the FD&C Act, the filing of objections operates to stay automatically the effectiveness of our repeal of \u00a7\u00a7 74.303 and 74.1303 until we take final action on the objections.\" [91 FR 50475 (V. Summary and Conclusions)]\n\nObjections were filed by the February 18, 2025 deadline. This means that during mid-2025, the January 2025 order was indeed **under an automatic administrative stay**. It was technically not yet \"final\" in the sense that the agency had not completed its evaluation of objections, and the effective dates were suspended pending that resolution.\n\n### Was It a \"Fair Reading\"?\n\n**Partially fair, but overstated.** It was accurate to say in mid-2025 that:\n\n- The order was under an automatic administrative stay.\n- FDA had not yet issued its final action on the objections.\n- The effective dates were suspended.\n\nHowever, saying it \"might never take effect\" was a stretch. The January 2025 order was grounded in the **Delaney Clause**, which operates as a matter of law once the factual predicate (inducing cancer in laboratory animals) is established. FDA explicitly found that \"FD&C Red No. 3 has been shown to cause cancer in laboratory animals\" and that \"under the Delaney Clause this finding of carcinogenicity renders the color additive 'unsafe' as a matter of law\" [90 FR 4628 (VI. Conclusion)]. The Delaney Clause leaves FDA no discretion: a color additive found to induce cancer \"shall be deemed unsafe, and shall not be listed\" [91 FR 50475 (B. Objection 2)]. Given this mandatory legal framework, the realistic prospect of the order being permanently revoked through the objection process was slim\u2014the objectors would have needed to undermine the factual finding of carcinogenicity itself, not merely argue about safety at intended use levels.\n\n### The Position Now\n\nThe later document (91 FR 50475) resolves the matter definitively:\n\n> \"We have completed our evaluation of the objections and conclude that a continuation of the administrative stay of the effective dates for the repeal of \u00a7\u00a7 74.303 and 74.1303 is not warranted.\"\n\n> \"Therefore, we are ending the administrative stay of the January 2025 order, and under the January 2025 order we are repealing the listing for FD&C Red No. 3 in \u00a7 74.303 as a color additive in food and \u00a7 74.1303 as a color additive in ingested drugs effective **January 15, 2027**, and **January 18, 2028**, respectively.\"\n\nFDA overruled all objections, denied requests for a public hearing, and confirmed the original effective dates. The agency emphasized that it \"does not have discretion to list a color additive determined to be safe under the general safety clause if it is found to induce cancer under the Delaney Clause\" [91 FR 50475 (B. Objection 2)].\n\n### Conclusion\n\nThe mid-2025 characterization that the removal \"was not final\" was **technically correct** at that moment\u2014the automatic stay was in effect and FDA had not yet ruled on objections. But the claim that it \"might never take effect\" was **not a fair reading** of the legal landscape, because the Delaney Clause is mandatory and non-discretionary once the cancer finding is made, leaving objectors with an extremely narrow path to reversal. The current position is that the stay has been lifted, the objections have been overruled, and the ban will take effect on the originally scheduled dates.",
+        "answer_rows": null,
+        "citations": [
+          "90 FR 4628",
+          "91 FR 50475",
+          "90 FR 4628",
+          "91 FR 50475",
+          "91 FR 50475",
+          "91 FR 50475"
+        ],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q13",
+      "pass": false,
+      "fails": [
+        "no citation from ['90 FR 4628', '2025-00830', '21 CFR 74.303']"
+      ],
+      "response": {
+        "answer": "## CFR Provisions Changed by the Red No. 3 Order\n\nThe January 2025 order affects two CFR provisions, and they do **not** all change on the same day:\n\n### 1. **\u00a7 74.303** (Use of FD&C Red No. 3 in food, including dietary supplements)\n- **Action:** Removed/revoked \u2014 the regulation will no longer provide for the safe use of FD&C Red No. 3 in food.\n- **Effective date:** January 15, 2027\n\n### 2. **\u00a7 74.1303** (Use of FD&C Red No. 3 in ingested drugs)\n- **Action:** Removed/revoked \u2014 the regulation will no longer provide for the safe use of FD&C Red No. 3 in ingested drugs.\n- **Effective date:** January 18, 2028\n\n### Additional Interim Amendment to \u00a7 74.1303\nBecause \u00a7 74.303 is removed first (2027) while \u00a7 74.1303 remains in effect until 2028, the order also **amends \u00a7 74.1303** to incorporate the identity and specifications language from \u00a7 74.303(a)(1) and (b) directly into \u00a7 74.1303(a). This is necessary because \u00a7 74.1303 previously cross-referenced \u00a7 74.303 for those details, and that cross-reference would become invalid once \u00a7 74.303 is removed. This interim amendment takes effect on the same date \u00a7 74.303 is removed (January 15, 2027).\n\n### Summary\nThe two removals occur on **different dates** \u2014 approximately one year apart \u2014 giving food manufacturers two years and ingested drug manufacturers three years to reformulate.",
+        "answer_rows": null,
+        "citations": [],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q14",
+      "pass": false,
+      "fails": [
+        "missing required: '101.13(h)'"
+      ],
+      "response": {
+        "answer": "Based on the passages provided, a \"healthy\" claim must satisfy the general requirements of **section 403(r)(1)(A) and (r)(2)(A) of the FD&C Act** (as implemented through the regulatory framework). However, the passages more specifically identify the CFR section governing the \"healthy\" claim as **\u00a7 101.65(d)** (21 CFR 101.65(d)).\n\nLooking more carefully at the passages for the specific question about which *other* CFR section's general requirements must be satisfied beyond the rule's own criteria, the key passage states:\n\nThe rule establishes that the \"healthy\" claim is an **implied nutrient content claim** (\u00a7 101.65(d)(1) and (3)). Under the FD&C Act, section 403(r)(1)(A) and (r)(2)(A), nutrient content claims can only be made \"in accordance with FDA's authorizing regulations.\" This means the claim must comply with the general requirements for **nutrient content claims** \u2014 which are set forth in **21 CFR \u00a7 101.13** (the general requirements for nutrient content claims).\n\nRegarding whether any part is carved out: The passage in the Summary of Major Provisions specifies that the \"healthy\" claim applies as an implied nutrient content claim on the label or labeling \"where there is also implied or explicit information about the nutrition content of the food on the label or in the labeling\" (\u00a7 101.65(d)(1) and (3)). This language suggests a specific scope/carve-out \u2014 the rule only applies where the use of \"healthy\" or its derivatives is accompanied by implied or explicit nutrition content information, meaning uses of the word \"healthy\" that do not suggest (because of nutrient content) that a food may help consumers maintain healthy dietary practices, and that lack accompanying nutrition content information, would be carved out from the rule's requirements.",
+        "answer_rows": null,
+        "citations": [
+          "21 CFR 101.65(d)",
+          "21 CFR 101.13"
+        ],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q15",
+      "pass": false,
+      "fails": [
+        "missing required: 'February 25, 2028'",
+        "missing required: '89 FR 106064'"
+      ],
+      "response": {
+        "answer": "Based on the passages provided, here are the changes you need to make following FDA's revocation of FD&C Red No. 3 for use in foods (including dietary supplements):\n\n**From the Final Rule (90 FR 4628):**\n\nThe FDA is revoking the authorized uses of FD&C Red No. 3 in foods (including dietary supplements) and in ingested drugs. However, the passages provided do not include the specific compliance dates or transition timelines from the final rule.\n\n**Changes required:**\n\n1. **Reformulate your strawberry-frosted granola bar** to remove FD&C Red No. 3 as a colorant, since its use in foods is being revoked. You will need to find an alternative permitted colorant (such as those listed in part 73 of 21 CFR, or another certified color additive that remains authorized).\n\n2. **Update your labeling** to reflect the new colorant used in the product, in conformance with applicable labeling requirements (previously, FD&C Red No. 3 labeling had to conform to \u00a7 70.25 per 21 CFR 74.303(d)).\n\n**Regarding specific dates:**\n\nThe passages provided (90 FR 4628) announce the revocation but **do not include the specific effective/compliance dates** for manufacturers to cease using FD&C Red No. 3. The full Federal Register notice would typically specify:\n\n- An effective date for the regulation revocation\n- A transition/compliance date by which food manufacturers must reformulate\n- A sell-through date for products already in commerce\n\nBased on publicly available information (not fully contained in these passages), the final rule published January 15, 2025, provides:\n\n- **January 15, 2027** \u2013 Compliance date for foods: manufacturers must cease using FD&C Red No. 3 in foods (including dietary supplements)\n- **January 18, 2028** \u2013 Compliance date for ingested drugs\n\nSince these specific dates are not explicitly stated in the passages you provided, I recommend consulting the full text of 90 FR 4628 for the exact compliance deadlines applicable to your product.\n\n**Note regarding the \"healthy\" claim:** The passages do not address the FDA's requirements for \"healthy\" labeling claims. If your reformulation changes the nutritional profile or if updated FDA \"healthy\" regulations affect your product, that would be a separate compliance matter not covered by these passages.",
+        "answer_rows": null,
+        "citations": [
+          "21 CFR 74.303(d)",
+          "90 FR 4628",
+          "90 FR 4628",
+          "90 FR 4628"
+        ],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q16",
+      "pass": false,
+      "fails": [
+        "none of ['cannot confirm', 'unable to confirm', 'no source', 'not in my sources', 'my sources do not', 'sources do not', 'no document in', 'not among the', 'not covered by', 'not in the corpus', 'only in passing', 'no source in', 'establish no requirement', 'establishes no requirement', 'sets no requirement', 'set no requirement'] present"
+      ],
+      "response": {
+        "answer": "Based on the passages provided, there is no requirement mentioned for putting a \"nutrition summary\" on the front of a package, nor is there any deadline mentioned for such a requirement.\n\nWhat the passages do address is:\n\n1. **Nutrient content claims** (e.g., \"low fat,\" \"low sodium,\" \"healthy\") \u2014 if you choose to make such claims, you must comply with specific requirements including proper disclosure statements, disclaimers, type size rules, and nutrition labeling (per \u00a7 101.9, \u00a7 101.10, or \u00a7 101.36).\n\n2. **Disclosure statements** \u2014 If a food bearing a nutrient content claim exceeds certain thresholds (e.g., more than 13.0 g of fat, 4.0 g of saturated fat, 60 mg of cholesterol, or 480 mg of sodium per RACC), a statement such as \"See nutrition information for ____ content\" must appear adjacent to the claim.\n\n3. **Nutrition labeling** \u2014 Must be provided for any food making a nutrient content claim (\u00a7 101.13(n)), but this refers to the standard Nutrition Facts panel, not a front-of-package summary.\n\nThe passages do not contain any regulation requiring a front-of-package \"nutrition summary.\" If you are referring to a proposed FDA front-of-package labeling rule (which has been discussed in recent years), that information is not contained in these passages, and as of the regulatory text provided here, no such requirement is established.\n\nIf you have heard about a front-of-package labeling proposal, you would need to consult the most current FDA rulemaking notices (Federal Register) for any finalized rule and its compliance dates, as that is not addressed in the passages provided.",
+        "answer_rows": null,
+        "citations": [],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q17",
+      "pass": false,
+      "fails": [
+        "missing required: 'February 25, 2028'"
+      ],
+      "response": {
+        "answer": "# Dates for the \"Healthy\" Rule (Food Labeling: Nutrient Content Claims; Definition of Term 'Healthy')\n\n## Publication Date\n**December 27, 2024** \u2014 The final rule was published in the Federal Register (89 FR 106064).\n\n## Effective Date\n- **Original effective date:** February 25, 2025 (60 days after publication in the Federal Register).\n- **Delayed effective date:** April 28, 2025 \u2014 In accordance with the Presidential memorandum of January 20, 2025, entitled \"Regulatory Freeze Pending Review,\" FDA delayed the effective date by 60 days from the original effective date.\n\n## Compliance Date\n**3 years after the effective date** \u2014 This is the date on which FDA would begin enforcing the new requirements. The compliance date applies to the date a product is labeled (i.e., when the label is placed on the product), not the date it is introduced into interstate commerce. FDA noted in the delay notice (90 FR 10592) that \"the compliance date remains unchanged at this time,\" meaning it would be 3 years from the (delayed) effective date of April 28, 2025 \u2014 i.e., **April 28, 2028**.\n\nDuring the period between the effective date and the compliance date, manufacturers may either comply with the new requirements or continue to use the original definition of \"healthy.\"",
+        "answer_rows": null,
+        "citations": [
+          "89 FR 106064",
+          "90 FR 10592"
+        ],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q18",
+      "pass": false,
+      "fails": [
+        "missing required: 'February 25, 2028'",
+        "no citation from ['89 FR 106064', '2024-29957', '21 CFR 101.65']",
+        "status='answered', expected one of ['ok']"
+      ],
+      "response": {
+        "answer": "# Whether Your Shelf-Stable Lentil Soup Labeled \"Healthy\" Is Affected\n\n**Yes, you are affected by the healthy-claim changes.** Based on the passages, here is what you need to know:\n\n## The Rule Applies to Your Product\n\nThe final rule updates the definition of the \"healthy\" implied nutrient content claim to align with current nutrition science and the Dietary Guidelines, 2020-2025. As stated in Response 1:\n\n> \"Nutrition science has evolved since the 1990s when FDA first established a definition for the implied nutrient content claim 'healthy,' and the purpose of this rule is to update the definition to be consistent with current nutrition science and Federal dietary guidance.\"\n\nYour lentil soup, as a packaged food currently bearing the \"healthy\" claim, will need to meet the **new criteria** \u2014 which are based on:\n\n- **Food group equivalents** (e.g., vegetables, protein, whole grains)\n- **Nutrients to limit (NTL)** \u2014 including sodium, added sugars, and saturated fat\n\n## Key Considerations for Your Product\n\n1. **Sodium limits**: Response 147 makes clear that sodium thresholds are strictly applied. A frozen vegetable product with 300 mg of sodium was deemed unable to qualify because it exceeded the 230 mg limit. Shelf-stable soups often contain significant sodium, so this could be a critical factor for your product.\n\n2. **Added sugar limits**: The final rule raised added sugar limits for certain food groups to accommodate sauces, seasonings, and recipe components, which may benefit soup products.\n\n3. **Food group requirements**: Your lentil soup would need to contain specified amounts of food group equivalents (such as vegetables and/or protein) to qualify.\n\n## Compliance Timeline\n\nYou have a **3-year compliance period** from the rule's effective date to either:\n\n- **Reformulate** your product to meet the new criteria, or\n- **Relabel** your product to remove the \"healthy\" claim if it no longer qualifies\n\nAs noted in the Costs and Benefits section, about 5% of all packaged foods currently carry the \"healthy\" label, and FDA estimates that \"only a small number of products will need to be relabeled or reformulated to comply with the new definition.\"\n\n## Important Context\n\n- The claim is **voluntary** \u2014 you are not required to use it, but if you do, your product must meet the updated definition.\n- If your soup cannot qualify, FDA notes that \"manufacturers can communicate the nutritional qualities of their foods through other applicable label claims and any truthful and non-misleading statements they want to include.\"\n- Not qualifying for the \"healthy\" claim does **not** mean your product is \"unhealthy.\"\n\n## Recommended Next Steps\n\nYou should evaluate your lentil soup's nutrition profile against the new food group equivalent requirements and NTL thresholds (particularly sodium and added sugars) to determine whether your product qualifies under the updated definition or whether reformulation/relabeling is needed within the 3-year compliance window.",
+        "answer_rows": null,
+        "citations": [],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q19",
+      "pass": false,
+      "fails": [
+        "missing required: 'January 15, 2027'",
+        "no citation from ['21 CFR 74.303', '90 FR 4628', '2025-00830']"
+      ],
+      "response": {
+        "answer": "Your supplier's claim requires careful scrutiny, because the document you've referenced about FD&C Red No. 3 (21 CFR 74.1303) is simply the existing regulation that *authorizes* the use of FD&C Red No. 3 for coloring ingested drugs. It sets out identity, specifications, uses, labeling, and certification requirements. It does not, on its face, contain a compliance date\u2014but that is because it is the *current permissive regulation*, not a revocation or phase-out rule.\n\n**What the passages actually show:**\n\nThe passages you have provided include a Federal Register notice (91 FR 53546) indicating that a **color additive petition was filed on August 3, 2026**, with a comment period on the petitioner's environmental assessment closing September 18, 2026. This suggests that a rulemaking action concerning Red No. 3 is underway (likely a revocation of its authorized uses), but the passages do not include the text of a final rule revoking the listing or establishing a compliance date for that revocation.\n\n**Why your supplier's reasoning is flawed\u2014or at least premature:**\n\n1. The fact that 21 CFR 74.1303 as currently codified contains no compliance date is unremarkable\u2014it is an *authorization*, not a ban. A compliance date would appear in a **final rule revoking or amending** that authorization.\n\n2. When FDA does finalize a revocation, it typically sets both an **effective date** and a **compliance date**, as illustrated extensively in the \"healthy\" labeling final rule (89 FR 106064). In that rule, the effective date was 60 days after publication (February 25, 2025) and the compliance date was 3 years later (February 25, 2028). FDA explicitly stated that it would not enforce the new requirements before the compliance date and that the compliance date applies to the date a product is *labeled*, not the date it enters interstate commerce.\n\n3. If and when a final rule revoking FD&C Red No. 3 for ingested drugs (or foods) is published, it **will** contain a compliance date\u2014and that date will constitute a hard deadline. The absence of such a date *now* simply means the final revocation rule either has not yet been published or is not among the passages provided.\n\n**Bottom line:** Your supplier is not \"right\" in any meaningful compliance-planning sense. The absence of a compliance date in the *current authorization regulation* tells you nothing about whether a deadline exists or will exist under a *revocation rule*. You should:\n\n- Monitor the Federal Register for a final rule revoking FD&C Red No. 3's listing (the filed petition at 91 FR 53546 signals this is in progress).\n- Once a final rule is published, look for its stated effective date and compliance date\u2014these will establish the hard deadline.\n- Do not assume that existing colored inventory can be used indefinitely; once a revocation is finalized and the compliance date passes, products bearing that color additive would be adulterated.\n\nIn short, the supplier is conflating the absence of a compliance date in the *existing authorization* with the absence of any future deadline\u2014a legally unsound position given that a rulemaking proceeding is clearly underway.",
+        "answer_rows": null,
+        "citations": [
+          "21 CFR 74.1303",
+          "21 CFR 74.1303",
+          "91 FR 53546",
+          "89 FR 106064",
+          "91 FR 53546"
+        ],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q20",
+      "pass": true,
+      "fails": [],
+      "response": {
+        "answer": "Based on the passages, the Red No. 3 revocation order was published in the Federal Register on **January 16, 2025** (90 FR 4628), not January 15, 2025 as recorded in your compliance memo. \n\nThe January 15, 2027 date that may be causing confusion is actually the **effective date** for the repeal of \u00a7 74.303 (the food use listing), not the publication date. Your compliance memo appears to have conflated the effective year with the publication date.",
+        "answer_rows": null,
+        "citations": [
+          "90 FR 4628"
+        ],
+        "status": "answered",
+        "review_reason": null,
+        "confidence": null,
+        "cache": "disabled",
+        "tier": null,
+        "fallback_reason": null
+      }
+    }
+  ]
+}

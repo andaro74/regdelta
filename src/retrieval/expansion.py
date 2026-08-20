@@ -63,6 +63,41 @@ def lookup_citation(cite: str, limit: int) -> list[str]:
     return [item["chunk_id"] for item in resp.get("Items", [])]
 
 
+def lookup_section(title: str, section: str, limit: int) -> list[str]:
+    """Every chunk of one CFR section, newest version, in document order.
+
+    NOT the citations GSI. That index is keyed on the exact `citation_path`, and
+    the text answering a cross-reference usually sits under a PARAGRAPH path:
+    resolving "21 CFR 101.65" by exact match returns the chunks whose path is
+    literally "21 CFR 101.65" and misses "21 CFR 101.65(a)" — which is the one
+    carrying the § 101.13(h) carve-out that q14 asks about. A partition key
+    cannot be prefix-matched, so an exact GSI cannot express "this section".
+
+    The registry already partitions eCFR text the right way: `pk=CFR#<title>#
+    <section>`, one item per chunk plus `VERSION#<date>` markers. This reads
+    that partition and keeps the newest version, because two versions of the
+    same section in one prompt is a way to answer with superseded text.
+    """
+    from boto3.dynamodb.conditions import Key
+
+    resp = _registry().query(
+        KeyConditionExpression=Key("pk").eq(f"CFR#{title}#{section}"))
+    chunks = [i for i in resp.get("Items", [])
+              if str(i.get("sk", "")).startswith("CHUNK#") and i.get("chunk_id")]
+    if not chunks:
+        return []
+
+    def _version(item) -> str:
+        # chunk ids look like cfr-21-101.65@2025-04-28#0003
+        cid = str(item["chunk_id"])
+        return cid.split("@", 1)[1].split("#", 1)[0] if "@" in cid else ""
+
+    newest = max(_version(c) for c in chunks)
+    keep = [c for c in chunks if _version(c) == newest]
+    keep.sort(key=lambda c: str(c["chunk_id"]))
+    return [str(c["chunk_id"]) for c in keep][:limit]
+
+
 def query_citation_ids(query: str, limit: int) -> list[str]:
     """Chunk ids for citations the QUERY names (SPEC/02's exact-citation assist).
 

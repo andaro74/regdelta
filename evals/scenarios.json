@@ -1,0 +1,47 @@
+{
+  "_meta": {
+    "purpose": "The canned demo scenarios. SPEC/04: one UI button per entry, and `make demo-parity` iterates this file per tier. PM-seat owned via CODEOWNERS — a scenario's `question` and `company_profile` assert what the demo asks and who it claims to be asking as, which is product scope, not SME truth and not an engineering probe set.",
+    "why_this_file_exists": "Until 2026-08-16 the scenarios lived only as prose in SPEC/00, while SPEC/04 gated over them. pm-spec-reviewer ruled that a criterion whose subject can move without a diff is the trap-census defect class, and that `make demo-parity` must therefore record each scenario's id AND the sha256 of the question and profile it actually ran. \"Scenario 1\" in a six-month-old artifact means nothing if the question behind it was since reworded.",
+    "count_was_contested": "SPEC/00 heads its section 'Demo scenarios (BOTH real, public-domain rules)' and defines TWO. SPEC/04 said '3 canned scenario buttons' and 'the three canned scenarios'. No third existed anywhere in the repo; ui/index.html inherited the 3 from SPEC/04 and nothing else. The parity gate was written to iterate a set whose cardinality two specs disagreed on. Resolved 2026-08-16 at THREE, and the third is DERIVED rather than invented: SPEC/04's UI must render a 'needs human review' state, and neither of the first two scenarios produces one, so that state would have been undemonstrable. A scenario authored to fill a button would be the defect this project keeps finding — SPEC/00's first scenario already carries a correction for a fabricated $10M threshold with 'zero hits across all 485 chunks'.",
+    "company": "Nordvale Foods, ~$400M annual sales (SPEC/00). Above every size threshold that appears anywhere in FDA labeling, which is deliberate: applicability in this corpus turns on CONDUCT — whether a label bears the claim — and never on company size (2024-29957#0303, Response 135, per the 2026-08-12 q07 ruling).",
+    "grounding_rule": "Every scenario must be answerable from the corpus and its expected behaviour must already be established by a golden question. A scenario is a DEMO of verified behaviour, not a new assertion. The `grounded_in` field names the question that establishes it."
+  },
+  "scenarios": [
+    {
+      "id": "healthy-claim",
+      "label": "'Healthy' claim — did the deadline move?",
+      "question": "The effective date of the new 'healthy' claim rule was delayed. Did the compliance deadline change?",
+      "company_profile": {
+        "company": "Nordvale Foods",
+        "products": ["strawberry-frosted granola bar"],
+        "claims": ["healthy"]
+      },
+      "grounded_in": "q01 (smoke, retrieval, trap)",
+      "demonstrates": "The signature trap, and the reason ADR-0006 exists: 2025-03118 delayed the EFFECTIVE date to 2025-04-28 and said in terms that 'the compliance date remains unchanged at this time'. A naive reader moves the deadline; the compliance date is February 25, 2028 and did not move. The recorded agent answer at e26d8ef quotes that sentence back.",
+      "expected_status": "ok"
+    },
+    {
+      "id": "red-no-3",
+      "label": "FD&C Red No. 3 — when exactly must we stop?",
+      "question": "We make a strawberry frosting containing FD&C Red No. 3. When exactly must we stop using it, and is product already on shelves illegal after that date?",
+      "company_profile": {
+        "company": "Nordvale Foods",
+        "products": ["strawberry frosting"],
+        "colour_additives": ["FD&C Red No. 3"]
+      },
+      "grounded_in": "q02 (smoke, trap)",
+      "demonstrates": "Two dates in one order (food 2027-01-15, ingested drugs 2028-01-18), the existing-inventory safe harbour, and the fact that the order sets NO compliance date so the operative deadline is derived from the effective date (ADR-0006). Behind it sits the administrative stay — lifted 2026-08-05 with both dates CONFIRMED, not moved (ADR-0007) — which SPEC/00 calls the strongest artifact in the corpus.",
+      "expected_status": "ok"
+    },
+    {
+      "id": "needs-review",
+      "label": "Are we affected? — the question that pauses",
+      "question": "Are we affected by the healthy-claim changes?",
+      "company_profile": {},
+      "grounded_in": "q10 (hitl)",
+      "demonstrates": "The HITL gate, and it is the ONLY scenario that does. SPEC/04's UI must render a 'needs human review' state; the other two answer `ok`, so without this entry that state has no way to appear in the demo. A question asking whether something applies to the asker, with no product and no claim in it, cannot be answered for that asker at any confidence — there is no asker in it yet. Ends `needs_input`, asks for `company_profile`, and is resumable with the token from the same response.",
+      "expected_status": "needs_input",
+      "note": "The empty company_profile is the point and must not be 'fixed'. q18 is its companion in the golden set: the same question WITH a sufficient profile must NOT pause, because a gate that pauses on everything passes q10 perfectly and is useless."
+    }
+  ]
+}

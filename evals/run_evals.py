@@ -48,7 +48,7 @@ def git_sha() -> str:
         return "nogit"
 
 
-def git_dirty() -> bool:
+def git_dirty(exclude: tuple[str, ...] = ()) -> bool:
     """True if the working tree differs from HEAD.
 
     MOVED HERE from run_retrieval.py, which is where it was written and where
@@ -74,10 +74,20 @@ def git_dirty() -> bool:
     The golden-set runner had NO such guard while its sibling did, which is how
     a 90% agent-mode run at M03 came within one flag of being filed under a
     commit containing none of the graph that produced it.
+
+    `exclude` takes further pathspecs on the same reasoning, for callers whose
+    output does not live in evals/history. `run_demo_parity.py` passes
+    `milestones/M04/answer-parity-*.json`: its two tier runs must happen at one
+    sha, the second cannot happen until `make up` has flipped the tier, and the
+    first run's artifact sits in the tree in between — so without this the
+    second run would refuse to record because the first one succeeded. The
+    pattern is the ARTIFACT, not the directory: an uncommitted edit to the
+    milestone's README is exactly the kind of drift this guard exists to catch.
     """
     try:
+        pathspecs = [":(exclude)evals/history"] + [f":(exclude){p}" for p in exclude]
         return bool(subprocess.check_output(
-            ["git", "status", "--porcelain", "--", ".", ":(exclude)evals/history"],
+            ["git", "status", "--porcelain", "--", ".", *pathspecs],
             text=True, cwd=HERE.parent).strip())
     except Exception:  # noqa: BLE001 — same policy as git_sha: never fail a run over provenance
         return False
@@ -138,6 +148,126 @@ def corpus_fingerprint() -> dict:
         return {"available": False, "reason": f"{type(e).__name__}: {e}"[:200]}
 
 
+# Anything that is not a POSITIVE statement of a bypass. `hit` is the observed
+# failure; a MISSING field is included deliberately, because an API too old to
+# report `cache` is indistinguishable from one that served a hit, and letting
+# "no evidence" pass as "evidence of none" is the substitution that produced the
+# 5/5 Tier B card in which AOSS answered nothing.
+_BYPASSED = frozenset({"bypass", "disabled", "uncacheable"})
+
+# Not a cache status the API can return: this end put it there because the
+# request never produced a response to have one.
+UNREACHABLE = "unreachable"
+
+
+def observed_tier(per_q: list[dict]) -> str | None:
+    """The tier that ACTUALLY answered, or None if the run cannot claim one.
+
+    `record()` names each card `{sha}-{tier}-{subset}.json` and that filename is
+    what a progress claim cites, so it has to come from what answered rather
+    than from `GET /health` — an SSM read describing what the system is
+    CONFIGURED to. The router falls back to S3 Vectors on any AOSS error, so the
+    two agree until precisely the case worth knowing about.
+
+    Taking it from here means a run that silently fell back files itself under
+    `-s3vectors-`: the filename stops being capable of lying, instead of being
+    something to audit for lying.
+
+    None on disagreement, deliberately. A card carries ONE tier in its name, and
+    a run where AOSS answered some questions and fell back on others can claim
+    neither — picking the majority would be the same substitution wearing a
+    different hat. None also when the API reports no tier at all (deployed code
+    older than this field), so the caller falls back to the /health reading WITH
+    its disclaimer rather than inventing an observation.
+
+    Questions that never reached the API observed nothing and do not vote.
+    """
+    tiers = {(q.get("response") or {}).get("tier") for q in per_q
+             if (q.get("response") or {}).get("cache") != UNREACHABLE}
+    tiers.discard(None)
+    return tiers.pop() if len(tiers) == 1 else None
+
+
+# Statuses meaning the system chose not to answer rather than answering badly.
+# `needs_input` asks the ASKER for more; `pending_review` stops for a reviewer.
+# Both are correct behaviour in a compliance product, and both leave `check()`
+# nothing to score.
+_DECLINED = ("needs_input", "pending_review")
+
+
+def declined(resp: dict | None) -> bool:
+    """Did this response decline to answer, rather than answer wrongly?
+
+    BOTH HALVES MATTER. A `pending_review` carrying a full answer and citations
+    is a hedge the set already rewards (q03, q09, q16) and is scored on its
+    content like anything else. A declined status with NOTHING behind it is the
+    case this names — and at q05/aeacab0 the emptiness was itself the finding:
+    `hitl_gate` files the review item with `draft_answer: ""`, so the human
+    queued to review it received nothing to review.
+    """
+    if not resp:
+        return False
+    return (str(resp.get("status")) in _DECLINED
+            and not (resp.get("answer") or resp.get("answer_rows")))
+
+
+def cache_control_violations(per_q: list[dict]) -> list[str]:
+    """Question ids whose answer did not demonstrably bypass the cache."""
+    return [q["id"] for q in per_q
+            if (q.get("response") or {}).get("cache") not in _BYPASSED
+            and (q.get("response") or {}).get("cache") != UNREACHABLE]
+
+
+def previous_card(tier: str, subset: str | None) -> dict | None:
+    """The most recent card for this same tier and subset, or None."""
+    cards = []
+    for path in HISTORY.glob(f"*-{tier}-{subset or 'full'}.json"):
+        try:
+            card = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            continue
+        if card.get("at"):
+            cards.append(card)
+    return max(cards, key=lambda c: c["at"]) if cards else None
+
+
+def corpus_drift(corpus: dict, tier: str, subset: str | None) -> str | None:
+    """A sentence to print when this run's corpus is not the last card's.
+
+    THE CARD HAS ALWAYS STORED THIS AND NOTHING EVER READ IT.
+    `corpus_fingerprint` exists because the daily poller took the corpus from 4
+    documents to 34 unattended, and `documents_sha` was added so that "same
+    corpus?" is a string comparison between two cards. It then sat unread: at
+    aeacab0 a run scored 4/5 where the previous card scored 5/5, and the obvious
+    reading — the code regressed — spanned a corpus that had gone 49 -> 52
+    documents in nine hours. Two variables moved and the scorecard reported one
+    number.
+
+    A drift is NOT an error and this does not refuse the run. The corpus is
+    meant to move; `run_demo_parity` can refuse because its two halves are meant
+    to be one measurement and these are not. What a drift must not do is happen
+    silently, at the moment a reader is deciding what a delta means.
+    """
+    if not corpus.get("available"):
+        return None
+    prev = previous_card(tier, subset)
+    if not prev:
+        return None
+    before = (prev.get("corpus") or {}).get("documents_sha")
+    now = corpus.get("documents_sha")
+    if not before or not now or before == now:
+        return None
+    return (
+        f"\n⚠ CORPUS CHANGED since the last {tier}/{subset or 'full'} card "
+        f"({str(prev.get('sha', '?'))[:7]} at {prev.get('at', '?')}):\n"
+        f"    {before} -> {now}"
+        f"   ({(prev.get('corpus') or {}).get('documents')} -> "
+        f"{corpus.get('documents')} documents)\n"
+        f"    That card and this run differ in the CORPUS as well as the code, "
+        f"so a score delta\n"
+        f"    between them cannot be attributed to either one alone.")
+
+
 def record(result: dict) -> Path:
     HISTORY.mkdir(exist_ok=True)
     path = HISTORY / f"{result['sha']}-{result['tier']}-{result['subset'] or 'full'}.json"
@@ -160,11 +290,30 @@ def resolve_api_url(cli: str | None) -> str:
 
 
 def ask(api_url: str, question: str, mode: str | None, timeout: int = 120) -> dict:
+    """One question against the deployed API, WITH THE CACHE BYPASSED.
+
+    The bypass is not a tuning choice, it is what makes a scorecard mean
+    anything. `record()` names its file for a tier, and at M04 a Tier B
+    retrieval card scored 5/5 in which AOSS answered nothing: all five came
+    back `cache: hit` from entries the Tier A run had written minutes before,
+    inside the 1h TTL. The collection's own SearchRequestRate showed two search
+    requests where there should have been at least five.
+
+    SPEC/04 parity control 1 already required this of `make demo-parity`. It
+    belongs to whatever measures the system, and demo-parity is not the command
+    that writes the cards every progress claim is a delta against.
+
+    Sent BOTH ways on purpose: response_cache reads the payload flag first and
+    the header second, and the header is the half that survives a proxy
+    rewriting a body while the flag is the half that survives a proxy dropping
+    an unrecognised header. The demo path crosses CloudFront, which does both.
+    """
     qs = "?mode=naive" if mode == "naive" else ""
     req = urllib.request.Request(
         f"{api_url.rstrip('/')}/query{qs}",
-        data=json.dumps({"question": question}).encode(),
-        headers={"Content-Type": "application/json"},
+        data=json.dumps({"question": question, "no_cache": True}).encode(),
+        headers={"Content-Type": "application/json",
+                 "x-regdelta-no-cache": "1"},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -274,10 +423,46 @@ def main() -> int:
                 "answer_rows": resp.get("answer_rows"),
                 "citations": resp.get("citations"),
                 "status": resp.get("status"),
+                # WHY IT DECLINED, and how sure it was. Both are already on
+                # every response (`api.py:_shape`) and neither reached the
+                # card, so a paused run recorded three content-token misses
+                # against an empty string and nothing about the pause itself —
+                # an instrument reporting a reason that is not the reason.
+                # `sme-eval-triage` on the q05 failure at aeacab0, whose first
+                # question the evidence pack could not answer.
+                "review_reason": resp.get("review_reason"),
+                "confidence": resp.get("confidence"),
+                # What the SERVER said it did with the cache. ask() asks for a
+                # bypass; this is the half that notices when it stops being
+                # honoured. See cache_control_violations.
+                #
+                # A request that never completed has no cache status because it
+                # has no response, which is a different thing from an answer of
+                # unknown provenance. It is already recorded as a failure, and
+                # the all-transport-failed case has its own guard above.
+                "cache": resp.get("cache") if resp else UNREACHABLE,
+                # Which tier ANSWERED this question, and why the hot one did
+                # not when it was configured and did not. See observed_tier.
+                "tier": resp.get("tier"),
+                "fallback_reason": resp.get("fallback_reason"),
             },
         })
         if fails:
             print(f"❌ {q['id']}: {q['question'][:70]}")
+            # A DECLINED ANSWER IS STILL A FAILURE, and it is a different
+            # failure. `check()` can only report what it looked for and did not
+            # find, so against an empty answer it lists every missing token —
+            # each true, none of them the reason. The VERDICT is deliberately
+            # unchanged: whether a declined answer should block a milestone the
+            # way a wrong one does is SPEC/03 exit criteria and a PM-seat call.
+            # This only says which of the two happened.
+            if declined(resp):
+                print(f"     ↳ DECLINED, not answered — status "
+                      f"{resp.get('status')}, confidence "
+                      f"{resp.get('confidence')}: "
+                      f"{resp.get('review_reason') or '(no reason recorded)'}")
+                print("       the token misses below follow from an empty "
+                      "answer; they are not its cause")
             for f in fails:
                 print(f"     - {f}")
             if args.fail_fast:
@@ -288,6 +473,16 @@ def main() -> int:
 
     total = len(questions)
     print(f"\n{passed}/{total} passed ({100 * passed // total}%)")
+
+    # AFTER the score and BEFORE the card, because it changes what the score
+    # means rather than annotating it afterwards — and outside `--record`,
+    # because a plain `make evals` is exactly the run where a silent corpus move
+    # does its damage: a reader sees a number, compares it to the last one they
+    # remember, and attributes the difference to the code.
+    corpus = corpus_fingerprint()
+    drift_tier = observed_tier(per_q) or ("naive" if args.mode == "naive" else None)
+    if drift_tier and (drift := corpus_drift(corpus, drift_tier, args.subset)):
+        print(drift)
 
     # NOTHING MEASURED IS NOT A SCORE OF ZERO. If no question ever reached the
     # API, the run says nothing about the system and a card recording it is
@@ -308,14 +503,40 @@ def main() -> int:
         return 1
 
     if args.record:
-        tier = "naive"
+        # A CARD THAT MEASURED THE CACHE MUST NOT BE WRITTEN.
+        #
+        # record() names the file for a tier and every progress claim in this
+        # repo is a delta against those files, so a card whose answers came
+        # from the cache is worse than no card: it is indistinguishable from a
+        # real one and it is filed under a tier that did no work. This is not
+        # hypothetical — see ask().
+        #
+        # Refuses rather than warns. A warning on a green 5/5 is read as noise,
+        # and the whole failure mode is that the run looks fine.
+        if violations := cache_control_violations(per_q):
+            print(f"\n❌ cache control failed on {len(violations)}/{len(per_q)}: "
+                  f"{', '.join(violations)}", file=sys.stderr)
+            print("   These answers did not demonstrably bypass the response "
+                  "cache, so this card would not measure the tier it names.",
+                  file=sys.stderr)
+            return 2
+
+        # OBSERVED FIRST. What answered beats what SSM is set to; /health is
+        # only the fallback for a deployment too old to report the tier per
+        # response, and it says so in tier_source rather than passing itself off
+        # as a measurement.
+        tier, tier_source = "naive", "mode=naive"
         if args.mode != "naive":
-            try:
-                with urllib.request.urlopen(f"{api_url.rstrip('/')}/health",
-                                            timeout=10) as r:
-                    tier = json.loads(r.read()).get("tier", "unknown")
-            except Exception:  # noqa: BLE001 — tier is provenance, not a result
-                tier = "unknown"
+            if observed := observed_tier(per_q):
+                tier, tier_source = observed, "observed (router Resolution)"
+            else:
+                try:
+                    with urllib.request.urlopen(f"{api_url.rstrip('/')}/health",
+                                                timeout=10) as r:
+                        tier = json.loads(r.read()).get("tier", "unknown")
+                except Exception:  # noqa: BLE001 — tier is provenance, not a result
+                    tier = "unknown"
+                tier_source = "GET /health (configured, not observed)"
         out = record({
             "sha": git_sha(),
             # run_parity.py already refuses a retrieval card carrying this;
@@ -323,11 +544,23 @@ def main() -> int:
             "dirty": dirty,
             "at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
             "tier": tier,
+            # HOW THAT TIER WAS ESTABLISHED, on the card rather than in a
+            # reader's assumptions. "observed" means the router said so per
+            # response; the /health value is what SSM is CONFIGURED to, which is
+            # a weaker claim and the one that let a card be filed under `-aoss-`
+            # while S3 Vectors answered everything.
+            "tier_source": tier_source,
+            "cache_statuses": sorted({(q.get("response") or {}).get("cache")
+                                      for q in per_q}, key=str),
+            # Non-empty means the hot tier was configured and did not answer.
+            # The card is already named for whichever tier did; this says why.
+            "fallbacks": sorted({(q.get("response") or {}).get("fallback_reason")
+                                 for q in per_q} - {None}),
             "mode": args.mode,
             "subset": args.subset,
             # Which corpus answered. The poller changes this daily and without
             # it two cards cannot be compared — see corpus_fingerprint.
-            "corpus": corpus_fingerprint(),
+            "corpus": corpus,
             "provenance": provenance,
             "passed": passed,
             "total": total,

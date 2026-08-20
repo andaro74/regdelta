@@ -1,0 +1,178 @@
+{
+  "sha": "aeacab0",
+  "dirty": false,
+  "at": "2026-08-19T13:05:41+00:00",
+  "tier": "s3vectors",
+  "tier_source": "observed (router Resolution)",
+  "cache_statuses": [
+    "bypass"
+  ],
+  "fallbacks": [],
+  "mode": "agent",
+  "subset": "retrieval",
+  "corpus": {
+    "available": true,
+    "documents": 52,
+    "documents_sha": "35a293e17117",
+    "newest_pub_date": "2026-08-19",
+    "oldest_pub_date": "2024-12-27"
+  },
+  "provenance": {},
+  "passed": 4,
+  "total": 5,
+  "wall_s": 72.1,
+  "questions": [
+    {
+      "id": "q01",
+      "pass": true,
+      "fails": [],
+      "response": {
+        "answer": "No, the compliance deadline did not change. Document 2025-03118 (90 FR 10592, published 2025-02-25) delayed the effective date of the 'healthy' claim final rule (2024-29957, 89 FR 106064) from February 25, 2025 to April 28, 2025, in accordance with the Presidential memorandum 'Regulatory Freeze Pending Review.' However, the document explicitly states: 'We note that the compliance date remains unchanged at this time.' The compliance date of February 25, 2028, as originally stated in 2024-29957 (89 FR 106064), remains in effect. This means regulated parties still must conform to the updated 'healthy' nutrient content claim requirements under 21 CFR 101.65(d) by February 25, 2028.",
+        "answer_rows": [
+          {
+            "product": "All products bearing a 'healthy' nutrient content claim",
+            "trigger": "Effective date delay from 2025-02-25 to 2025-04-28 per 90 FR 10592",
+            "required_change": "Comply with updated 'healthy' claim criteria under 21 CFR 101.65(d)",
+            "real_deadline": "2028-02-25",
+            "confidence": 0.97,
+            "citations": [
+              "89 FR 106064",
+              "90 FR 10592"
+            ]
+          }
+        ],
+        "citations": [
+          "89 FR 106064",
+          "90 FR 10592"
+        ],
+        "status": "ok",
+        "cache": "bypass",
+        "tier": "s3vectors",
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q05",
+      "pass": false,
+      "fails": [
+        "none of ['contain a food group', 'contains a food group', 'containing a food group', 'include a food group', 'includes a food group', 'at least one food group', 'a food group equivalent'] present",
+        "none of ['stay within', 'stays within', 'within the limits', 'within limits', 'limits for added sugars', 'limit for added sugars', 'limits on added sugars', 'does not exceed', 'not exceed', 'below the limit', 'under the limit', 'no more than', 'nutrients to limit'] present",
+        "no citation from ['21 CFR 101.65', '89 FR 106064']"
+      ],
+      "response": {
+        "answer": "",
+        "answer_rows": [],
+        "citations": [],
+        "status": "pending_review",
+        "cache": "bypass",
+        "tier": "s3vectors",
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q06",
+      "pass": true,
+      "fails": [],
+      "response": {
+        "answer": "The 'healthy' implied nutrient content claim is governed by 21 CFR 101.65(d). This section defines the general nutritional claims that qualify as implied nutrient content claims because they suggest that a food may help consumers maintain healthy dietary practices due to its nutrient content (21 CFR 101.65(d)(1)). The general framework for implied nutrient content claims, including the definition of what constitutes an implied nutrient content claim, is set forth in 21 CFR 101.13(b)(2)(ii), which states that an implied nutrient content claim includes any claim that 'suggests that a food, because of its nutrient content, may be useful in maintaining healthy dietary practices, where there is also implied or explicit information about the nutrition content of the food (e.g., \"healthy\")' (21 CFR 101.13(b)(2)(ii)). The final rule updating the definition of 'healthy' was published on December 27, 2024 (89 FR 106064, Doc. 2024-29957), with an effective date of April 28, 2025 (as revised by Doc. 2025-03118), and a compliance date of February 25, 2028.",
+        "answer_rows": [
+          {
+            "product": "All products bearing a 'healthy' claim",
+            "trigger": "Final rule 2024-29957 (89 FR 106064) revises 21 CFR 101.65(d) with updated criteria for the 'healthy' implied nutrient content claim",
+            "required_change": "Products must meet the revised food-group-equivalent-based criteria in 21 CFR 101.65(d)(3) (effective April 28, 2025) to bear the 'healthy' claim; compliance with the new criteria is required by the compliance date",
+            "real_deadline": "2028-02-25",
+            "confidence": 0.95,
+            "citations": [
+              "89 FR 106064",
+              "21 CFR 101.65(d)",
+              "2024-29957",
+              "2025-03118"
+            ]
+          }
+        ],
+        "citations": [
+          "89 FR 106064",
+          "21 CFR 101.65(d)",
+          "2024-29957",
+          "2025-03118"
+        ],
+        "status": "ok",
+        "cache": "bypass",
+        "tier": "s3vectors",
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q13",
+      "pass": true,
+      "fails": [],
+      "response": {
+        "answer": "The Red No. 3 order (90 FR 4628, Doc. 2025-00830, published 2025-01-16) changes two CFR provisions in 21 CFR Part 74, but they do NOT all change on the same day:\n\n1. **21 CFR 74.303** (FD&C Red No. 3 for food use): The order removes (revokes) this section entirely. It also revises 21 CFR 74.1303 to incorporate the identity and specifications language from \u00a7 74.303(a)(1) and (b) so that \u00a7 74.1303 can stand alone during the interim period. Both the removal of \u00a7 74.303 and the revision of \u00a7 74.1303 take effect on **January 15, 2027** (amendatory instructions 2 and 3). (90 FR 4628; 2025-00830 passage #0000, #0002)\n\n2. **21 CFR 74.1303** (FD&C Red No. 3 for ingested drugs): The order removes this section effective **January 18, 2028** (amendatory instruction 4). (90 FR 4628; 2025-00830 passage #0002)\n\nThus there are two distinct effective dates: January 15, 2027 for the food-use listing removal (and interim revision of \u00a7 74.1303), and January 18, 2028 for the ingested-drug listing removal. Both dates were confirmed by the lifting of the administrative stay in 91 FR 50475 (Doc. 2026-15920, published 2026-08-05).\n\nThe order sets no separate compliance date. Because this is a revocation, once the effective date passes the listing is gone and any food or drug containing FD&C Red No. 3 is adulterated. The operative deadlines are therefore derived from the effective dates. (2025-00830 passage #0021; timeline facts)",
+        "answer_rows": [
+          {
+            "product": "Any food (including dietary supplements) containing FD&C Red No. 3",
+            "trigger": "Removal of 21 CFR 74.303 (food-use color additive listing)",
+            "required_change": "Reformulate to eliminate FD&C Red No. 3 from all food products; after effective date the color additive is no longer listed and its use renders food adulterated",
+            "real_deadline": "2027-01-15",
+            "confidence": 0.97,
+            "citations": [
+              "90 FR 4628",
+              "91 FR 50475",
+              "21 CFR 74.303"
+            ]
+          },
+          {
+            "product": "Any ingested drug containing FD&C Red No. 3",
+            "trigger": "Removal of 21 CFR 74.1303 (ingested-drug color additive listing)",
+            "required_change": "Reformulate to eliminate FD&C Red No. 3 from all ingested drug products; after effective date the color additive is no longer listed and its use renders the drug adulterated",
+            "real_deadline": "2028-01-18",
+            "confidence": 0.97,
+            "citations": [
+              "90 FR 4628",
+              "91 FR 50475",
+              "21 CFR 74.1303"
+            ]
+          }
+        ],
+        "citations": [
+          "90 FR 4628",
+          "91 FR 50475",
+          "21 CFR 74.303",
+          "21 CFR 74.1303",
+          "21 CFR 80.32(h)"
+        ],
+        "status": "ok",
+        "cache": "bypass",
+        "tier": "s3vectors",
+        "fallback_reason": null
+      }
+    },
+    {
+      "id": "q14",
+      "pass": true,
+      "fails": [],
+      "response": {
+        "answer": "Under 21 CFR 101.65(a)(2), a 'healthy' implied nutrient content claim must be made in accordance with the general requirements for nutrient content claims in \u00a7 101.13, with one specific carve-out: \u00a7 101.13(h) is excepted when the nutrient content claim is made in accordance with paragraph (d) of \u00a7 101.65. Section 101.13(h) is the disclosure requirement that would otherwise mandate a statement such as 'See nutrition information for ___ content' when a food exceeds specified levels of fat, saturated fat, cholesterol, or sodium. This disclosure requirement does not apply to foods bearing the 'healthy' claim under \u00a7 101.65(d). All other provisions of \u00a7 101.13 \u2014 including requirements on claim type size (\u00a7 101.13(f)), the general prohibition on nutrient content claims unless made in accordance with subpart D (\u00a7 101.13(b)), and the requirement that the food be labeled with nutrition information \u2014 remain applicable.",
+        "answer_rows": [
+          {
+            "product": "Any food bearing a 'healthy' claim",
+            "trigger": "Use of 'healthy' implied nutrient content claim on label or labeling",
+            "required_change": "Comply with all general requirements of 21 CFR 101.13 except \u00a7 101.13(h) (disclosure statement for exceeding fat/saturated fat/cholesterol/sodium thresholds), which is carved out for claims made under \u00a7 101.65(d)",
+            "real_deadline": "2028-02-25",
+            "confidence": 0.95,
+            "citations": [
+              "89 FR 106064"
+            ]
+          }
+        ],
+        "citations": [
+          "89 FR 106064"
+        ],
+        "status": "ok",
+        "cache": "bypass",
+        "tier": "s3vectors",
+        "fallback_reason": null
+      }
+    }
+  ]
+}
