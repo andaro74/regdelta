@@ -30,6 +30,7 @@
     "test_the_reindex_role_may_write_only_that_parameter"
   ],
   "C1 short count is a warning, not a refusal": [
+    "test_a_longer_index_is_not_reported_as_short",
     "test_refuses_a_short_index",
     "test_reports_every_refusal_not_only_the_first"
   ],

@@ -127,6 +127,16 @@ def nodes():
     return mod
 
 
+# `verdict` reads state["retrieved"] and state["timeline_facts"] (nodes.py).
+# These were {"rows", "facts"} until eng-code-reviewer pointed out that the
+# keys were decorative — the tests exercised the empty-context path either way
+# and would not have noticed a change to context handling. Empty context is
+# still the right fixture here (this file is about the stop reason, not about
+# retrieval), but it should be empty because the node read an empty list, not
+# because it read a key nobody supplies.
+EMPTY_CONTEXT = {"query": "q", "retrieved": [], "timeline_facts": []}
+
+
 def converse_response(text: str, stop: str) -> dict:
     return {"output": {"message": {"content": [{"text": text}]}},
             "stopReason": stop}
@@ -153,7 +163,7 @@ def test_a_truncated_verdict_says_so(nodes, monkeypatch):
         return nodes._text_of(converse_response('{"answer": "The compl',
                                                 "max_tokens"))
 
-    out = nodes.verdict({"query": "q", "rows": [], "facts": []},
+    out = nodes.verdict(EMPTY_CONTEXT,
                         invoke=truncated_invoke)
     assert out["answer"] == "", "precondition: the cut-off JSON parses to {}"
     assert out["stop_reason"] == "max_tokens"
@@ -167,7 +177,7 @@ def test_a_complete_verdict_is_not_flagged(nodes):
         return nodes._text_of(
             converse_response('{"answer": "Yes.", "citations": []}', "end_turn"))
 
-    out = nodes.verdict({"query": "q", "rows": [], "facts": []},
+    out = nodes.verdict(EMPTY_CONTEXT,
                         invoke=ok_invoke)
     assert out["stop_reason"] == "end_turn"
     assert out["truncated"] is False
@@ -181,7 +191,7 @@ def test_an_unobserved_stop_reason_is_none_not_false(nodes):
     reassure a reader of an empty answer on the strength of no measurement —
     which is the substitution ADR-0013 is about.
     """
-    out = nodes.verdict({"query": "q", "rows": [], "facts": []},
+    out = nodes.verdict(EMPTY_CONTEXT,
                         invoke=lambda *a, **kw: '{"answer": "Yes."}')
     assert out["stop_reason"] is None
     assert out["truncated"] is None
@@ -191,7 +201,7 @@ def test_the_reading_does_not_survive_into_the_next_call(nodes):
     """A stale reason would attribute one question's truncation to another."""
     nodes._text_of(converse_response("x", "max_tokens"))
     assert nodes.last_stop_reason() == "max_tokens"
-    out = nodes.verdict({"query": "q", "rows": [], "facts": []},
+    out = nodes.verdict(EMPTY_CONTEXT,
                         invoke=lambda *a, **kw: '{"answer": "Yes."}')
     assert out["stop_reason"] is None, (
         "the verdict node inherited a stop reason from an earlier, unrelated "
@@ -203,7 +213,52 @@ def test_the_control_and_the_system_now_report_the_same_thing(nodes):
     naive_src = (Path(__file__).parent.parent
                  / "src" / "baseline" / "naive.py").read_text(encoding="utf-8")
     assert '"truncated"' in naive_src
-    out = nodes.verdict({"query": "q", "rows": [], "facts": []},
+    out = nodes.verdict(EMPTY_CONTEXT,
                         invoke=lambda *a, **kw: nodes._text_of(
                             converse_response('{"answer": "Yes."}', "end_turn")))
     assert "truncated" in out
+
+
+# ------------------------------------- what the M05 reviewers added to these
+
+
+def test_a_corrupt_card_does_not_erase_the_runs_before_it(history):
+    """The trail is rebuilt from the ARCHIVE, not copied from the card.
+
+    Run 1, run 2, then corrupt the live card and record run 3. Reading the
+    outgoing card's own `supersedes` would yield {} and restart the trail at
+    empty, dropping runs 1 and 2 from the record while their files sat in
+    superseded/. Found by eng-code-reviewer.
+    """
+    run_evals.record(card(15, "2026-08-20T10:00:00+00:00"))
+    run_evals.record(card(17, "2026-08-20T11:00:00+00:00"))
+    live = history / "abc1234-aoss-full.json"
+    live.write_text("{not json", encoding="utf-8")
+
+    out = run_evals.record(card(20, "2026-08-20T12:00:00+00:00"))
+    trail = json.loads(out.read_text())["supersedes"]
+    # Two supersessions from three record() calls. Run 2's score is genuinely
+    # gone — its file is the one that was corrupted — but run 1's is not, and
+    # reading the outgoing card's own `supersedes` would have lost both.
+    assert [t["run"] for t in trail] == [1, 2]
+    assert [t["passed"] for t in trail] == [15, None], (
+        "run 1's score was lost; the earlier archives were not read")
+
+
+def test_a_serialization_failure_never_leaves_zero_cards(history, monkeypatch):
+    """Archive is a move, so doing it before json.dumps opened a window where
+    a raise left the old card aside and no new one written — after which
+    previous_card() finds nothing and corpus-drift detection switches off."""
+    run_evals.record(card(18, "2026-08-20T10:00:00+00:00"))
+
+    class Unserializable:
+        pass
+
+    with pytest.raises(TypeError):
+        run_evals.record({**card(20, "2026-08-20T11:00:00+00:00"),
+                          "questions": Unserializable()})
+
+    assert (history / "abc1234-aoss-full.json").exists(), (
+        "the previous card was moved aside and nothing replaced it")
+    assert run_evals.previous_card("aoss", None)["passed"] == 18
+    assert not (history / "superseded").exists()

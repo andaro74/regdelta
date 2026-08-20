@@ -133,9 +133,14 @@ _cache_state: dict = {"supported": True, "reason": None}
 # Module-level for the same reason `_cache_state` is: both call sites are
 # written `(invoke or _converse)(...)`, and widening the return to a tuple
 # would break every injected fake in the suite. `reset_stop_reason()` is
-# called at each call site rather than inside `_converse`, so that a run with
-# an injected `invoke` reports None — NOT OBSERVED — instead of inheriting a
-# stale reading from some earlier real call.
+# called at the VERDICT call site rather than inside `_converse`, so that a
+# run with an injected `invoke` reports None — NOT OBSERVED — instead of
+# inheriting a stale reading from some earlier real call.
+#
+# The applicability call site does not reset, and does not need to: verdict
+# runs after it and resets immediately before its own call, so nothing that
+# site leaves behind can be read as the verdict's. An earlier version of this
+# comment said "each call site", which was not true of the code.
 _last_stop: dict = {"reason": None}
 
 

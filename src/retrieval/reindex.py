@@ -255,7 +255,25 @@ def _caller_arn() -> str:
 # points there is no endpoint, and `router.active_endpoint()` returns None —
 # which routes to S3 Vectors, the always-on tier that is never short. Every
 # failure path in this module, including the ones that raise before reaching
-# the publish, therefore leaves retrieval on the tier that still works.
+# the publish, therefore leaves THE PARAMETER absent.
+#
+# THAT IS A CLAIM ABOUT THE PARAMETER, NOT ABOUT ITS READERS, and the
+# difference is a real residual rather than a quibble. `router.py` memoises
+# the endpoint for `_TTL = 60` seconds per container, so for up to a minute
+# after the retire a WARM query container still routes to AOSS. The first
+# seconds of that are safe — `_create_index` has deleted the index, so the
+# tier raises and the router falls back with a `fallback_reason` — but once
+# `_bulk` starts landing batches those same containers see a PARTIAL index,
+# which answers with citations. That is the dangerous half, bounded at ~60s
+# per hydration.
+#
+# NOT CLOSED HERE, deliberately. The fixes on the table — a hydration
+# sentinel the tier checks, or a document-count floor in `aoss_tier` — are
+# retrieval-path design, not deploy lifecycle, and this milestone's scope is
+# the deploy. Raised by security-reviewer on the M05 branch and carried into
+# the milestone's open threads with this cost written down, rather than fixed
+# quietly at the end of a session. An earlier draft of this comment asserted
+# the stronger claim; it was wrong.
 #
 # Two CloudFormation behaviours make this safe, and both were RUN rather than
 # assumed (milestones/M05/orphan_param_probe.py):

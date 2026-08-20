@@ -1,0 +1,8 @@
+{
+  "F1 the cross-stack grant removed (the blocker, restored)": [
+    "test_the_deletion_role_reaches_every_foreign_role_search_writes_to"
+  ],
+  "F2 the grant narrowed back to the name prefix alone": [
+    "test_the_deletion_role_reaches_every_foreign_role_search_writes_to"
+  ]
+}

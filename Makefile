@@ -33,13 +33,15 @@ CDK          := cd infra && npx cdk
 RESOLVE_ENV = eval "$$(python evals/local_env.py)";
 
 .PHONY: help bootstrap layer core up down status smoke evals agent-evals discrimination replay-history lint test demo ingest-backfill synth diff \
-        retrieval-evals retrieval-parity preflight rebuild-vectors demo-parity
+        retrieval-evals retrieval-parity preflight rebuild-vectors demo-parity fault-drop
 
 help:
 	@echo "make layer           - build the Lambda dependency layer (needed by core)"
 	@echo "make core            - deploy/update persistent stack"
 	@echo "make up / make down  - create/destroy AOSS hot tier"
 	@echo "make status          - tier state"
+	@echo "make fault-drop      - deploy with hydration deliberately broken;"
+	@echo "                       PASSES only if the gate refuses (SPEC/05)"
 	@echo "make smoke / evals   - golden-set checks (definition of done)"
 	@echo "make agent-evals     - golden set vs the LOCAL agent graph (SPEC/03)"
 	@echo "make discrimination  - can each question tell right from wrong? (no API)"
@@ -132,6 +134,68 @@ up:
 	  fi; \
 	  echo "✅ Hot tier up and hydrated ($(SSM_ENDPOINT))"; \
 	  echo "   next: make retrieval-evals   (records the aoss scorecard)"
+
+# SPEC/05's other half of the gate: prove it FAILS SAFE, with a real failed
+# deploy rather than a unit test asserting that a raise raises.
+#
+# WHAT IT ACTUALLY PROVES, stated exactly, because the first version of this
+# comment claimed the count-parity refusal and could not reach it.
+#
+# reindex.py retires the endpoint parameter BEFORE it touches the index and
+# raises on the short count BEFORE it republishes — so by the time the gate
+# runs there is no parameter, and check_hydration refuses at the `endpoint`
+# check and never evaluates count_parity. That is not a weaker result, it is
+# the RIGHT one: the property SPEC/05 needs is that a deploy whose hydration
+# failed leaves retrieval on S3 Vectors rather than on a partial index, and
+# this exercises exactly that, end to end, against a real collection.
+#
+# The count_parity branch is covered offline in tests/test_hydration_gate.py
+# and cannot be reached live while the retire-first ordering holds. Caught by
+# eng-code-reviewer; the target now ASSERTS which refusal fired rather than
+# accepting any non-zero exit, so if that ordering ever changes this stops
+# quietly passing for the wrong reason.
+#
+# THE EXIT CODE IS INVERTED, deliberately. A failing deploy is the expected
+# outcome here, so this target succeeds when the GATE REFUSES and fails when it
+# does not. `make fault-drop` returning 0 is the evidence; returning 1 means a
+# deliberately broken hydration was accepted, which is the defect SPEC/05 item
+# 4 exists to close.
+#
+# THE COLLECTION SURVIVES THIS. A failed Trigger rolls the stack back to
+# UPDATE_ROLLBACK_COMPLETE — the AOSS collection is still there and still
+# billing. Only `make down` (or the janitor) stops that; the gate's refusal
+# means retrieval will not USE it, not that it went away.
+DROP ?= 3
+fault-drop:
+	@( $(CDK) deploy $(STACK_SEARCH) --require-approval never \
+	     -c faultDrop=$(DROP) \
+	     -c devPrincipalArn=$$(aws sts get-caller-identity --query Arn --output text) ); \
+	  deployed=$$?; \
+	  echo "--- cdk deploy exited $$deployed (a FAILING deploy is the point here)"; \
+	  $(RESOLVE_ENV) \
+	  report=$$(python evals/check_hydration.py --json); \
+	  gate=$$?; \
+	  echo "$$report"; \
+	  if [ $$gate -eq 0 ]; then \
+	    echo "❌ THE GATE ACCEPTED A DELIBERATELY BROKEN HYDRATION."; \
+	    echo "   $(DROP) chunk records were dropped before indexing and"; \
+	    echo "   check_hydration.py still reported the hot tier usable."; \
+	    exit 1; \
+	  fi; \
+	  if ! echo "$$report" | grep -q '"check": "endpoint"'; then \
+	    echo "❌ the gate refused, but NOT on the endpoint check."; \
+	    echo "   This target's evidence is 'a failed hydration leaves no"; \
+	    echo "   endpoint'. Some other refusal fired, so it is proving"; \
+	    echo "   something else and the comment above is now wrong."; \
+	    exit 1; \
+	  fi; \
+	  echo "✅ the gate refused on the endpoint check, as it must (exit $$gate)."; \
+	  echo "   A failed hydration left NO endpoint, so retrieval is on S3 Vectors."; \
+	  echo "   NEXT: 'make down' — and it is required, not optional. The rollback"; \
+	  echo "   restores the Lambda's previous config, so the Trigger's HandlerArn"; \
+	  echo "   is unchanged and the next 'make up' will NOT re-fire hydration;"; \
+	  echo "   the parameter would stay absent. 'make down && make up' is the way"; \
+	  echo "   back. The COLLECTION also still exists and still bills until then."
 
 down:
 	$(CDK) destroy $(STACK_SEARCH) --force

@@ -64,6 +64,12 @@ cfn = boto3.client("cloudformation")
 #: needs a retry into a silent no-action. Re-issuing DeleteStack on a
 #: DELETE_FAILED stack is the documented recovery, and with a role that can
 #: actually delete the resources it is now likely to succeed.
+#: THE *_FAILED STATES ARE HERE FOR THE SAME REASON DELETE_FAILED IS. All
+#: three are terminal, all three leave live resources behind, and DeleteStack
+#: is valid from all of them — so leaving them out sends a billing collection
+#: down the `unhandled-state` path forever, which is the DELETE_FAILED bug
+#: again wearing a different status string. Found by security-reviewer on the
+#: M05 branch.
 _DELETABLE = (
     "CREATE_COMPLETE",
     "UPDATE_COMPLETE",
@@ -72,6 +78,9 @@ _DELETABLE = (
     "IMPORT_COMPLETE",
     "IMPORT_ROLLBACK_COMPLETE",
     "DELETE_FAILED",
+    "CREATE_FAILED",
+    "ROLLBACK_FAILED",
+    "UPDATE_ROLLBACK_FAILED",
 )
 #: Already on its way down. Issuing a second delete would not be harmful, but
 #: reporting "requested" for a delete this run did not start would be.
@@ -82,7 +91,23 @@ _IN_FLIGHT = ("DELETE_IN_PROGRESS", "CREATE_IN_PROGRESS", "UPDATE_IN_PROGRESS",
 def handler(event, context):
     try:
         stacks = cfn.describe_stacks(StackName=STACK)["Stacks"]
-    except cfn.exceptions.ClientError:
+    except cfn.exceptions.ClientError as e:
+        # NARROWED TO THE OBSERVATION ACTUALLY MADE. `cfn.exceptions.ClientError`
+        # is botocore's BASE class, so this caught AccessDenied, throttling and
+        # expired credentials too — and then asserted `billing_stopped: True`,
+        # which the docstring above stakes as the one status that means the OCU
+        # meter stopped. An IAM regression would have reported billing stopped
+        # while the collection billed, and SPEC/06's alarm is going to be told
+        # to trust exactly this line. Third instance of the failure mode this
+        # module is named for; found by security-reviewer before it ran.
+        #
+        # Only "the stack is not there" is an observation of absence. Anything
+        # else is a failure to look.
+        if "does not exist" not in str(e):
+            return _log({"status": "unhandled-error", "billing_stopped": False,
+                         "error": f"{type(e).__name__}: {e}"[:300],
+                         "detail": "could not read the stack, so nothing is "
+                                   "known about whether it is billing"})
         # The only branch that may claim billing has stopped, because it is the
         # only one that observed the absence rather than requesting it.
         return _log({"status": "already-down", "billing_stopped": True})

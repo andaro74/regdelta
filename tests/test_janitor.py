@@ -303,3 +303,186 @@ def test_the_deletion_role_can_invoke_the_custom_resource_provider(template):
     actions = [a for s in _statements_for_role(template, _deletion_role_id(template))
                for a in (s["Action"] if isinstance(s["Action"], list) else [s["Action"]])]
     assert "lambda:InvokeFunction" in actions
+
+
+# --------------------------------------------------------------------------
+# THE DELETION ROLE MUST REACH EVERY ROLE regdelta-search WRITES A POLICY ONTO
+#
+# Not every role NAMED regdelta-search-*. Those are different sets, and M05
+# made them different: search_stack attaches the AOSS grant to the CORE
+# stack's query role via `from_role_arn(..., mutable=True)`, which puts an
+# `AWS::IAM::Policy` in the EPHEMERAL stack whose `Roles:` list resolves to
+# `regdelta-core-QueryFnServiceRole…`. Deleting it calls `iam:DeleteRolePolicy`
+# against that role, and the prefix grant does not match — so
+# `DeleteStack(RoleARN=deletion_role)` takes AccessDenied and the stack sticks
+# in DELETE_FAILED with the collection billing.
+#
+# Invisible to the SPEC/05 Done-when: `make down` is `cdk destroy` under the
+# bootstrap AdministratorAccess role and always succeeds. Only the 01:00 UTC
+# janitor uses the deletion role.
+#
+# So the assertion is the PROPERTY — every foreign role the search stack
+# attaches to is covered — rather than a second copy of the prefix. Adding
+# another cross-stack attachment later fails this test instead of failing at
+# 01:00 UTC.
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def both_templates():
+    """Core and search synthesized in ONE app, as infra/app.py builds them.
+
+    Synthesizing search alone with a literal role ARN renders the attachment as
+    a plain role NAME and hides the cross-stack shape entirely; it is the
+    `Fn::ImportValue` form that this test is about.
+    """
+    import contextlib
+    import tempfile
+
+    import aws_cdk as cdk
+
+    sys.path.insert(0, str(ROOT / "infra"))
+    sys.path.insert(0, str(ROOT / "src"))
+    from core import core_stack
+    from core.core_stack import RegDeltaCoreStack
+    from search.search_stack import RegDeltaSearchStack
+
+    @contextlib.contextmanager
+    def stub_layer():
+        original = core_stack.LAYER_SRC
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "python").mkdir()
+            core_stack.LAYER_SRC = Path(tmp)
+            try:
+                yield
+            finally:
+                core_stack.LAYER_SRC = original
+
+    app = cdk.App(outdir=tempfile.mkdtemp())
+    env = cdk.Environment(account=ACCOUNT, region=REGION)
+    with stub_layer():
+        core = RegDeltaCoreStack(app, "regdelta-core", env=env)
+    search = RegDeltaSearchStack(
+        app, "regdelta-search", env=env, corpus_bucket=core.corpus_bucket,
+        query_lambda_role_arn=core.query_lambda_role_arn)
+    search.add_dependency(core)
+    asm = app.synth()
+    return (asm.get_stack_by_name("regdelta-core").template,
+            asm.get_stack_by_name("regdelta-search").template)
+
+
+def _import_names(node) -> list[str]:
+    """Every Fn::ImportValue export name anywhere inside a template fragment."""
+    if isinstance(node, dict):
+        if "Fn::ImportValue" in node and isinstance(node["Fn::ImportValue"], str):
+            return [node["Fn::ImportValue"]]
+        return [n for v in node.values() for n in _import_names(v)]
+    if isinstance(node, list):
+        return [n for v in node for n in _import_names(v)]
+    return []
+
+
+def _foreign_role_imports(search_template) -> list[str]:
+    """Export names of roles the search stack attaches a policy to but does not own."""
+    owned = {k for k, v in search_template["Resources"].items()
+             if v["Type"] == "AWS::IAM::Role"}
+    out = []
+    for res in search_template["Resources"].values():
+        if res["Type"] != "AWS::IAM::Policy":
+            continue
+        for entry in res["Properties"].get("Roles", []):
+            if isinstance(entry, dict) and entry.get("Ref") in owned:
+                continue  # a role this stack creates; the name prefix covers it
+            out.extend(_import_names(entry))
+    return out
+
+
+def _exported_logical_id(core_template, export_name: str) -> str:
+    """Which core resource an export names — read off core's own Outputs."""
+    for out in core_template.get("Outputs", {}).values():
+        if out.get("Export", {}).get("Name") == export_name:
+            return out["Value"]["Fn::GetAtt"][0]
+    raise AssertionError(f"{export_name} is not exported by regdelta-core")
+
+
+def test_the_deletion_role_reaches_every_foreign_role_search_writes_to(both_templates):
+    core_template, search_template = both_templates
+
+    foreign = _foreign_role_imports(search_template)
+    assert foreign, (
+        "no cross-stack role attachment found in regdelta-search. If the AOSS "
+        "grant moved back into core this test is vacuous and should go with "
+        "it — a passing test over an empty set is the failure mode here.")
+
+    deletable = set()
+    for stmt in _statements_for_role(core_template,
+                                     _deletion_role_id(core_template)):
+        actions = (stmt["Action"] if isinstance(stmt["Action"], list)
+                   else [stmt["Action"]])
+        if "iam:DeleteRolePolicy" not in actions:
+            continue
+        resources = (stmt["Resource"] if isinstance(stmt["Resource"], list)
+                     else [stmt["Resource"]])
+        for r in resources:
+            if isinstance(r, dict) and "Fn::GetAtt" in r:
+                deletable.add(r["Fn::GetAtt"][0])
+
+    for export_name in foreign:
+        logical = _exported_logical_id(core_template, export_name)
+        assert logical in deletable, (
+            f"regdelta-search attaches an IAM policy to core's {logical}, but "
+            f"the deletion role can only iam:DeleteRolePolicy on "
+            f"{sorted(deletable)} plus the regdelta-search-* name prefix. "
+            "DeleteStack under this role would land in DELETE_FAILED with the "
+            "AOSS collection still billing — nightly, unattended.")
+
+
+# ------------------------------------------- what security-reviewer added
+
+
+def test_a_failure_to_look_is_not_a_claim_that_billing_stopped(load):
+    """`billing_stopped: True` is the strongest claim this function makes.
+
+    It used to be returned for ANY `ClientError`, which is botocore's base
+    class — AccessDenied, throttling, expired credentials. Under an IAM
+    regression the janitor would report the meter stopped while the collection
+    billed, and SPEC/06's alarm is going to be told to trust this line.
+    Only "the stack is not there" is an observation of absence.
+    """
+    mod, fake = load("CREATE_COMPLETE")
+
+    def denied(StackName):
+        raise _FakeClientError(
+            "An error occurred (AccessDenied) when calling DescribeStacks")
+
+    fake.describe_stacks = denied
+    out = mod.handler({}, None)
+
+    assert out["status"] == "unhandled-error"
+    assert out["billing_stopped"] is False
+    assert "AccessDenied" in out["error"]
+    assert fake.deletes == [], "issued a delete on a stack it could not read"
+
+
+def test_an_absent_stack_still_reports_billing_stopped(load):
+    """The narrowing must not break the one branch that may claim it."""
+    mod, _fake = load(None)
+    out = mod.handler({}, None)
+    assert out["status"] == "already-down"
+    assert out["billing_stopped"] is True
+
+
+@pytest.mark.parametrize("state", ["CREATE_FAILED", "ROLLBACK_FAILED",
+                                   "UPDATE_ROLLBACK_FAILED"])
+def test_terminal_failed_states_are_deleted_rather_than_shrugged_at(load, state):
+    """All three are terminal, leave live resources, and accept DeleteStack.
+
+    Leaving them out sends a billing collection down the `unhandled-state`
+    path every night forever — the DELETE_FAILED bug in a different status
+    string. `UPDATE_ROLLBACK_FAILED` is reachable from this milestone's own
+    `make fault-drop`.
+    """
+    mod, fake = load(state)
+    out = mod.handler({}, None)
+    assert out["status"] == "delete-requested", out
+    assert fake.deletes == [{"StackName": "regdelta-search", "RoleARN": ROLE}]

@@ -454,3 +454,38 @@ def test_the_gate_reads_the_parameter_the_router_reads(gate, monkeypatch):
     assert calls == ["reset", "read"], (
         "the cached endpoint has a 60s TTL and `make up` flips the parameter "
         "inside that window, so the gate must drop the cache before reading")
+
+
+def test_an_unexpected_error_becomes_a_refusal_not_a_traceback(gate, monkeypatch):
+    """The report is the whole product of this script, and it was losable.
+
+    `router.active_endpoint()` catches only ParameterNotFound and
+    `iter_chunk_records` goes straight to S3, so an expired token or an
+    AccessDenied used to raise out of `run()` as a botocore traceback — after
+    a twenty-minute deploy, with OCU billing, discarding every refusal already
+    collected. Found by eng-code-reviewer.
+    """
+    wire_gate(monkeypatch, gate)
+    monkeypatch.setattr(gate.router, "active_endpoint",
+                        lambda: (_ for _ in ()).throw(
+                            RuntimeError("ExpiredToken: the token has expired")))
+    ok, report = gate.run("corpus-bucket")
+
+    assert not ok
+    assert "endpoint" in checks(report)
+    assert "ExpiredToken" in reasons(report)
+    # And the rest of the pass still ran, so one twenty-minute run reports
+    # everything it can see rather than the first thing that broke.
+    assert report["corpus"] == 600
+
+
+def test_a_longer_index_is_not_reported_as_short(gate, monkeypatch):
+    """`index_count` returns as soon as it sees >= expected, so a stale index
+    with extra documents is reachable. Calling that "short" sends the reader
+    hunting for a missing chunk that does not exist."""
+    wire_gate(monkeypatch, gate, corpus=600, count=601)
+    ok, report = gate.run("corpus-bucket")
+    assert not ok
+    assert "count_parity" in checks(report)
+    assert "short" not in reasons(report), reasons(report)
+    assert "601 indexed vs 600" in reasons(report)

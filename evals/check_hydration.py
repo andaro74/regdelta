@@ -181,6 +181,25 @@ def run(bucket: str) -> tuple[bool, dict]:
         except RefusalError as e:
             report["refusals"].append({"check": name, "reason": str(e)})
             return False
+        except Exception as e:  # noqa: BLE001 — see below
+            # EVERYTHING BECOMES A REFUSAL, not just AossError.
+            #
+            # `router.active_endpoint()` only catches ParameterNotFound and
+            # `iter_chunk_records` goes straight to S3, so an expired SSO
+            # token, an AccessDenied or a missing region used to raise out of
+            # main() as a botocore traceback — after a twenty-minute deploy,
+            # with OCU billing, discarding the refusals already collected. The
+            # operator would read "Python raised" instead of "the hot tier is
+            # unusable and `make down` stops the meter".
+            #
+            # `make up` failed closed either way; what was lost was the report,
+            # which is the whole product of this script. The module already
+            # made this argument for check_mapping and applied it to one of the
+            # three external calls. Found by eng-code-reviewer.
+            report["refusals"].append({
+                "check": name,
+                "reason": f"{type(e).__name__}: {e}"[:500]})
+            return False
 
     have_endpoint = attempt("endpoint", resolve_endpoint)
     # Reported even when the endpoint is gone. An operator debugging an absent
@@ -196,8 +215,16 @@ def run(bucket: str) -> tuple[bool, dict]:
             report["refusals"].append({
                 "check": "count_parity",
                 "reason": (
-                    f"hydration is short: {report['indexed']} indexed vs "
-                    f"{report['corpus']} in the corpus. A partial index "
+                    # Direction stated from the numbers rather than assumed.
+                    # `index_count` returns as soon as it sees >= expected, so
+                    # a stale index with EXTRA documents is reachable, and
+                    # calling that "short" would send the reader looking for a
+                    # missing chunk that does not exist.
+                    ("hydration is short" if report["indexed"]
+                     < report["corpus"] else "the index holds more than the "
+                     "corpus does")
+                    + f": {report['indexed']} indexed vs "
+                    f"{report['corpus']} in the corpus. A mismatched index "
                     "answers with citations and looks healthy, which is why "
                     "this is a refusal and not a warning.")})
         attempt("embedding_type", lambda: check_mapping(report["endpoint"]))

@@ -395,7 +395,14 @@ class RegDeltaCoreStack(cdk.Stack):
         #
         # `Scan` is absent deliberately and is not an oversight: LeadingKeys
         # cannot constrain a Scan, so granting it would hand back everything
-        # these two statements just took away. Nothing in `src/` scans.
+        # these two statements just took away. Nothing in `src/` scans THIS
+        # table.
+        #
+        # The qualifier is load-bearing. `graph/amendment_graph.py`
+        # (`_scan_inbound`) does scan — the REGISTRY table — so an
+        # unqualified "nothing in src/ scans" would license dropping Scan
+        # from `registry_table.grant_read_data` and break every timeline
+        # question. Corrected by security-reviewer at M05.
         #
         # ALL OF THE ABOVE IS MEASURED, not reasoned. Every claim in this
         # comment is a claim about IAM's evaluation, and IAM does not read
@@ -691,10 +698,27 @@ class RegDeltaCoreStack(cdk.Stack):
                         "regdelta-search (SPEC/05). Delete-side actions only.",
         )
         # AOSS control-plane. `Resource: "*"` and it is not a shrug: the
-        # collection's ARN embeds an id AWS generates at creation, and the
-        # policy resources (`regdelta-enc`, `regdelta-net`, `regdelta-access`)
-        # are account-level objects that these actions do not accept resource
-        # ARNs for at all. The narrowing that is available is the ACTION list —
+        # collection's ARN embeds an id AWS generates at creation, so this
+        # stack cannot name it, and the policy resources (`regdelta-enc`,
+        # `regdelta-net`, `regdelta-access`) are account-level objects that
+        # `Delete*SecurityPolicy` / `Delete*AccessPolicy` do not accept
+        # resource ARNs for at all.
+        #
+        # CORRECTED AT M05: an earlier version said that of ALL the actions
+        # here, and it is not true of `aoss:DeleteCollection` or
+        # `aoss:BatchGetCollection`, which do take a `collection` resource
+        # type. So the honest statement of what this grants is: this role can
+        # delete the encryption, network and data-access policies of ANY AOSS
+        # collection in this account — including the other projects the M04
+        # note cites as the reason a `collection/*` grant was a problem.
+        # Capped by the action list (delete-only, no `aoss:APIAccessAll`) and
+        # by only the janitor holding PassRole, but this repo holds IAM
+        # rationale to being exactly as true as it says it is
+        # (search_stack.py's allowlist note), and that one was not.
+        # Tightening it needs collection tagging plus an `aws:ResourceTag`
+        # condition, which is a change to how the search stack creates the
+        # collection — raised, not done here. Found by security-reviewer.
+        # The narrowing that IS in place is the ACTION list —
         # no Create*, no UpdateCollection, and deliberately no
         # `aoss:APIAccessAll`, so this role can delete the collection and can
         # never read a document out of it.
@@ -727,6 +751,41 @@ class RegDeltaCoreStack(cdk.Stack):
                      "iam:UntagRole"],
             resources=[self.format_arn(service="iam", region="", resource="role",
                                        resource_name="regdelta-search-*")]))
+        # THE ONE ROLE regdelta-search TOUCHES THAT IS NOT NAMED regdelta-search-*.
+        #
+        # search_stack attaches the AOSS grant to THIS stack's query role
+        # (`iam.Role.from_role_arn(..., mutable=True)`), which synthesises an
+        # `AWS::IAM::Policy` OWNED BY THE EPHEMERAL STACK whose `Roles:` list
+        # names `regdelta-core-QueryFnServiceRole…`. Deleting that resource
+        # calls `iam:DeleteRolePolicy` against that role — and the prefix above
+        # does not match it, so `DeleteStack(RoleARN=this)` takes AccessDenied
+        # and the stack lands in DELETE_FAILED with the collection still
+        # billing. Exactly the shape this role exists to prevent, on the one
+        # path with no human watching.
+        #
+        # Invisible in dev, which is why it needed finding rather than
+        # observing: `make down` runs `cdk destroy` under the bootstrap
+        # AdministratorAccess role and succeeds every time. Only the 01:00 UTC
+        # janitor takes this path, and it would then retry the same
+        # AccessDenied nightly, forever.
+        #
+        # Found by security-reviewer AND eng-code-reviewer independently on the
+        # M05 branch, before the first deploy. The M05 janitor probe could not
+        # have caught it: an inert stack holding one SSM parameter has no
+        # cross-stack policy in it by construction — the same "reasoned, not
+        # run" gap that probe was written to close, one level up.
+        #
+        # DELETE AND READ ONLY — no `iam:PutRolePolicy`. The review that found
+        # this offered PutRolePolicy so a failed UPDATE could roll the
+        # statement back, and it is not needed: this role is only ever handed
+        # to `DeleteStack` (the janitor's one call), while updates run under
+        # the bootstrap role. Adding it would also hand an unattended role the
+        # ability to attach ANY inline policy to the internet-facing query
+        # role, and `test_the_deletion_role_cannot_create_anything` is right to
+        # refuse that.
+        search_deleter.add_to_policy(iam.PolicyStatement(
+            actions=["iam:DeleteRolePolicy", "iam:GetRolePolicy"],
+            resources=[query_fn.role.role_arn]))
         # The endpoint parameter, and nothing else under /regdelta/. Deleting it
         # is what returns retrieval to the S3 Vectors tier.
         search_deleter.add_to_policy(iam.PolicyStatement(
