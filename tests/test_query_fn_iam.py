@@ -182,21 +182,24 @@ def test_s3vectors_is_scoped_to_this_stack_s_bucket_and_index(template):
 
 
 # ----------------------------------------------------------------------- aoss
-def test_aoss_is_scoped_to_this_account_and_region(template):
-    """`aoss:APIAccessAll` on `*` reaches every collection in the account.
+def test_the_persistent_stack_grants_no_aoss_at_all(template):
+    """SPEC/05 moved this grant out of core, and the move is the fix.
 
-    It cannot be pinned to a collection ID: the collection is created by the
-    EPHEMERAL search stack, gets a fresh id on every `make up`, and this
-    persistent stack is deployed before it exists. Account-and-region is the
-    honest floor, and AOSS's own data access policy — which names this role —
-    is what actually admits the request.
+    M04 got it to `collection/*` in this account and region and recorded the
+    reason it could go no further: a persistent stack is deployed before the
+    collection exists, so there is no id to name. True — which is why the
+    statement does not belong here. It now lives in `search_stack.py`, where
+    `collection.attr_arn` is concrete, and it is created and destroyed with the
+    collection instead of outliving it by weeks.
+
+    Asserted as an ABSENCE here and as a PRESENCE in
+    `tests/test_search_stack_access.py`. Either test alone would pass while the
+    grant went missing entirely, or while a second copy stayed behind.
     """
     granted = [str(r) for s in _for_action(template, "aoss:APIAccessAll")
                for r in _resources(s)]
-    assert granted, "no aoss grant found"
-    for r in granted:
-        assert r != "*", "aoss:APIAccessAll on * reaches every collection"
-        assert ACCOUNT in r and REGION in r, r
+    assert granted == [], \
+        f"the persistent stack still grants aoss:APIAccessAll on {granted}"
 
 
 # ------------------------------------------------------- what did NOT change

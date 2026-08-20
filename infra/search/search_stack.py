@@ -190,6 +190,35 @@ class RegDeltaSearchStack(cdk.Stack):
         reindex.add_to_role_policy(iam.PolicyStatement(
             actions=["aoss:APIAccessAll"], resources=[collection.attr_arn]))
 
+        # THE QUERY ROLE'S AOSS GRANT LIVES HERE, NOT IN core_stack. SPEC/05
+        # asks for `aoss:APIAccessAll` scoped to the collection ARN; M04 could
+        # only reach `collection/*` in this account and region, and said so:
+        #
+        #   "NOT pinned to a collection id, and that is a constraint rather
+        #    than an oversight: the collection is created by the EPHEMERAL
+        #    search stack, takes a fresh id on every `make up`, and this
+        #    persistent stack is deployed before it exists."
+        #
+        # That reasoning is right about core_stack and wrong about the grant.
+        # The constraint is dissolved by moving the statement to the stack that
+        # HAS the id. `collection.attr_arn` is concrete here.
+        #
+        # It also fixes a lifetime bug nobody had named: the grant used to
+        # OUTLIVE the collection. `make down` destroys the hot tier and the
+        # internet-facing role kept standing permission to reach every
+        # collection in the account — including ones belonging to other
+        # projects here — for the days or weeks until the next `make up`.
+        # Attached to this stack it is created and destroyed with the thing it
+        # is about, so the permission exists exactly when the collection does.
+        #
+        # `mutable=True` is what makes this an AWS::IAM::Policy in THIS stack
+        # attached to a role owned by the other one — the direction of the
+        # dependency is unchanged, and core still never references search.
+        query_role = iam.Role.from_role_arn(
+            self, "QueryLambdaRole", query_lambda_role_arn, mutable=True)
+        query_role.add_to_principal_policy(iam.PolicyStatement(
+            actions=["aoss:APIAccessAll"], resources=[collection.attr_arn]))
+
         # AOSS data access is governed ONLY by this policy — an IAM principal
         # with aoss:APIAccessAll still gets 403 unless it is named here.
         #

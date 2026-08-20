@@ -443,20 +443,25 @@ class RegDeltaCoreStack(cdk.Stack):
             actions=["ssm:GetParameter"],
             resources=[self.format_arn(service="ssm", resource="parameter",
                                        resource_name="regdelta/search/*")]))
-        query_fn.add_to_role_policy(iam.PolicyStatement(
-            actions=["aoss:APIAccessAll"],
-            # NOT pinned to a collection id, and that is a constraint rather
-            # than an oversight: the collection is created by the EPHEMERAL
-            # search stack, takes a fresh id on every `make up`, and this
-            # persistent stack is deployed before it exists. Account-and-region
-            # is the honest floor; `*` additionally reached every collection in
-            # the account, and this account has others.
-            #
-            # The control that actually admits the request is AOSS's own data
-            # access policy, which names this role explicitly — IAM here is
-            # necessary and not sufficient, which is how AOSS is designed.
-            resources=[self.format_arn(service="aoss", resource="collection",
-                                       resource_name="*")]))
+        # NO `aoss:APIAccessAll` HERE, and its absence is the SPEC/05 change.
+        # The statement this stack used to carry was scoped to `collection/*` in
+        # this account and region, with a comment explaining that a collection
+        # id was unreachable from a persistent stack deployed before the
+        # collection exists. That reasoning was correct about THIS FILE and
+        # wrong about the grant: the constraint dissolves by moving the
+        # statement to `search_stack.py`, where `collection.attr_arn` is
+        # concrete. SPEC/05 asks for the collection ARN and now gets it.
+        #
+        # It also ends a lifetime bug nobody had named. The grant used to
+        # OUTLIVE the collection — `make down` destroys the hot tier and the
+        # internet-facing role kept account-wide AOSS reach for the days or
+        # weeks until the next `make up`, over collections belonging to other
+        # projects in this account. Attached to the ephemeral stack, the
+        # permission exists exactly when the collection does.
+        #
+        # The dependency direction is unchanged and this module's docstring
+        # still holds: search references core, core references nothing of
+        # search. What crosses is this role's ARN, which core already exports.
         self.query_lambda_role_arn = query_fn.role.role_arn
 
         # ------------------------------------------------------------------
