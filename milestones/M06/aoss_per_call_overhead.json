@@ -1,0 +1,20 @@
+{
+  "n": 30,
+  "basis": "local CPU only, no network, no AWS call",
+  "get_session_get_credentials_ms": {
+    "median": 6.43,
+    "max": 80.993
+  },
+  "frozen_from_reused_session_ms": {
+    "median": 0.0,
+    "max": 0.012
+  },
+  "sigv4_signing_ms_both_tiers": {
+    "median": 0.084,
+    "max": 0.356
+  },
+  "aoss_only_overhead_ms_median": 6.43,
+  "cpu_ms_per_wall_second_at_90_calls_s": 579,
+  "fixed_in": "src/retrieval/aoss_client.py, _credentials()",
+  "not_measured_here": "the TCP+TLS handshake urllib.request.urlopen pays on every call because nothing installs an opener with a pool, while botocore holds a urllib3 pool per client. Structural, larger, not measurable offline, and raised with the seat rather than changed unilaterally in the week Tier B is disposed of."
+}
