@@ -168,6 +168,17 @@ BEDROCK_DAILY_TOKEN_CAP = {
 # any retrieval-concurrency profile: 100 calls per second, whatever drives them.
 TITAN_EMBED_RPM_CAP = 6_000
 
+# HTTP connections the retrieval path may hold open per client, and it is a
+# measurement-validity number rather than a performance one. botocore defaults
+# to 10; SPEC/06's disposition drives 90 retrieval calls per second, which is
+# ~32 in flight on Tier A and ~80 on Tier B. Above the pool size the excess
+# calls BLOCK in urllib3 — inside `router.retrieve()`, which is the interval
+# the disposition's p95 is defined over — so the comparison would have been
+# between two queues in this process rather than between two search backends.
+# 128 covers the top step on the slower tier with room to spare; connections
+# are created lazily, so a query Lambda serving one request still opens one.
+RETRIEVAL_POOL_SIZE = int(os.environ.get("RETRIEVAL_POOL_SIZE", "128"))
+
 # The dollar ceiling a load run may not cross. Approved by the human seat at
 # M06 open. `loadtest/budget.py` refuses BEFORE spending anything if the plan
 # exceeds it, and aborts DURING the run if measured spend reaches it — the

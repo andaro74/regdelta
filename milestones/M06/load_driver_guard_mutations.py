@@ -26,6 +26,19 @@ security-reviewer's verdict on them was that none is a specimen written to pass
 simply vanishes, and the reviewer demonstrated it by deleting the driver's
 `aoss:APIAccessAll` and watching the entire suite pass.
 
+AND THE THIRD BIAS, FOUND THE SAME WAY. R and T are both still "does an
+existing guard notice a change to code it already reads." Neither family can
+surface a property NO guard asserts — there is nothing to mutate for a clause
+that was never written — so the harness measured guard STRENGTH and never guard
+COVERAGE. security-reviewer found the gap by writing the mutations this file
+did not contain: `t.join(timeout=120)` -> `timeout=0`, deleting the driver's
+entire wait-for-stragglers behaviour, and the whole driver test file stayed
+green. Every assertion in it was stated relative to `returned`, and the one use
+of `dispatched` never compared the two.
+
+So there is now an S family — "the sample set is complete" — and the clause
+that kills it. S1 and S2 are security-reviewer's own two, kept verbatim.
+
 A MISSING grant is the milestone's worst case, not a benign one. The driver
 would take a bare 403 on every AOSS call, `router._resolve` would fall back to
 S3 Vectors silently and by design, and the Tier B half of a disposition whose
@@ -220,8 +233,10 @@ MUTATIONS = [
     # pass here is the most expensive single failure in the milestone.
 
     ("T1-eligibility-ignores-the-tier", DRIVER, DRIVER_TEST,
-     '    eligible = within and retries["total"] == 0 and tier_ok',
-     '    eligible = within and retries["total"] == 0',
+     '    eligible = (within and retries["total"] == 0 and tier_ok and complete\n'
+     '                and bool(latencies))',
+     '    eligible = (within and retries["total"] == 0 and complete\n'
+     '                and bool(latencies))',
      "the state the code was in when security-reviewer measured it: "
      "tiers_observed ['s3vectors'], errors 0, dispositive_eligible true, on a "
      "step pointed at aoss"),
@@ -245,6 +260,54 @@ MUTATIONS = [
      "router.active_tier()),",
      "defaulting to active_tier() compares the SSM parameter against itself "
      "and passes for any fallback at all — the assertion becomes a tautology"),
+
+    # ------------------------------------------ S: is the sample set complete
+    # THE FAMILY THE OTHER TWO COULD NOT CONTAIN. A dropped call is in no
+    # sample at all, so it is invisible in `n` AND in the error rate, and the
+    # p95 becomes a statistic about the calls that survived — the sample
+    # exclusion the amended clause refuses in writing, performed invisibly and
+    # biased toward the tier that failed more.
+
+    ("S1-stragglers-are-abandoned", DRIVER, DRIVER_TEST,
+     "        t.join(timeout=JOIN_TIMEOUT_S)",
+     "        t.join(timeout=0)",
+     "SECURITY-REVIEWER'S OWN, kept verbatim: deleting the driver's entire "
+     "wait-for-stragglers behaviour left the whole driver test file green, "
+     "because every assertion in it was relative to `returned` and nothing "
+     "compared `returned` to `dispatched`"),
+
+    ("S2-only-a-tenth-of-the-calls-are-waited-for", DRIVER, DRIVER_TEST,
+     "    for t in threads:\n        t.join(timeout=JOIN_TIMEOUT_S)",
+     "    for t in threads[:max(1, len(threads) // 10)]:\n"
+     "        t.join(timeout=JOIN_TIMEOUT_S)",
+     "the same defect as a subset rather than as a wholesale drop: a p95 over "
+     "whichever tenth happened to be waited for"),
+
+    ("S3-eligibility-stops-requiring-a-complete-account", DRIVER, DRIVER_TEST,
+     "    complete = returned == dispatched and dispatched > 0",
+     "    complete = True",
+     "the clause the S family exists to protect. Measured before it existed: "
+     "2 of 20 calls returned, error_rate 0.0, dispositive_eligible true"),
+
+    ("S4-a-step-with-no-successful-call-is-eligible", DRIVER, DRIVER_TEST,
+     "    eligible = (within and retries[\"total\"] == 0 and tier_ok and complete\n"
+     "                and bool(latencies))",
+     "    eligible = (within and retries[\"total\"] == 0 and tier_ok and complete)",
+     "every call raised: a complete account, a real fact about the tier, and "
+     "no latency measurement at all"),
+
+    ("S5-the-throttle-exclusion-goes-away", DRIVER, DRIVER_TEST,
+     "    eligible = (within and retries[\"total\"] == 0 and tier_ok and complete",
+     "    eligible = (within and tier_ok and complete",
+     "the amended clause's other completion condition, and the module "
+     "docstring calls it load-bearing: `shared.util.retry` absorbs a Titan "
+     "throttle into 2/4/8 seconds of sleep INSIDE the measured interval"),
+
+    ("S6-coordinated-omission-stops-disqualifying", DRIVER, DRIVER_TEST,
+     "    eligible = (within and retries[\"total\"] == 0",
+     "    eligible = (retries[\"total\"] == 0",
+     "'a driver that could not keep up must be distinguishable from a tier "
+     "that was fast' — the third conjunct, unmutated until now"),
 
     ("T5-the-fallback-list-is-uncapped-again", DRIVER, DRIVER_TEST,
      '        "fallbacks": len(fallbacks),\n'

@@ -1,0 +1,192 @@
+{
+  "guard": "tests/test_tier_disposition.py",
+  "subject": "loadtest/retrieval_load.py",
+  "baseline_green": true,
+  "tree_restored_and_green": true,
+  "mutations": 26,
+  "survivors": 0,
+  "results": [
+    {
+      "id": "V1-keep-on-any-difference",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "a 10% grace on the keep condition. The clause says at or below, and 'a difference inside the recorded run-to-run spread is not an advantage'",
+      "tail": null
+    },
+    {
+      "id": "V2-the-comparison-is-inverted",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "`a` is Tier A and `b` is Tier B; swapped, the slower tier keeps its place and the faster one retires. Nothing about the artifact would look wrong",
+      "tail": null
+    },
+    {
+      "id": "V3-error-rate-disjunct-needs-no-margin",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "'at least 5 percentage points lower' becomes 'lower at all', which any noise satisfies",
+      "tail": null
+    },
+    {
+      "id": "V4-the-disjunction-becomes-a-conjunction",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the clause is a disjunction \u2014 either arm keeps Tier B. As a conjunction the error-rate route is unreachable and Tier B retires on latency alone",
+      "tail": null
+    },
+    {
+      "id": "V5-retirement-stops-naming-what-is-removed",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "a retirement verdict that does not say what retirement DOES is a verdict nobody can act on; the clause enumerates five things",
+      "tail": null
+    },
+    {
+      "id": "S1-warmup-is-scored",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "'three times per tier, the first discarded as warmup'. A cold Lambda's boto3 client construction was 819.7-1,019.6 ms at M04; pooling it moves a p95",
+      "tail": null
+    },
+    {
+      "id": "S2-the-lowest-step-becomes-dispositive",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "'the HIGHEST arrival rate at which both tiers completed the step'. The lowest is the one where concurrency \u2014 Tier B's only remaining case \u2014 has barely been applied",
+      "tail": null
+    },
+    {
+      "id": "S3-p95-becomes-p50",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the clause names p95, and a median hides the tail that a concurrency profile exists to expose",
+      "tail": null
+    },
+    {
+      "id": "S4-percentile-drifts-from-the-drivers",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "linear-rank instead of nearest-rank. Two percentile methods over the same samples can differ by more than the effect being measured, and the artifact would carry both numbers under one stated method",
+      "tail": null
+    },
+    {
+      "id": "S5-a-tiers-steps-are-pooled-with-the-other-tiers",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "every rate's samples pooled into every step: the dispositive p95 stops being about the dispositive step and no longer varies with load at all",
+      "tail": null
+    },
+    {
+      "id": "G1-eligibility-reads-the-drivers-claim",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the orchestrator would then gate on the writer's own summary rather than on the run \u2014 the defect `evals/run_demo_parity.py` found three times",
+      "tail": null
+    },
+    {
+      "id": "G2-a-fallen-back-step-counts",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the security-review finding at the orchestrator layer: a step that answered from the other tier, filed under this one",
+      "tail": null
+    },
+    {
+      "id": "G2b-a-step-with-no-successful-call-counts",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the hole G2 exposed on its first outing. A step where every call raised observes no tier, which the half-level union check reads as no disagreement, and carries no samples \u2014 so it reached the dispositive slot with p95 None on both sides, neither disjunct held, and Tier B retired on a run that measured nothing",
+      "tail": null
+    },
+    {
+      "id": "G3-the-corpus-gate-accepts-two-absences",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "`corpus.fingerprint()` returns {'available': false} with REGISTRY_TABLE unset, and two Nones are equal \u2014 the gate silently stops gating, which is exactly why RESOLVE_ENV_STRICT exists",
+      "tail": null
+    },
+    {
+      "id": "G4-the-vantage-gate-goes-away",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "'from one vantage recorded and identical across both halves' \u2014 Change 5 is the reason internal validity survives the move in-region at all",
+      "tail": null
+    },
+    {
+      "id": "G5-a-half-with-one-scored-run-is-accepted",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "one scored run per tier is not the clause's measurement, and run-to-run spread is what 'ties retire' is defined against",
+      "tail": null
+    },
+    {
+      "id": "C1-the-latency-arm-ignores-comparability",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "survivor bias wins the latency disjunct: Tier B fails 60% of its calls, its surviving 40% are fast, and it keeps its place for having broken",
+      "tail": null
+    },
+    {
+      "id": "C2-comparability-loses-its-absolute-value",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "signed instead of absolute: a Tier B that is far WORSE gives a negative difference, which is below the threshold, so exactly the case the rule exists for is read as comparable",
+      "tail": null
+    },
+    {
+      "id": "C3-comparability-accepts-any-gap",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the threshold widened to everything, which is C1 by another route and the shape a 'temporary' loosening takes",
+      "tail": null
+    },
+    {
+      "id": "C4-a-step-that-lost-calls-counts",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "a call that never returned is in no sample, so it is invisible in `n` AND in the error rate. Measured: 2 of 20 returned, error_rate 0.0, dispositive_eligible true, p95 over two samples",
+      "tail": null
+    },
+    {
+      "id": "C5-a-missing-account-is-assumed-complete",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "a step recorded by a driver that predates the fields would be assumed to have accounted for everything \u2014 the artifact is the evidence, and an absent field is not a passing one",
+      "tail": null
+    },
+    {
+      "id": "O1-the-floor-is-decided-before-the-gate",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "THE ORDERING BUG, as it actually occurred. A half that answered from the wrong tier makes every step ineligible, so with the floor first an IAM propagation delay presents as 'no qualifying step', spends one of the two attempts Change 6 allows, and on a repeat RETIRES TIER B by the default outcome \u2014 on a misconfiguration",
+      "tail": null
+    },
+    {
+      "id": "O2-a-failed-measurement-is-a-retirement-on-the-first-attempt",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "Change 6: a run that reached no real load is a failed measurement, NOT a retirement. Unbounded the other way, a dead profile becomes the argument against Tier B",
+      "tail": null
+    },
+    {
+      "id": "O3-the-floor-never-terminates",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the other direction, and the reason Change 6 is bounded at one re-run: M06 would end with Tier B alive and the bar never met, which `SPEC/06:48-49` forbids",
+      "tail": null
+    },
+    {
+      "id": "O4-a-measured-retirement-exits-non-zero",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "a retirement reached ON A QUALIFYING STEP is the harness working. Exit 1 would make `make tier-disposition` read as broken at the moment it succeeded, and the operator would re-run it",
+      "tail": null
+    },
+    {
+      "id": "O5-an-unmeasured-retirement-exits-zero",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the clause asks the target to exit non-zero when no step qualifies. Exit 0 would file a retirement nobody measured as a clean run",
+      "tail": null
+    }
+  ]
+}

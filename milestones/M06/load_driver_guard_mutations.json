@@ -8,7 +8,7 @@
   ],
   "baseline_green": true,
   "tree_restored_and_green": true,
-  "mutations": 20,
+  "mutations": 26,
   "survivors": 0,
   "results": [
     {
@@ -161,6 +161,54 @@
       "outcome": "killed",
       "exit": 1,
       "why": "defaulting to active_tier() compares the SSM parameter against itself and passes for any fallback at all \u2014 the assertion becomes a tautology",
+      "tail": null
+    },
+    {
+      "id": "S1-stragglers-are-abandoned",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "SECURITY-REVIEWER'S OWN, kept verbatim: deleting the driver's entire wait-for-stragglers behaviour left the whole driver test file green, because every assertion in it was relative to `returned` and nothing compared `returned` to `dispatched`",
+      "tail": null
+    },
+    {
+      "id": "S2-only-a-tenth-of-the-calls-are-waited-for",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the same defect as a subset rather than as a wholesale drop: a p95 over whichever tenth happened to be waited for",
+      "tail": null
+    },
+    {
+      "id": "S3-eligibility-stops-requiring-a-complete-account",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the clause the S family exists to protect. Measured before it existed: 2 of 20 calls returned, error_rate 0.0, dispositive_eligible true",
+      "tail": null
+    },
+    {
+      "id": "S4-a-step-with-no-successful-call-is-eligible",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "every call raised: a complete account, a real fact about the tier, and no latency measurement at all",
+      "tail": null
+    },
+    {
+      "id": "S5-the-throttle-exclusion-goes-away",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the amended clause's other completion condition, and the module docstring calls it load-bearing: `shared.util.retry` absorbs a Titan throttle into 2/4/8 seconds of sleep INSIDE the measured interval",
+      "tail": null
+    },
+    {
+      "id": "S6-coordinated-omission-stops-disqualifying",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "'a driver that could not keep up must be distinguishable from a tier that was fast' \u2014 the third conjunct, unmutated until now",
       "tail": null
     },
     {

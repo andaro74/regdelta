@@ -52,6 +52,27 @@ exactly that one — or which recorded any fallback reason at all — is reporte
 and is not eligible to be dispositive. `run_evals` and `run_parity` have
 asserted the same property since SPEC/02 criterion 2.
 
+## Every dispatched call must be accounted for
+
+A call that raises is a sample with an `error`. A call that never returns at
+all is in NO sample, so it is invisible in `n` AND in the error rate — and the
+p95 is then a statistic about the calls that survived. That is the sample
+exclusion the amended clause explicitly refuses ("Selecting a step is visible
+in the artifact; excluding samples inside a step is not"), performed
+invisibly, and it is biased: the calls that hang are the slow ones, so the tier
+that fails more has more of its slow calls dropped and its p95 IMPROVES. It can
+manufacture a `keep` as readily as a `retire`.
+
+Measured before the check existed (security-reviewer, M06, second pass): with
+90% of calls not returning before the join deadline, a step reported
+`returned 2` of `dispatched 20`, `error_rate 0.0`, `tier_as_asked true` and
+`dispositive_eligible true`, with a p95 over two samples.
+
+`rate_within_5pct` cannot catch it. `achieved` is `dispatched / elapsed` and
+the window is held to its full length, so that check is a test of the
+dispatcher's own loop and says nothing about what came back. So a step is
+eligible only if it accounted for every call it dispatched.
+
 ## What counts as an error, and what does not
 
 SPEC/06 excludes Bedrock throttles from the retrieval error rate: they are an
@@ -68,6 +89,21 @@ import threading
 import time
 
 from shared import util
+
+#: How long to wait for a call still in flight when the window closes.
+#:
+#: A MODULE CONSTANT SO IT CAN BE MADE SMALL IN A TEST. The completeness gate
+#: below refuses a step that could not account for every call it dispatched,
+#: and a guard that has never refused anything is a guard nobody has checked
+#: (ADR-0013) — but reproducing an abandoned straggler against a 120-second
+#: join means a 120-second test. With the seam,
+#: `tests/test_retrieval_load_driver.py` hangs a call, sets this to 50 ms and
+#: watches the step refuse itself.
+#:
+#: 120 s in production is comfortably above `LoadDriverFn`'s own 300-second
+#: timeout minus a 60-second step, and above botocore's 60-second read timeout
+#: plus `shared.util.retry`'s 2/4/8 backoff.
+JOIN_TIMEOUT_S = 120
 
 
 class _InFlight:
@@ -236,7 +272,7 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
         time.sleep(remaining)
     dispatch_elapsed = time.perf_counter() - start
     for t in threads:
-        t.join(timeout=120)
+        t.join(timeout=JOIN_TIMEOUT_S)
     elapsed = time.perf_counter() - start
 
     latencies = [s["ms"] for s in samples if s["ms"] is not None and not s["error"]]
@@ -251,6 +287,7 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
     for s in samples:
         span_status[s["span"]] = span_status.get(s["span"], 0) + 1
 
+    returned = len(samples)
     achieved = dispatched / dispatch_elapsed if dispatch_elapsed > 0 else 0.0
     # Written out rather than inlined as a conditional expression twice. The
     # inline form `a and b if rate else False` parses as `(a and b) if rate
@@ -284,7 +321,17 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
     # record a fallback reason for a per-call failure; counting only
     # `tiers_observed` would let those through as clean samples.
     tier_ok = _tier_is_as_asked(tiers, expected_tier) and not fallbacks
-    eligible = within and retries["total"] == 0 and tier_ok
+    # EVERY DISPATCHED CALL ACCOUNTED FOR. See the module docstring: a call
+    # that never returned is in no sample at all, so it is invisible in both
+    # `n` and the error rate, and the p95 becomes a survivor statistic.
+    # `errors` cannot see it and `rate_within_5pct` cannot see it.
+    complete = returned == dispatched and dispatched > 0
+    # AND AT LEAST ONE SUCCESSFUL CALL. A step in which everything raised has
+    # a complete account and no latency; it is a real fact about the tier and
+    # it is not a latency measurement, so it is reported and is not
+    # dispositive.
+    eligible = (within and retries["total"] == 0 and tier_ok and complete
+                and bool(latencies))
     return {
         "label": label,
         "driven_rate": rate,
@@ -295,14 +342,35 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
         "rate_within_5pct": within,
         "seconds": seconds,
         "dispatched": dispatched,
-        "returned": len(samples),
+        "returned": returned,
+        # THE THREE POPULATIONS, REPORTED SEPARATELY BECAUSE THEY DIFFER AND
+        # THE DIFFERENCE IS THE FINDING. `dispatched` is what the schedule
+        # asked for, `returned` is what came back at all, and `n` is what
+        # carried a latency. A report that gave only `n` beside a p95 would be
+        # a survivor statistic wearing the name of a measurement.
+        "unaccounted": dispatched - returned,
         "n": len(latencies),
+        "sample_completeness": (round(len(latencies) / dispatched, 6)
+                                if dispatched else None),
         "p50_ms": _percentile(latencies, 0.50),
         "p95_ms": _percentile(latencies, 0.95),
         "min_ms": round(min(latencies), 1) if latencies else None,
         "max_ms": round(max(latencies), 1) if latencies else None,
         "percentile_method": "nearest-rank, as milestones/M04/"
                              "answer-parity-3966b47.json",
+        # THE RAW SAMPLES, so the dispositive p95 is recomputable by a reader
+        # and poolable by the orchestrator. The clause scores TWO runs per tier
+        # and takes p95 "within the dispositive step"; percentiles cannot be
+        # averaged, so the orchestrator has to pool the samples rather than the
+        # summaries. Returning them also means the artifact's headline number
+        # can be re-derived from the artifact, which is the discipline
+        # `milestones/M04/answer-parity-3966b47.json` demonstrates and the
+        # reason its percentile method is stated at all.
+        #
+        # 5,400 floats at the top step is ~40 KB of JSON, well inside Lambda's
+        # 6 MB synchronous response. It is kept OUT of the printed log line
+        # below for the same reason `error_sample` is.
+        "latencies_ms": latencies,
         "inflight_mean": inflight.mean(elapsed),
         "inflight_peak": inflight.peak,
         # WHAT ANSWERED, not what was configured. `handler` records
@@ -337,6 +405,7 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
         "error_sample": [e["error"] for e in errors[:5]],
         "error_rate": round(len(errors) / len(samples), 6) if samples else None,
         "bedrock_retries": retries,
+        "accounted_for_every_call": complete,
         "dispositive_eligible": eligible,
         "elapsed_s": round(elapsed, 2),
     }
@@ -364,8 +433,13 @@ def handler(event, context):
     # from "the endpoint was gone".
     result["resolved_tier"] = router.active_tier()
     result["questions"] = len(questions)
+    # ONE CloudWatch event, which caps at 256 KiB. `latencies_ms` and
+    # `error_sample` travel in the response payload instead: the summary is
+    # what a human greps the log for, and truncation would take the fields the
+    # clause asks the report to carry.
     print(json.dumps({"retrieval_load": {
-        k: v for k, v in result.items() if k != "error_sample"}}, default=str))
+        k: v for k, v in result.items()
+        if k not in ("error_sample", "latencies_ms")}}, default=str))
     return result
 
 

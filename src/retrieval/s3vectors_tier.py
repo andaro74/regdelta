@@ -26,7 +26,24 @@ def _client(name):
     # was the only user of in this module.
     if name not in _clients:
         import boto3
-        _clients[name] = boto3.client(name, region_name=config.REGION)
+        from botocore.config import Config
+
+        # MAX_POOL_CONNECTIONS, AND IT IS A MEASUREMENT-VALIDITY SETTING RATHER
+        # THAN A TUNING ONE. botocore's default is 10. SPEC/06's disposition
+        # drives this path at 90 retrieval calls per second, which is
+        # `rate x service time` ~ 32 in flight on Tier A and ~80 on Tier B —
+        # three to eight times the pool. The excess calls do not fail; they
+        # BLOCK in urllib3 waiting for a connection, and that wait lands inside
+        # `router.retrieve()`, which is the interval the clause defines the p95
+        # over. The disposition would have compared queueing delay in this
+        # process against queueing delay in this process and called it a tier
+        # difference. security-reviewer, M06, second pass.
+        #
+        # Harmless on the request path: connections are created lazily, so a
+        # query Lambda serving one request at a time still opens one.
+        _clients[name] = boto3.client(
+            name, region_name=config.REGION,
+            config=Config(max_pool_connections=config.RETRIEVAL_POOL_SIZE))
     return _clients[name]
 
 

@@ -65,7 +65,16 @@ def node(monkeypatch):
              # on an AossError. Nth call reports the OTHER tier, exactly as
              # `router._resolve` does — it does not raise, and that is the
              # whole difficulty.
-             "fall_back_every": 0}
+             "fall_back_every": 0,
+             # A call that never comes back before the join deadline. Not an
+             # error — an error returns a sample. This one is in no sample at
+             # all, which is the whole point of the completeness gate.
+             "hang_every": 0, "hang_s": 0.5,
+             # A resolution that names a tier and carries no timing. Not an
+             # error and not a fallback: the call succeeded and the instrument
+             # did not. `router.retrieve_traced` returns `resolution.elapsed_ms`
+             # and nothing in its type forbids None.
+             "untimed": False}
     counter_lock = threading.Lock()
 
     def observed(_name, _fn, on_span=None):
@@ -86,13 +95,16 @@ def node(monkeypatch):
                 state["calls"] += 1
                 mine = state["calls"]
             try:
+                if state["hang_every"] and mine % state["hang_every"] == 0:
+                    time.sleep(state["hang_s"])
                 time.sleep(state["service_ms"] / 1000.0)
                 if state["fail_every"] and mine % state["fail_every"] == 0:
                     raise RuntimeError("AossError: 503 from the search backend")
                 fell_back = (state["fall_back_every"]
                              and mine % state["fall_back_every"] == 0)
                 return {
-                    "retrieval_ms": state["service_ms"],
+                    "retrieval_ms": (None if state["untimed"]
+                                     else state["service_ms"]),
                     "retrieval_tier": "s3vectors" if fell_back else state["tier"],
                     "retrieval_fallback": ("AossError: 403" if fell_back
                                            else state["fallback"]),
@@ -466,3 +478,128 @@ def test_the_fallback_list_is_capped_and_counted(node):
     assert out["fallbacks"] == out["returned"] > 5
     assert isinstance(out["fallbacks"], int)
     assert len(out["fallback_sample"]) == 5
+
+
+# ------------------------------------------------- is the sample set complete
+# THE FAMILY THE MUTATION HARNESS DID NOT HAVE. security-reviewer found it by
+# writing the mutation this file could not fail: `t.join(timeout=...)` -> 0,
+# deleting the driver's entire wait-for-stragglers behaviour, and everything
+# here stayed green. Every assertion was stated relative to `returned`, and the
+# single use of `dispatched` never compared the two.
+#
+# A dropped call is in NO sample, so it is invisible in `n` and in the error
+# rate, and the p95 becomes a statistic about the calls that survived. That is
+# the sample exclusion the amended clause refuses in writing, performed
+# invisibly — and biased, because the calls that hang are the slow ones, so the
+# tier that fails more has more of its slow calls dropped and its p95 improves.
+
+
+def test_a_well_behaved_step_accounts_for_every_call_it_dispatched(node):
+    """The positive half. The three populations must agree when nothing went
+    wrong, or the gate below could only ever refuse."""
+    node["service_ms"] = 1.0
+    out = retrieval_load.run_step(rate=20, seconds=0.4, questions=["q"],
+                                  expected_tier="aoss")
+    assert out["dispatched"] == out["returned"] > 0
+    assert out["unaccounted"] == 0
+    assert out["accounted_for_every_call"] is True
+    assert out["sample_completeness"] == 1.0
+    assert out["dispositive_eligible"] is True
+
+
+def test_stragglers_are_waited_for_rather_than_abandoned(node):
+    """HARNESS S1/S2 — the mutation that survived.
+
+    Every call is still in flight when the window closes: the service time is
+    longer than the whole step. The driver must wait for them, not walk away
+    with whatever had finished.
+    """
+    node["service_ms"] = 250.0
+    out = retrieval_load.run_step(rate=20, seconds=0.3, questions=["q"],
+                                  expected_tier="aoss")
+    assert out["dispatched"] >= 5
+    assert out["returned"] == out["dispatched"], (
+        "the driver abandoned calls that were still in flight; their latencies "
+        "are the slow ones, so dropping them flatters the tier")
+    assert out["unaccounted"] == 0
+
+
+def test_a_call_that_never_returns_makes_the_step_ineligible(monkeypatch, node):
+    """HARNESS S3, and the security review's Attack B reproduced.
+
+    Measured on this code before the gate existed: 2 of 20 calls returned,
+    `errors 0`, `error_rate 0.0`, `tier_as_asked true`, `dispositive_eligible
+    true`, and a p95 over two samples.
+
+    `errors` cannot see this and neither can `rate_within_5pct`: `achieved` is
+    `dispatched / elapsed` over a window held to its full length, so it tests
+    the dispatcher's own loop and nothing downstream.
+    """
+    monkeypatch.setattr(retrieval_load, "JOIN_TIMEOUT_S", 0.05)
+    node["service_ms"] = 1.0
+    node["hang_every"] = 1
+    node["hang_s"] = 2.0
+
+    out = retrieval_load.run_step(rate=20, seconds=0.3, questions=["q"],
+                                  expected_tier="aoss")
+
+    assert out["unaccounted"] > 0
+    assert out["returned"] < out["dispatched"]
+    assert out["errors"] == 0, "a call that never returned is not an error"
+    assert out["rate_within_5pct"] is True, "the dispatcher kept up; that is the trap"
+    assert out["accounted_for_every_call"] is False
+    assert out["dispositive_eligible"] is False
+    assert out["sample_completeness"] < 1.0
+
+
+def test_a_step_where_everything_raised_is_reported_and_is_not_dispositive(node):
+    """HARNESS S4. Every call returns — as an error — so the account is
+    complete and there is still no latency to compare. A real fact about the
+    tier, and not a latency measurement."""
+    node["service_ms"] = 1.0
+    node["fail_every"] = 1
+    out = retrieval_load.run_step(rate=20, seconds=0.3, questions=["q"],
+                                  expected_tier="aoss")
+
+    assert out["accounted_for_every_call"] is True
+    assert out["n"] == 0 and out["p95_ms"] is None
+    assert out["error_rate"] == 1.0
+    assert out["dispositive_eligible"] is False
+
+
+def test_a_step_that_resolved_a_tier_but_timed_nothing_is_not_dispositive(node):
+    """HARNESS S4, and the case where `bool(latencies)` is the SOLE refusal.
+
+    The first version of this assertion used `fail_every`, which also empties
+    `tiers_observed` — so the tier check refused first and the mutation that
+    deleted this clause survived. The case that isolates it is a call that
+    SUCCEEDED, named its tier, and carried no `retrieval_ms`: the account is
+    complete, the tier is right, nothing fell back, and there is still no
+    latency to put a p95 over.
+
+    A step like that must be reported and must not be dispositive. Silently, it
+    would contribute `p95_ms: None` to the comparison, where neither disjunct
+    holds and Tier B retires on an instrument failure.
+    """
+    node["service_ms"] = 1.0
+    node["untimed"] = True
+    out = retrieval_load.run_step(rate=20, seconds=0.3, questions=["q"],
+                                  expected_tier="aoss")
+
+    assert out["tiers_observed"] == ["aoss"], "the tier resolved fine"
+    assert out["accounted_for_every_call"] is True
+    assert out["errors"] == 0 and out["fallbacks"] == 0
+    assert out["n"] == 0 and out["p95_ms"] is None
+    assert out["dispositive_eligible"] is False
+
+
+def test_the_three_populations_are_reported_separately(node):
+    """`n` beside a p95, with no dispatch count, is a survivor statistic
+    wearing the name of a measurement."""
+    node["service_ms"] = 1.0
+    node["fail_every"] = 4
+    out = retrieval_load.run_step(rate=30, seconds=0.4, questions=["q"],
+                                  expected_tier="aoss")
+    assert out["dispatched"] == out["returned"]
+    assert out["n"] == out["returned"] - out["errors"] < out["dispatched"]
+    assert 0 < out["sample_completeness"] < 1.0
