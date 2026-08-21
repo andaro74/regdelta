@@ -25,7 +25,7 @@ which is a spec change, and `pm-spec-reviewer` owns it. Nothing in SPEC/03's
 "Done when" turns on the topology, so this does not block the milestone; it
 should not be allowed to quietly become the spec either.
 """
-from graph import nodes
+from graph import instrument, nodes
 from graph.state import RegDeltaState
 
 
@@ -41,13 +41,25 @@ def build_graph(checkpointer=None):
 
     builder = StateGraph(RegDeltaState)
 
-    builder.add_node("supervisor", nodes.supervisor)
-    builder.add_node("retrieval_agent", nodes.retrieval_agent)
-    builder.add_node("timeline_agent", nodes.timeline_agent)
-    builder.add_node("crossref_agent", nodes.crossref_agent)
-    builder.add_node("applicability", nodes.applicability)
-    builder.add_node("verdict", nodes.verdict)
-    builder.add_node("hitl_gate", nodes.hitl_gate)
+    # EVERY NODE IS WRAPPED (SPEC/06 Observability: "span per graph node").
+    # Wrapped HERE rather than by decorating the functions in nodes.py, for
+    # three reasons. The seam stays out of the answer path — nodes.py's own
+    # docstring says its injectable seams "are not features - nothing in the
+    # answer path branches on them", and an emitter baked into each node would
+    # be a fourth thing every unit test has to tolerate. The wrapper sees each
+    # node's RETURN VALUE, which is strictly more than the merged state: it
+    # observes a key before LangGraph can drop an undeclared one, which is how
+    # `stop_reason` was lost. And `instrument.observed` keeps the original on
+    # `__wrapped__`, so the load driver and the tests can still call the real
+    # function without emitting anything.
+
+    builder.add_node("supervisor", instrument.observed("supervisor", nodes.supervisor))
+    builder.add_node("retrieval_agent", instrument.observed("retrieval_agent", nodes.retrieval_agent))
+    builder.add_node("timeline_agent", instrument.observed("timeline_agent", nodes.timeline_agent))
+    builder.add_node("crossref_agent", instrument.observed("crossref_agent", nodes.crossref_agent))
+    builder.add_node("applicability", instrument.observed("applicability", nodes.applicability))
+    builder.add_node("verdict", instrument.observed("verdict", nodes.verdict))
+    builder.add_node("hitl_gate", instrument.observed("hitl_gate", nodes.hitl_gate))
 
     builder.add_edge(START, "supervisor")
     builder.add_edge("supervisor", "retrieval_agent")

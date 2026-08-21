@@ -49,6 +49,32 @@ NODES = SRC / "graph" / "nodes.py"
 STATE = SRC / "graph" / "state.py"
 
 
+def _registered_nodes() -> set[str]:
+    """Names of `nodes.*` functions graph.py registers, THROUGH ANY WRAPPER.
+
+    Written as "find every `nodes.X` attribute inside an `add_node(...)` call"
+    rather than "read `add_node`'s second positional argument", because M06
+    wrapped every registration in `instrument.observed(...)` and the simpler
+    form matched nothing — this file's own extractor went to zero nodes and
+    every parametrized test in it silently became an empty parametrization.
+    Pytest reports that as no tests, not as a failure, which is the same
+    silent-skip shape mutation M6 found.
+    """
+    tree = ast.parse((SRC / "graph" / "graph.py").read_text(encoding="utf-8"))
+    out = set()
+    for call in ast.walk(tree):
+        if not (isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and call.func.attr == "add_node"):
+            continue
+        for inner in ast.walk(call):
+            if (isinstance(inner, ast.Attribute)
+                    and isinstance(inner.value, ast.Name)
+                    and inner.value.id == "nodes"):
+                out.add(inner.attr)
+    return out
+
+
 def _node_functions() -> dict[str, ast.FunctionDef]:
     """The graph's node callables, taken from graph.py's own registrations.
 
@@ -57,16 +83,7 @@ def _node_functions() -> dict[str, ast.FunctionDef]:
     node's keys go unchecked and every test stays green. `graph.py` is the one
     place that says what a node is, so it is the one place asked.
     """
-    graph_src = (SRC / "graph" / "graph.py").read_text(encoding="utf-8")
-    registered = {
-        call.args[1].attr
-        for call in ast.walk(ast.parse(graph_src))
-        if isinstance(call, ast.Call)
-        and isinstance(call.func, ast.Attribute)
-        and call.func.attr == "add_node"
-        and len(call.args) == 2
-        and isinstance(call.args[1], ast.Attribute)
-    }
+    registered = _registered_nodes()
     assert registered, "no add_node(...) registrations found in graph.py"
 
     tree = ast.parse(NODES.read_text(encoding="utf-8"))
@@ -178,17 +195,7 @@ def test_every_node_shaped_function_is_registered_in_the_graph():
     and `_foreign_role_imports` half-widened). Deriving the list from graph.py
     was right; deriving it from ONLY graph.py was the gap.
     """
-    registered = {
-        call.args[1].attr
-        for call in ast.walk(ast.parse(
-            (SRC / "graph" / "graph.py").read_text(encoding="utf-8")))
-        if isinstance(call, ast.Call)
-        and isinstance(call.func, ast.Attribute)
-        and call.func.attr == "add_node"
-        and len(call.args) == 2
-        and isinstance(call.args[1], ast.Attribute)
-    }
-    unwired = _node_shaped_functions() - registered
+    unwired = _node_shaped_functions() - _registered_nodes()
     assert not unwired, (
         f"nodes.py defines {sorted(unwired)} taking RegDeltaState, but "
         f"graph.py does not register them. Either they are dead code, or the "

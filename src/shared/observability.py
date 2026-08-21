@@ -266,9 +266,18 @@ class Span:
 
 @contextmanager
 def node_span(name: str, *, dimensions: dict[str, str] | None = None,
-              properties: dict | None = None, _emit=emit,
-              _send=send_subsegment):
+              properties: dict | None = None, _emit=None, _send=None):
     """Time a graph node, emit its metrics, and attach an X-Ray subsegment.
+
+    THE TWO SEAMS DEFAULT TO None AND RESOLVE AT CALL TIME. Written first as
+    `_emit=emit`, which binds the function OBJECT when this module is imported,
+    so replacing `observability.emit` afterwards had no effect on the span's own
+    final emission — only on the direct calls in `graph/instrument.py`. A test
+    that swapped the module attribute therefore captured some documents and
+    missed others, and reported the miss as "a raising node emitted nothing"
+    when the span had been emitted correctly the whole time. An instrument
+    whose output cannot be captured is one whose claims cannot be checked,
+    which is ADR-0013 pointed at the observability layer itself.
 
     The EMF line is emitted in a `finally`, so a node that raises is still
     measured and still counted. `NodeLatency` is dimensioned by node name only:
@@ -291,13 +300,13 @@ def node_span(name: str, *, dimensions: dict[str, str] | None = None,
 
         metrics = {"NodeLatency": (elapsed_ms, "Milliseconds"), **span.metrics}
         dims = {"node": name, **(dimensions or {})}
-        _emit(metrics, dims,
+        (_emit or emit)(metrics, dims,
               {**(properties or {}), **span.metadata,
                "node": name,
                "elapsed_ms": elapsed_ms,
                **({"error": span.error} if span.error else {})})
 
-        span.span_result = _send(_subsegment(
+        span.span_result = (_send or send_subsegment)(_subsegment(
             name, start, end, span.annotations,
             {**span.metadata, "elapsed_ms": elapsed_ms,
              **({"error": span.error} if span.error else {})}))

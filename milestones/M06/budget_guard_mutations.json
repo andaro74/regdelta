@@ -1,0 +1,86 @@
+{
+  "guard": "tests/test_loadtest_budget.py",
+  "ceiling_usd_approved_by_the_seat": 20.0,
+  "mutations": 11,
+  "survivors": 0,
+  "tree_restored_and_green": true,
+  "results": [
+    {
+      "id": "B1-ceiling-not-enforced",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the dollar ceiling stops refusing; a $2,629 plan runs",
+      "tail": null
+    },
+    {
+      "id": "B2-ceiling-off-by-one",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "a ceiling that is silently ten times what the seat approved",
+      "tail": null
+    },
+    {
+      "id": "B3-quota-check-skipped",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the refusal money cannot buy stops firing; a plan needing 125x a non-adjustable cap is approved",
+      "tail": null
+    },
+    {
+      "id": "B4-quota-ignores-todays-spend",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "every plan is checked against a fresh day, so a run late in the day passes and then throttles",
+      "tail": null
+    },
+    {
+      "id": "B5-unpriced-model-is-free",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "a model with no rate costs zero, so every total stays plausible and is wrong in our favour",
+      "tail": null
+    },
+    {
+      "id": "B6-meter-checks-after-instead-of-before",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "reserve() detects an overshoot instead of preventing one \u2014 a log line, not a ceiling",
+      "tail": null
+    },
+    {
+      "id": "B7-cache-writes-priced-as-plain-input",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "cache writes under-priced by 25%, in the direction that flatters us",
+      "tail": null
+    },
+    {
+      "id": "B8-cache-tokens-dropped-from-the-quota-count",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "a cached run under-counts against a cap that cannot be raised",
+      "tail": null
+    },
+    {
+      "id": "B9-seat-approved-ceiling-changed",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the default ceiling silently becomes ten times what the seat approved",
+      "tail": null
+    },
+    {
+      "id": "B10-opus-rate-set-to-list-price",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "Bedrock's marketplace rate replaced by the first-party list price, under-counting every estimate by 10%",
+      "tail": null
+    },
+    {
+      "id": "B11-daily-cap-inflated",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the non-adjustable cap recorded as ten times its real value",
+      "tail": null
+    }
+  ]
+}
