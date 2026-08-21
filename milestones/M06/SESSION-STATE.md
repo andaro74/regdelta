@@ -1,9 +1,14 @@
 # M06 — session state, 2026-08-21
 
 Written so the next session starts from a record rather than a re-derivation.
-**Nothing is deployed. Nothing has been spent.** Every AWS call across both
-M06 sessions has been read-only: Service Quotas, CloudWatch metrics, Cost
-Explorer, DynamoDB reads, and one `logs:TestMetricFilter`.
+
+**DEPLOYED AND SPENT — see "The window, run 2026-08-21" below.** `regdelta-core`
+is deployed, the hot tier was up 16:37–16:58Z, and ≈$1 has been spent. Through
+sessions one and two this line read *"Nothing is deployed. Nothing has been
+spent"*, and every AWS call in those two sessions was read-only: Service
+Quotas, CloudWatch metrics, Cost Explorer, DynamoDB reads, and one
+`logs:TestMetricFilter`. That is history now, and it is written here rather
+than left as a stale claim at the top of the file a reader meets first.
 
 Branch `m06-load-and-observability`, cut from `m05-deploy-lifecycle` at
 `f1de2a3` (**not** from `main`; PR #12 and `main` are untouched).

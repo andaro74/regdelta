@@ -113,11 +113,29 @@ Recorded 2026-08-21 against the live account: **52 documents**, fingerprint
 `35a293e17117`, pub dates 2024-12-27 to 2026-08-19, **3 of 3 documents dated,
 0 undated, 0 errors**, tier `s3vectors`, status `ok`.
 
-**IN-PROCESS, and the artifact says so.** `NightlyCheckFn` is not deployed —
-nothing in this milestone is — so this exercises the same code and the same
-AWS reads, but not the Lambda's IAM role, its EventBridge schedule, or EMF
-reaching CloudWatch. That is what "verified live" meant last session and what
-the record should have said. Those three remain unexercised until the deploy.
+**~~IN-PROCESS, and the artifact says so.~~ SUPERSEDED — the function is now
+deployed and was invoked.** The paragraph here previously read: *"`NightlyCheckFn`
+is not deployed — nothing in this milestone is — so this exercises the same code
+and the same AWS reads, but not the Lambda's IAM role, its EventBridge schedule,
+or EMF reaching CloudWatch. Those three remain unexercised until the deploy."*
+
+The M06 window deployed it later the same day, so `verify_nightly.py` now
+records **two** runs and `nightly-verification.json` carries both:
+
+| | what it exercises |
+|---|---|
+| `in_process` | the code and the AWS reads |
+| `deployed` | **the Lambda's own IAM role and EMF reaching CloudWatch** |
+
+The deployed invocation of `regdelta-core-NightlyCheckFnF2F17D58-xWCuDSltnMb3`
+returned **status 200, no function error**, and its log tail carries the EMF
+line — `CorpusDocuments 52`, `GraphLogicChecked 3`, `GraphLogicErrors 0`,
+`EvalStalenessHours 8760.0`, corpus sha `35a293e17117`.
+
+**Two of the three are now closed. The third is not.** A manual invoke does not
+prove EventBridge fires on schedule, and no amount of invoking will — that is
+owed at the first unattended 02:00 UTC run and the artifact says so rather than
+letting "deployed and invoked" stand in for "scheduled and fired".
 
 **The cost claim is now a measurement.** The script reads the account's Opus
 token counter before and after and records the difference: **0**. If the
@@ -143,3 +161,8 @@ landed in exactly the state the hole was about — `eval_staleness` reports
 datapoint at all, and the alarm would have sat in INSUFFICIENT_DATA, which was
 NOT_BREACHING. The one state the watch exists for was the one state it could
 not see, and the artifact now shows it seeing it.
+
+**Demonstrated on the DEPLOYED function, not only in process.** The sentinel is
+in the invocation's own log tail, emitted by the Lambda under its own role. The
+in-process run could have shown the code emitting it; only this shows it
+reaching CloudWatch.

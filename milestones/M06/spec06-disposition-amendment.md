@@ -1,6 +1,38 @@
 # DRAFT v4 — proposed amendment to SPEC/06's Tier B disposition clause
 
-**Status: DRAFT for the PM seat. Not adopted. Nothing has been spent.**
+**Status: DRAFT for the PM seat. Not adopted.**
+
+> ### Correction, 2026-08-21 evening: this clause has now been RUN.
+>
+> Earlier versions of this line read *"Nothing has been spent."* That was true
+> when v4 was written and is now false. The window ran the same day: `make up`
+> 16:37Z, `make down` 16:58Z, **≈$1 spent**, and the amended clause in Part III
+> produced a verdict — **KEEP**, at 50 calls/s, AOSS p95 185.9 ms against S3
+> Vectors' 281.4 ms, n 5,996/6,000
+> (`milestones/M06/tier-disposition-f651aea.json`).
+>
+> **The document is still a DRAFT and the ruling is still owed.** What changed
+> is that three of its asks are no longer hypothetical, and they are corrected
+> in place below rather than left for the seat to discover:
+>
+> | where | was | is |
+> |---|---|---|
+> | Change 4 | "Change 1 raises that to **2.51×** at the dispositive step" | **0.686×** — measured, and in the opposite direction |
+> | Change 5 | direction **unknown** | **measured**: 185.9 ms vs 281.4 ms in-region |
+> | Change 6 | a floor whose bound matters | **never invoked**; zero failed measurements, so it is untested in practice |
+>
+> **One fact bears on the ruling and is stated here rather than buried.** The
+> verdict is KEEP *despite* a handicap the seat knowingly accepted: ruling IIb D
+> option 2 recorded that Tier B's client opens a fresh TCP+TLS connection per
+> call while Tier A's pools, with direction *"against Tier B — toward the
+> default outcome, retirement."* Tier B won the dispositive step carrying it.
+> Fixing that transport could only widen the margin, so this KEEP is
+> conservative rather than marginal.
+>
+> The error-rate disjunct narrowing argued for below **never bit**:
+> `bedrock_retries` was 0 at every step on both tiers and the verdict went via
+> the latency disjunct. The fix remains right for future runs; it was not
+> load-bearing here.
 
 > ## Rulings taken 2026-08-21, and the sources they rest on
 >
@@ -339,7 +371,28 @@ Finding 3 is the substance. Restated as the ask:
 - The closed loop gave Tier B **10% fewer arrivals** than Tier A. Change 1
   removes that advantage.
 - The closed loop gave Tier B **2.26×** Tier A's in-flight retrieval
-  concurrency. Change 1 raises that to **2.51×** at the dispositive step.
+  concurrency. ~~Change 1 raises that to **2.51×** at the dispositive step.~~
+  **CORRECTED 2026-08-21 by the run itself: 0.686×, the other way.**
+
+> **Correction — the 2.51× was closed-loop reasoning surviving into a vehicle
+> that makes it moot.** Measured at the dispositive step
+> (`tier-disposition-f651aea.json`):
+>
+> | tier | in-flight mean | p50 |
+> |---|---|---|
+> | AOSS | 7.43 / 7.36 | 139.4 ms |
+> | S3 Vectors | 10.67 / 10.88 | 199.8 ms |
+>
+> **0.686×.** Little's law is the whole explanation: under an open loop the
+> arrival rate is fixed and identical, so in-flight concurrency is an OUTPUT of
+> latency, and the faster tier carries less of it. 50/s × 0.139 s = 6.95;
+> 50/s × 0.199 s = 9.95.
+>
+> This does not weaken the ask — it is the ask. Change 1 exists precisely so
+> that offered load stops being a function of the result, and the corrected
+> figure is what that looks like when it works. What it does retire is any
+> reading in which the new vehicle hands Tier B a concurrency advantage. It
+> does not.
 
 **The net effect on a keep verdict is not derivable from M04's data, and this
 document does not claim one.** What the seat is asked to accept is a comparison
@@ -348,7 +401,9 @@ was an output of the result — not a more lenient bar and not a stricter one.
 
 *v1 argued a strictness change away with "retirement is the default", which is a
 non sequitur — a keep is a keep however obtained. v2 retracted that and then
-asserted "Change 1 removes it", which Finding 3's own table contradicts.*
+asserted "Change 1 removes it", which Finding 3's own table contradicts. v4's
+own replacement figure was then contradicted by the measurement, above — three
+versions of one number, and the only one that settled it was a run.*
 
 **The seat should see what rides on the verdict.** `ADR-0012:403-412` lists the
 eight things that break if Tier B retires — SPEC/02 criteria 2 and 3, its
@@ -363,7 +418,15 @@ not been measured and **could move the ratio**", and ADR-0012's Alternatives
 rejected "blame the vantage, re-measure from Lambda" as *motivated
 re-measurement* while allowing an in-region number as welcome.
 
-- **Direction: unknown**, and it is precisely the change ADR-0012 flagged.
+- ~~**Direction: unknown**~~ — **MEASURED 2026-08-21.** In-region, at 50 calls/s,
+  AOSS p95 **185.9 ms** against S3 Vectors' **281.4 ms**. It is precisely the
+  change ADR-0012 flagged, and the flag was warranted: M04's out-of-region
+  sequential number had Tier B at 889.3 ms against 354.1 ms, which is the
+  reverse ordering. **This does not un-retire leg 2** — that number stays
+  retired, this is a different profile at a different vantage measuring
+  concurrency, which was never measured at all — but the seat should rule
+  knowing the vantage change moved the ratio, because that is what ADR-0012
+  said it might do.
 - **Internal validity is preserved**: both halves share the vantage, the clause
   requires it recorded and identical, and the comparison is between tiers rather
   than against M04's number.
@@ -391,6 +454,18 @@ profile which never applies real concurrency does not test the concurrency case
 Unbounded, this floor is a route to M06 ending with Tier B alive and the bar
 never met. Bounded at one re-run, it is what stops a dead profile being used
 against Tier B, and nothing more.
+
+> **NEVER INVOKED, 2026-08-21, and the seat should rule knowing that.** The run
+> produced **zero failed measurements** on either tier — three of the five rates
+> gave a dispositive step on both — so neither the floor nor its one-re-run
+> bound was exercised. `prior_failed_measurements_per_tier` is `{aoss: 0,
+> s3vectors: 0}` in the report.
+>
+> This is a change ratified on its argument, not on evidence of it working. The
+> mutation harness kills the mutations that disable it
+> (`disposition_guard_mutations.py`, G-family), which is a different and weaker
+> claim than "it fired in anger and behaved". Worth saying plainly, because
+> "we built it and the run was clean" reads like confirmation and is not.
 
 ### The unnamed change the second review found, going the other way: the error-rate disjunct narrows
 

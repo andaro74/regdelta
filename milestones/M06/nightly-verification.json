@@ -1,10 +1,47 @@
 {
-  "at": "2026-08-21T15:56:21+00:00",
+  "at": "2026-08-21T18:44:46+00:00",
   "command": "eval \"$(python evals/local_env.py)\" && python milestones/M06/verify_nightly.py",
   "cost_claim": "the nightly makes no Bedrock call; `opus_tokens_spent` is the measurement of that, not a restatement of it",
-  "how": "IN-PROCESS. `ops.nightly.handler` run in this process against the deployed environment. NightlyCheckFn is not deployed, so this exercises the same code and the same AWS reads but NOT the Lambda's IAM role, its EventBridge schedule, or EMF reaching CloudWatch.",
-  "opus_tokens_after": 0,
-  "opus_tokens_before": 0,
+  "deployed": {
+    "emf_lines": [
+      "{\"CorpusDocuments\": 52.0, \"EvalStalenessHours\": 8760.0, \"GraphLogicChecked\": 3.0, \"GraphLogicErrors\": 0.0, \"GraphLogicUndated\": 0.0, \"HotTierUp\": 0.0, \"NightlyCheckFailed\": 0.0, \"_aws\": {\"CloudWatchMetrics\": [{\"Dimensions\": [[\"check\"]], \"Metrics\": [{\"Name\": \"CorpusDocuments\", \"Unit\": \"Count\"}, {\"Name\": \"EvalStalenessHours\", \"Unit\": \"None\"}, {\"Name\": \"GraphLogicChecked\", \"Unit\": \"Count\"}, {\"Name\": \"GraphLogicErrors\", \"Unit\": \"Count\"}, {\"Name\": \"GraphLogicUndated\", \"Unit\": \"Count\"}, {\"Name\": \"HotTierUp\", \"Unit\": \"Count\"}, {\"Name\": \"NightlyCheckFailed\", \"Unit\": \"Count\"}], \"Namespace\": \"RegDelta\"}], \"Timestamp\": 1787337887138}, \"check\": \"nightly\", \"corpus_sha\": \"35a293e17117\", \"eval_staleness\": {\"hours\": null, \"reason\": \"no EvalPassRate ever published\"}, \"graph_logic\": {\"checked\": [\"2024-29957\", \"2025-03118\", \"2025-00830\"], \"errors\": [], \"ok\": true, \"undated\": []}, \"tier\": \"s3vectors\"}"
+    ],
+    "function": "regdelta-core-NightlyCheckFnF2F17D58-xWCuDSltnMb3",
+    "function_error": null,
+    "log_tail": " \"GraphLogicUndated\", \"Unit\": \"Count\"}, {\"Name\": \"HotTierUp\", \"Unit\": \"Count\"}, {\"Name\": \"NightlyCheckFailed\", \"Unit\": \"Count\"}], \"Namespace\": \"RegDelta\"}], \"Timestamp\": 1787337887138}, \"check\": \"nightly\", \"corpus_sha\": \"35a293e17117\", \"eval_staleness\": {\"hours\": null, \"reason\": \"no EvalPassRate ever published\"}, \"graph_logic\": {\"checked\": [\"2024-29957\", \"2025-03118\", \"2025-00830\"], \"errors\": [], \"ok\": true, \"undated\": []}, \"tier\": \"s3vectors\"}\n{\"nightly\": {\"checked\": \"graph logic and infrastructure only; no golden questions, no model call, no retrieval query\", \"corpus\": {\"available\": true, \"documents\": 52, \"documents_sha\": \"35a293e17117\", \"newest_pub_date\": \"2026-08-19\", \"oldest_pub_date\": \"2024-12-27\"}, \"eval_staleness\": {\"hours\": null, \"reason\": \"no EvalPassRate ever published\"}, \"graph_logic\": {\"checked\": [\"2024-29957\", \"2025-03118\", \"2025-00830\"], \"errors\": [], \"ok\": true, \"undated\": []}, \"staleness_alarm_hours\": 168.0, \"status\": \"ok\", \"tier\": \"s3vectors\"}}\nEND RequestId: 502db3c8-68cb-4205-852d-39a25eff9e91\nREPORT RequestId: 502db3c8-68cb-4205-852d-39a25eff9e91\tDuration: 5158.73 ms\tBilled Duration: 5449 ms\tMemory Size: 128 MB\tMax Memory Used: 100 MB\tInit Duration: 289.68 ms\t\n",
+    "payload": {
+      "checked": "graph logic and infrastructure only; no golden questions, no model call, no retrieval query",
+      "corpus": {
+        "available": true,
+        "documents": 52,
+        "documents_sha": "35a293e17117",
+        "newest_pub_date": "2026-08-19",
+        "oldest_pub_date": "2024-12-27"
+      },
+      "eval_staleness": {
+        "hours": null,
+        "reason": "no EvalPassRate ever published"
+      },
+      "graph_logic": {
+        "checked": [
+          "2024-29957",
+          "2025-03118",
+          "2025-00830"
+        ],
+        "errors": [],
+        "ok": true,
+        "undated": []
+      },
+      "staleness_alarm_hours": 168.0,
+      "status": "ok",
+      "tier": "s3vectors"
+    },
+    "status_code": 200
+  },
+  "deployed_note": "NightlyCheckFn was NOT deployed when this artifact was first written on 2026-08-21; the M06 window deployed it later the same day. The earlier record said so and this one supersedes it.",
+  "how": "TWO RUNS, and the distinction is the point. `in_process` is `ops.nightly.handler` called here against the deployed environment \u2014 same code, same AWS reads, but NOT the Lambda's own IAM role or EMF. `deployed` is an invocation of the real NightlyCheckFn, which exercises both. NEITHER proves the EventBridge schedule fires on its own; that is still owed and a manual invoke cannot supply it.",
+  "opus_tokens_after": 23578,
+  "opus_tokens_before": 23578,
   "opus_tokens_spent": 0,
   "region": "us-west-2",
   "registry_table": "regdelta-core-RegistryTableF2430F90-2FKHSM738R7Y",
@@ -35,5 +72,5 @@
     "status": "ok",
     "tier": "s3vectors"
   },
-  "sha": "89342f1"
+  "sha": "1d3c463"
 }
