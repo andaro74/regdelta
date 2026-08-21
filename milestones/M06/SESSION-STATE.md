@@ -224,17 +224,18 @@ A 90/s load test scales the thing it is testing; price it that way next time.
    `971123f` committed the live API host into `dashboard-traffic.json`. It is
    redacted from the tree now, but it is still in that commit, and the repo is
    PUBLIC. The branch is unpushed (`git branch -r --contains HEAD` is empty),
-   so it is fixable without a published rewrite. **The seat's call**, because
-   both options cost something:
+   so it is fixable without a published rewrite.
 
-   - **Squash-merge the PR** — history never reaches `main`, no rebase, the
-     evidence pack's `971123f` reference stays valid. Cheapest, and the default
-     for PRs anyway.
-   - **Rebase and drop the value** — clean branch history, but every sha from
-     `971123f` forward changes, and SESSION-STATE and both amendments cite
-     shas. They would need updating in the same pass.
+   **RULED 2026-08-21 (evening): SQUASH-MERGE.**
 
-   **Do not push before deciding.** And redaction is obscurity, not a fix — the
+   - **Squash-merge** — chosen. Branch history never reaches `main`, no rebase
+     is needed, and the evidence pack's `971123f` citations stay valid.
+   - ~~Rebase and drop the value~~ — rejected: it invalidates every sha from
+     `971123f` forward, which SESSION-STATE and both amendments cite.
+
+   **M06's PR MUST be squashed, not merge-committed.** If it lands any other
+   way the host reaches `main`'s history and the fix stops being a local
+   redaction and becomes a published rewrite. And redaction is obscurity, not a fix — the
    endpoint is unauthenticated, spends model money per call, and is bounded
    only by a 20 rps throttle. That is a SPEC/04 scope question, not an M06 one,
    and it is now on the record.
