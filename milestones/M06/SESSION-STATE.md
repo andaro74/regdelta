@@ -127,8 +127,13 @@ approvals (CLAUDE.md, ADR-0005).
    DEFERRED**, reasons in `loadtest/DEFERRED.md`.
 6. **Session ceiling $25**; `config.LOADTEST_BUDGET_USD` stays at the ruled $20.
 
-**Both amendments are DRAFTS awaiting adoption.** If they are not adopted, the
-deferrals have no authority and M06 does not close.
+**BOTH AMENDMENTS ADOPTED 2026-08-21 (evening)**, as rulings with sources. The
+disposition amendment carries three text amendments (A: Change 4's predicted
+ratio struck, not corrected; B: the clause's expected dispositive step replaced
+with the measured vantage ceiling; C: Change 6 provisional, never invoked) and
+one finding recorded against it — **the KEEP was won below the concurrency band
+Finding 2 says the real workload applies**, 7.4/10.7 in-flight against
+11.4–25.8. The deferrals now have authority.
 
 ---
 
@@ -210,14 +215,23 @@ A 90/s load test scales the thing it is testing; price it that way next time.
 
 ## What is left
 
-1. **Both amendments are still DRAFTS.** `spec06-disposition-amendment.md` v4
-   and `spec06-nightly-amendment.md`. Without adoption the deferrals have no
-   authority and M06 does not close. **This is the blocker.**
+1. ~~Both amendments are still DRAFTS.~~ **ADOPTED 2026-08-21 (evening)**, both,
+   as rulings with sources. No longer the blocker.
 2. **`eng-code-reviewer` on the whole branch** before the PR, and
    `security-reviewer` on the commits made AFTER its review of the IAM diff
-   (that review's own two MEDIUMs are taken and in `971123f`).
+   (that review's own two MEDIUMs are taken and in `971123f`). **This is now
+   the blocker.**
 3. **Rebase onto `main` once PR #12 lands.** Not before.
-4. **The OCU constant**, above.
+4. **The OCU constant**, above — settle from Cost Explorer once the day posts.
+5. **M07: raise `LoadDriverFn` to 10240 MB and re-run the disposition.** At
+   2048 MB (~1.2 vCPU, `THREAD_CEILING` 512 against Lambda's 1,024) the driver
+   saturates before either tier does, which is why the dispositive step landed
+   at 50/s and below Finding 2's 11.4–25.8 in-flight band. ~6 vCPUs should hold
+   90/s and put the step inside it. One `make up`/`make down` cycle, ≈$1 at the
+   OCU rate this window measured. **Adopted as the follow-up, not a reopening
+   of M06** — the KEEP stands on the clause as adopted.
+6. **EventBridge firing the nightly on schedule** is still unproven; a manual
+   invoke cannot prove it. Owed at the first unattended 02:00 UTC run.
 
 ---
 

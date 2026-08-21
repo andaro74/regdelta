@@ -1,6 +1,53 @@
-# DRAFT v4 — proposed amendment to SPEC/06's Tier B disposition clause
+# Amendment to SPEC/06's Tier B disposition clause — ADOPTED 2026-08-21 (v4)
 
-**Status: DRAFT for the PM seat. Not adopted.**
+**Status: ADOPTED by the PM seat, 2026-08-21 (evening), with three text
+amendments and one finding recorded against it.** Recorded as a **ruling with
+sources**, not an approval (CLAUDE.md, ADR-0005).
+
+> ## The ruling
+>
+> | ruling | the source it rests on |
+> |---|---|
+> | **ADOPT.** The unamended clause cannot be executed in this account, so refusing it leaves M06 unable to close either way — which `SPEC/06:48-49` forbids. | Finding 1: the original profile exhausts a non-adjustable daily Opus cap in ~14 seconds. The amended clause RAN and returned a verdict cleanly: zero failed measurements, both halves at `f651aea`, one corpus fingerprint, configs agreeing. |
+> | **Amendment A — strike Change 4's predicted ratio entirely** rather than correcting it. Under an open loop, in-flight concurrency is an OUTPUT of latency; the clause REPORTS it and does not predict it. | Three values have been carried for one quantity — v1's, v2's, and v4's 2.51× against a measured 0.686×. A document whose argument is that figures must re-derive should stop carrying a figure that has never re-derived. |
+> | **Amendment B — correct the clause's own expected dispositive step.** Part III says 75/s and `n_dispositive` 9,000 pooled; the run got **50/s and 6,000**. Record the measured vantage ceiling instead of an expectation. | Neither tier held 75 or 90/s from a 2048 MB driver: dispatch refusals fire and achieved rates fall to 66–79/s. That is the DRIVER saturating. The clause's procedural definition of the dispositive step worked correctly; only its prose expectation was wrong. |
+> | **Amendment C — Change 6 is PROVISIONAL.** Ratified on its argument, not on evidence of it working. | `prior_failed_measurements_per_tier` is `{aoss: 0, s3vectors: 0}`. The floor was never invoked. Mutation kills are a weaker claim than "it fired in anger and behaved". |
+>
+> ### The verdict, and the limit on what it settles
+>
+> **KEEP** — at 50 calls/s, AOSS p95 **185.9 ms** against S3 Vectors'
+> **281.4 ms**, n 5,996/6,000, error rates 0.000667 vs 0.0, inside the clause's
+> own 5-point materiality so the populations are comparable
+> (`milestones/M06/tier-disposition-f651aea.json`).
+>
+> **AND IT WAS WON BELOW THE CONCURRENCY BAND THE CLAUSE EXISTS TO SETTLE.**
+> This document's Finding 2 derives the `/query` profile as applying **11.4-way
+> in-flight concurrency on Tier A and 25.8 on Tier B**, and states that Tier B's
+> only remaining case is concurrency (ADR-0012 Ruling 3). Measured at the
+> dispositive step:
+>
+> | tier | in-flight mean | Finding 2's figure |
+> |---|---|---|
+> | AOSS | **7.4** | 25.8 |
+> | S3 Vectors | **10.7** | 11.4 |
+>
+> So the honest statement of this verdict is **"Tier B is faster at 10–50
+> calls/s, and the higher-concurrency case remains one-sided"** — not "the
+> concurrency question is settled". At 75/s, where in-flight would be ≈15.8 and
+> inside the band, Tier B held 368 ms p95 while Tier A blew to 3,304 ms and
+> failed eligibility: the trend runs Tier B's way, and a one-sided step cannot
+> carry a verdict.
+>
+> **The KEEP is nonetheless conservative rather than marginal.** Ruling IIb D
+> option 2 accepted a handicap on Tier B — its client opens a fresh TCP+TLS
+> connection per call while Tier A's pools — with direction *"against Tier B,
+> toward the default outcome, retirement"*. Tier B won carrying it.
+>
+> **Owed, and proposed as M07 rather than a reopening of this window:** raise
+> `LoadDriverFn` from 2048 MB (~1.2 vCPU, `THREAD_CEILING` 512 against Lambda's
+> 1,024) to 10240 MB (~6 vCPUs) and re-run, to put the dispositive step inside
+> Finding 2's band. One `make up`/`make down` cycle, ≈$1 at the OCU rate this
+> window measured.
 
 > ### Correction, 2026-08-21 evening: this clause has now been RUN.
 >
@@ -372,10 +419,12 @@ Finding 3 is the substance. Restated as the ask:
   removes that advantage.
 - The closed loop gave Tier B **2.26×** Tier A's in-flight retrieval
   concurrency. ~~Change 1 raises that to **2.51×** at the dispositive step.~~
-  **CORRECTED 2026-08-21 by the run itself: 0.686×, the other way.**
+  **STRUCK at adoption — Amendment A. Under Change 1 this clause reports
+  in-flight concurrency and does not predict it.**
 
-> **Correction — the 2.51× was closed-loop reasoning surviving into a vehicle
-> that makes it moot.** Measured at the dispositive step
+> **Amendment A, and why striking beats correcting.** Three values have been
+> carried here for one quantity: v1's, v2's, and v4's 2.51×. The measurement is
+> **0.686×** — the other direction — at the dispositive step
 > (`tier-disposition-f651aea.json`):
 >
 > | tier | in-flight mean | p50 |
@@ -383,16 +432,23 @@ Finding 3 is the substance. Restated as the ask:
 > | AOSS | 7.43 / 7.36 | 139.4 ms |
 > | S3 Vectors | 10.67 / 10.88 | 199.8 ms |
 >
-> **0.686×.** Little's law is the whole explanation: under an open loop the
-> arrival rate is fixed and identical, so in-flight concurrency is an OUTPUT of
-> latency, and the faster tier carries less of it. 50/s × 0.139 s = 6.95;
-> 50/s × 0.199 s = 9.95.
+> Little's law is the whole explanation. Under an open loop the arrival rate is
+> fixed and identical, so in-flight concurrency is an **output** of latency and
+> the faster tier carries less of it: 50/s × 0.139 s = 6.95; 50/s × 0.199 s =
+> 9.95.
 >
-> This does not weaken the ask — it is the ask. Change 1 exists precisely so
-> that offered load stops being a function of the result, and the corrected
-> figure is what that looks like when it works. What it does retire is any
-> reading in which the new vehicle hands Tier B a concurrency advantage. It
-> does not.
+> **So the right repair is not a fourth number.** A predicted ratio is a
+> closed-loop artefact that Change 1 exists to abolish; carrying one — even a
+> measured one — invites the next reader to treat it as a design parameter
+> rather than a result. The clause reports it per step (`inflight_mean`,
+> `inflight_peak`) and predicts nothing.
+>
+> **The ask is unchanged and is the same ask it always was**: a comparison whose
+> offered load is exogenous and recorded. What is retired is any reading in
+> which the new vehicle hands Tier B a concurrency advantage. It does not.
+>
+> *Recorded rather than edited away, because a document arguing that figures
+> must re-derive should show the one of its own that never did.*
 
 **The net effect on a keep verdict is not derivable from M04's data, and this
 document does not claim one.** What the seat is asked to accept is a comparison
@@ -455,7 +511,7 @@ Unbounded, this floor is a route to M06 ending with Tier B alive and the bar
 never met. Bounded at one re-run, it is what stops a dead profile being used
 against Tier B, and nothing more.
 
-> **NEVER INVOKED, 2026-08-21, and the seat should rule knowing that.** The run
+> **AMENDMENT C — ADOPTED AS PROVISIONAL. Never invoked.** The run
 > produced **zero failed measurements** on either tier — three of the five rates
 > gave a dispositive step on both — so neither the floor nor its one-re-run
 > bound was exercised. `prior_failed_measurements_per_tier` is `{aoss: 0,
@@ -879,7 +935,9 @@ deferred. `pm-spec-reviewer`, third pass, blocker B3.
 > taken across a single `make up` / `make down` cycle at one sha, with the
 > corpus fingerprint recorded identical across both halves, the Tier A half
 > taken with the collection DESTROYED and the Tier B half with it up** — which
-> is why the OCU cost is 35 minutes and not 50 — the discipline
+> is why the OCU cost is a fraction of a full campaign's wall time; the
+> 2026-08-21 run billed **21 minutes**, against the 35 estimated here and the
+> ~50 a naive ordering would have cost — the discipline
 > `milestones/M04/answer-parity-3966b47.json` demonstrates. The profile is run
 > to completion **three times per tier, the first discarded as warmup**, with
 > `n` = retrieval calls counted across the scored runs; each report states its
@@ -896,11 +954,28 @@ deferred. `pm-spec-reviewer`, third pass, blocker B3.
 > `config.NAIVE_TOP_K` M04 used, so the comparability this clause invokes twice
 > is a comparison of like with like).
 >
-> **The top step is 90% of a non-adjustable ceiling and the expected
-> dispositive step is therefore 75/s, not 90.** 90 calls/s is 5,400 embed
-> requests per minute against Titan's 6,000/min, `Adjustable: false`; a throttle
-> there disqualifies the step. Expected `n_dispositive` is **9,000 pooled**,
-> with 10,800 as the ceiling if 90/s holds. Changing it
+> **The top step is 90% of a non-adjustable ceiling.** 90 calls/s is 5,400
+> embed requests per minute against Titan's 6,000/min, `Adjustable: false`; a
+> throttle there disqualifies the step.
+>
+> **AMENDMENT B — the dispositive step is whatever the run reaches, and the
+> clause states no expectation of which.** This paragraph previously read *"the
+> expected dispositive step is therefore 75/s, not 90 … Expected
+> `n_dispositive` is 9,000 pooled, with 10,800 as the ceiling if 90/s holds."*
+> **The 2026-08-21 run reached 50/s and `n_dispositive` 6,000/5,996**, because
+> the driver saturates before either tier does: dispatch refusals fire at the
+> thread ceiling and achieved rates fall to 66–79/s against a driven 75 and 90.
+> **That is a property of the VANTAGE and the clause requires it recorded as
+> one** — `n_dispositive`, the achieved rate, `dispatch_refused` and
+> `threads_abandoned` are reported per step, and a step whose achieved rate
+> falls outside 5% of its driven rate is not dispositive whatever its latency
+> says.
+>
+> The procedural definition — the dispositive step is the highest arrival rate
+> at which BOTH tiers completed the step — is what decides, and it decided
+> correctly. An expectation written beside it added nothing and was wrong.
+> **A reader comparing two campaigns must compare their dispositive steps, not
+> assume a fixed one.** Changing the SCHEDULE
 > after any M06 number exists reopens this clause. **The tier order is recorded
 > and fixed before the run; no other Bedrock workload runs in the account during
 > the window** — `make evals`, a manual `/query` and `run_evals.py --record`

@@ -1,8 +1,23 @@
-# DRAFT — proposed amendment to SPEC/06's Observability section
+# Amendment to SPEC/06's Observability section — ADOPTED 2026-08-21
 
-**Status: DRAFT for the PM seat. Not adopted.** One change, already
-implemented, split out of `spec06-disposition-amendment.md` at that document's
-third review pass.
+**Status: ADOPTED by the PM seat, 2026-08-21 (evening).** Recorded as a
+**ruling with sources**, not an approval: what makes it sound is a citation a
+reader can falsify, never a signature (CLAUDE.md, ADR-0005).
+
+> ## The ruling
+>
+> | ruling | the source it rests on |
+> |---|---|
+> | **ADOPT as written**, with one argument replaced. `SPEC/06:6-8` becomes the reduced graph-logic set, run whether or not the hot tier is up, with no golden question. | Finding 1's measured figures: 20 golden questions is **$0.95 and 117,636 Opus tokens, 4.5% of a daily cap reporting `Adjustable: false`** — $29/month unattended, against an allowance that cannot be bought back. |
+> | **The "full set if hot tier up" branch is DELETED, not deferred** — and the justification is changed to a checkable one. | **`make retrieval-evals` already exists** (`Makefile:60`, "probe set vs the CURRENT tier"). The coverage the branch provided is preserved as an explicit command; only its TRIGGER changes, from a side effect of `make up` to something someone decides to run. See the replaced paragraph below. |
+> | The evidence is sufficient: blocker B8 is closed on the DEPLOYED function. | `nightly-verification.json` — `regdelta-core-NightlyCheckFnF2F17D58-xWCuDSltnMb3` returned **status 200, no function error**, EMF line in the log tail carrying `EvalStalenessHours 8760.0`, corpus sha `35a293e17117`, **0 Opus tokens measured before and after**. |
+>
+> **What adoption does NOT settle.** EventBridge firing on schedule is still
+> unproven and a manual invoke cannot prove it. Owed at the first unattended
+> 02:00 UTC run.
+
+One change, already implemented, split out of
+`spec06-disposition-amendment.md` at that document's third review pass.
 
 **Why it is its own document.** It was Change 8 of the Tier B disposition
 amendment, whose title is "amendment to SPEC/06's *Tier B disposition clause*".
@@ -74,9 +89,22 @@ free**. This is that instruction expressed as a spec change.
 > claim that the deterministic half of the graph still loads, resolves and
 > dates the corpus it was pointed at.
 
-The "full set if hot tier up" branch is **deleted, not deferred** — see the
-finding above. It is not a budget question that a later milestone might revisit
-with more money; the coupling is wrong at any price.
+The "full set if hot tier up" branch is **deleted, not deferred** — and the
+reason is that **nothing is lost by deleting it.**
+
+> **REPLACED AT ADOPTION.** This paragraph previously argued: *"It is not a
+> budget question that a later milestone might revisit with more money; the
+> coupling is wrong at any price."* That is a judgement, and a stronger claim
+> than the evidence carries — the coupling had a coherent motive, which was to
+> exercise the AOSS path while the tier happened to be up.
+>
+> The checkable argument is better and reaches the same place. **That coverage
+> already exists as `make retrieval-evals`** (`Makefile:60`, "probe set vs the
+> CURRENT tier (SPEC/02 A)"). So deletion forfeits no capability; it changes
+> only the TRIGGER — from a side effect of a command whose job is to start a
+> $0.24/hr search tier, into something a person decides to run and pays for
+> deliberately. A reader can falsify that by checking whether the target
+> exists. They cannot falsify "wrong at any price".
 
 ## What this does NOT change
 
