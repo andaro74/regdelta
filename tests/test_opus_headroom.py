@@ -135,3 +135,49 @@ def test_the_cap_this_guards_is_the_non_adjustable_one():
     report = guard.check(1, now=NOW, client=_CW(0.0))
     assert report["daily_cap"] == 2_592_000
     assert report["cap_adjustable"] is False
+
+
+def test_the_reporting_layer_cannot_kill_a_passing_run(monkeypatch, capsys):
+    """A cp1252 console cannot encode the tick this prints on success, and the
+    guard is chained into `make smoke` with `&&` — so a crash here is a FALSE
+    REFUSAL of a run that was about to be allowed.
+
+    Measured on the first live run: the report printed, the summary printed,
+    and the process then died on `✅`. `evals/run_evals.py` and
+    `run_demo_parity.py` both carry the reconfigure for this reason and this
+    file was written without it.
+
+    Asserted by encoding what the module prints the way that console would.
+    """
+    report = guard.check(1, now=NOW, client=_CW(0.0))
+    assert report["fits"] is True
+
+    monkeypatch.setattr(guard, "check", lambda *a, **kw: report)
+    monkeypatch.setattr(sys, "argv", ["check_opus_headroom.py", "--questions", "1"])
+    assert guard.main() == 0
+
+    printed = capsys.readouterr()
+    for stream in (printed.out, printed.err):
+        # `errors="replace"` is what the module installs, so this is the exact
+        # question: does anything it emits STOP a cp1252 stream, rather than
+        # merely render badly there.
+        stream.encode("cp1252", errors="replace")
+
+
+def test_the_refusal_path_is_encodable_too(monkeypatch, capsys):
+    """The refusal prints ❌ and goes to stderr. A crash there loses the reason
+    a run was blocked, which is the one thing the operator needs."""
+    # Computed BEFORE the patch: a lambda that calls `guard.check` from inside
+    # the thing replacing `guard.check` recurses until the stack runs out, and
+    # the guard reports that as "the meter could not be read" — a real refusal
+    # for an imaginary reason, which is the shape this whole file is about.
+    refused = {**guard.check(5, now=NOW, client=_CW(CAP * 0.95 / 4)),
+               "fits": False}
+    monkeypatch.setattr(guard, "check", lambda *a, **kw: refused)
+    monkeypatch.setattr(sys, "argv", ["check_opus_headroom.py", "--questions", "5"])
+    assert guard.main() == 1
+
+    printed = capsys.readouterr()
+    for stream in (printed.out, printed.err):
+        stream.encode("cp1252", errors="replace")
+    assert "REFUSED" in printed.err

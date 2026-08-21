@@ -138,7 +138,9 @@ deferrals have no authority and M06 does not close.
    `milestones/M06/nightly-verification.json`. Owed before the nightly
    amendment is acted on.
 3. **Re-run `security-reviewer` and `eng-code-reviewer`** on this session's
-   fix commits before the PR.
+   fix commits before the PR. Both reviews found defects in what the previous
+   review's fixes introduced, so a third pass over the third pass is not
+   ceremony.
 
 ---
 
@@ -154,7 +156,30 @@ deferrals have no authority and M06 does not close.
 - **`make` exits 2 for any nonzero recipe status.** The six exit codes do not
   survive it; read `disposition.verdict` from the artifact.
 - **A NOT-APPLIED mutation is a guard nobody checked** wearing the word
-  "killed" in the previous run's JSON.
+  "killed" in the previous run's JSON. Anchors are now read out of the source
+  and `repr`'d rather than retyped, so a reflowed line fails loudly.
+- **A MUTATION HARNESS MAKES THE WORKING TREE UNSTABLE FOR THE LENGTH OF ITS
+  RUN, and `git add -A` is a snapshot of whatever instant it lands in.** One
+  commit this session shipped two live mutations — the completeness gate
+  disabled and the 1.7 MB log line back — because staging happened while a
+  background harness had the file mutated. The harness restored correctly
+  seconds later and every test was green in both directions, so nothing caught
+  it but `git diff` against the tree afterwards. **Never stage while one is
+  running.** The sidecar added this session protects the next HARNESS run from
+  an interrupted one; nothing protects a concurrent `git add`.
+- **Never run two harnesses over overlapping subject files at once.** Two
+  driver-harness runs overlapped here and produced contradictory results for
+  the same mutation — SURVIVED in one, KILLED when applied by hand — because
+  each was restoring the other's edits.
+- **A flaky test inside a mutation harness manufactures evidence.** A red run
+  reads as "mutation killed", so a test that fails one time in five certifies
+  a guard that may not exist. `test_mean_concurrency_*` was flaky for four
+  runs in this session: it read a still-growing integral and compared two
+  reads microseconds apart. Fixed by reading it with nothing in flight. Its
+  replacement was ALSO wrong once — it asserted `mean(0.05) <= 1.0` after a
+  `sleep(0.05)`, and `sleep` sleeps longer than asked, so the honest answer is
+  1.01. A test whose premise is false is the same defect as a comment whose
+  claim is false.
 - **Redundant defences hide mutations.** Two places excluded fallen-back calls
   from the latency population, so deleting either one survived. One place now.
 - **Piping a harness into `tail` masks its exit code** — done once this

@@ -535,16 +535,13 @@ commit the account to $29/month.
 
 *Verified live, 2026-08-20, for $0: 52 documents, 3/3 dated, no Bedrock call.*
 
-**AND THAT SENTENCE IS THE ONLY LOAD-BEARING CLAIM IN THIS DOCUMENT THAT CITES
-NEITHER A FILE NOR A COMMAND** — `pm-spec-reviewer` blocker B8, and it is
-right. Every other measurement here names
-`milestones/M06/aoss_per_call_overhead.json`,
-`milestones/M04/answer-parity-3966b47.json`, or an `aws` invocation a reader
-can repeat. This one is a remembered result. **Owed before the ruling is
-acted on:** one invocation of the deployed `NightlyCheckFn`, its returned JSON
-recorded as `milestones/M06/nightly-verification.json`, and the invocation
-named beside it. It is free and read-only, and until it exists Change 8's
-evidence is not falsifiable by anyone but its author.
+**THAT SENTENCE WAS THE ONLY LOAD-BEARING CLAIM IN THIS DOCUMENT CITING
+NEITHER A FILE NOR A COMMAND** — `pm-spec-reviewer` blocker B8, and it was
+right. **Closed 2026-08-21**: `milestones/M06/verify_nightly.py` and
+`nightly-verification.json` record it with the command beside it — 52
+documents, 3 of 3 dated, 0 errors, and 0 Opus tokens measured before and
+after rather than asserted. The change itself now lives in
+`milestones/M06/spec06-nightly-amendment.md`.
 
 ---
 

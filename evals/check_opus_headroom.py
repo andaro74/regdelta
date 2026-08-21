@@ -50,6 +50,19 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+# A WINDOWS CONSOLE DEFAULTS TO cp1252 AND CANNOT ENCODE ✅/❌, and this guard
+# is chained into `make smoke` and `make evals` with `&&` — so an unreconfigured
+# stream turns a PASSING check into a UnicodeEncodeError, exit 1, and the run it
+# was protecting never happens. A false refusal from the reporting layer.
+#
+# MEASURED, not anticipated: the first live run of this file printed the whole
+# report, printed the summary line, and then died on the tick.
+# `evals/run_evals.py` and `evals/run_demo_parity.py` carry the same two lines
+# for the same reason; this file was written without them.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from shared import config  # noqa: E402
 
 #: Opus tokens per uncached `/query`, MEASURED — CloudWatch `AWS/Bedrock`,

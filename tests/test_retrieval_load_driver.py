@@ -725,14 +725,110 @@ def test_abandoned_threads_are_reported_so_the_next_step_can_be_distrusted(
     assert out["threads_abandoned"] > 0
 
 
-def test_mean_concurrency_is_stable_and_over_the_window(node):
+def test_mean_concurrency_does_not_move_the_integral_it_reads(node):
     """`mean()` used to `_accrue()`, so it moved the integral it read: a second
-    call returned a different answer, and it integrated to NOW while dividing
-    by a window that had already closed."""
+    call returned a different answer from the first.
+
+    MEASURED WITH NOTHING IN FLIGHT, and the first version of this test was
+    flaky for want of that. With a call still in flight the integral is
+    genuinely still growing, so two reads a few microseconds apart differ by a
+    few microseconds' worth — `round(..., 2)` hid it about four times in five.
+    A flaky test inside a mutation harness is worse than a missing one: a red
+    run reads as a mutation KILLED, so the flake manufactures evidence that a
+    guard works.
+
+    With the call finished, `current` is 0 and the area is frozen, so any
+    difference between two reads is the accrual bug and nothing else.
+    """
     inflight = retrieval_load._InFlight()
     inflight.enter()
     time.sleep(0.02)
+    inflight.leave()
+
     first = inflight.mean(0.02)
+    time.sleep(0.01)
     second = inflight.mean(0.02)
+
     assert first == second, "mean() is a getter and must not move the integral"
     assert first > 0
+
+
+def test_mean_concurrency_is_taken_before_the_stragglers_are_waited_for(
+        monkeypatch, node):
+    """The other half of the same fix, asserted where it is actually true.
+
+    `mean()` integrates to NOW and divides by the window the caller hands it,
+    so it is only meaningful if the caller reads it AT the window's close. The
+    driver does; a version that read it after the join would divide a longer
+    integral by the same window and report a mean above the peak.
+
+    THE FIRST VERSION OF THIS TEST ASSERTED `mean(0.05) <= 1.0` after a
+    `sleep(0.05)` with one call in flight, and failed every time — `sleep`
+    sleeps a little LONGER than asked, so the honest ratio is 1.01. That was
+    the test being wrong about arithmetic, not the code being wrong, and it is
+    recorded here because a test whose premise is false is the same defect as a
+    comment whose claim is false.
+
+    The invariant that does hold: the mean over the window cannot exceed the
+    peak concurrency observed during it.
+    """
+    monkeypatch.setattr(retrieval_load, "JOIN_TIMEOUT_S", 0.05)
+    node["service_ms"] = 1.0
+    node["hang_every"] = 2
+    node["hang_s"] = 1.0
+
+    out = retrieval_load.run_step(rate=20, seconds=0.3, questions=["q"],
+                                  expected_tier="aoss")
+
+    assert out["threads_abandoned"] > 0, "the case only arises with stragglers"
+    assert 0 < out["inflight_mean"] <= out["inflight_peak"], (
+        f"mean {out['inflight_mean']} exceeds peak {out['inflight_peak']}; the "
+        "integral was read after the window it is divided by had closed")
+
+
+def test_a_step_answered_by_the_other_tier_is_not_a_measurement_of_this_one(node):
+    """HIGH 1 in its purest form, and the case the mutation harness found
+    uncovered.
+
+    Every other tier test here reaches ineligibility by a second route as well:
+    a wholesale fallback leaves no latency, and a step where everything raised
+    leaves no tier AND no latency. So deleting `tier_ok` from the eligibility
+    conjunction survived — `bool(latencies)` was covering for it.
+
+    This is the shape with no second route. The router resolves the OTHER tier
+    and answers from it cleanly: real latencies, a complete account, no
+    fallback reason, the rate met, no throttle. Physically reachable — the SSM
+    parameter can change between the orchestrator deriving the tier and the
+    step running, and a data-access-policy propagation delay after `make up`
+    produces the same thing.
+
+    Nothing but the tier check refuses it, and if nothing refuses it, Tier A's
+    latencies are filed under Tier B in a clause whose default outcome is
+    retirement.
+    """
+    node["service_ms"] = 1.0
+    node["tier"] = "s3vectors"
+
+    out = retrieval_load.run_step(rate=20, seconds=0.4, questions=["q"],
+                                  expected_tier="aoss")
+
+    assert out["tiers_observed"] == ["s3vectors"]
+    assert out["n"] > 0, "these calls carry real latencies; that is the trap"
+    assert out["errors"] == 0 and out["fallbacks"] == 0
+    assert out["accounted_for_every_call"] is True
+    assert out["rate_within_5pct"] is True
+    assert out["tier_as_asked"] is False
+    assert out["dispositive_eligible"] is False, (
+        "a step answered by the other tier is not a measurement of this one")
+
+
+def test_the_same_step_pointed_at_the_tier_that_answered_is_eligible(node):
+    """The control. Without it the test above passes for a step that was
+    ineligible for some unrelated reason."""
+    node["service_ms"] = 1.0
+    node["tier"] = "s3vectors"
+
+    out = retrieval_load.run_step(rate=20, seconds=0.4, questions=["q"],
+                                  expected_tier="s3vectors")
+    assert out["tier_as_asked"] is True
+    assert out["dispositive_eligible"] is True

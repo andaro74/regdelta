@@ -1,0 +1,39 @@
+{
+  "at": "2026-08-21T15:56:21+00:00",
+  "command": "eval \"$(python evals/local_env.py)\" && python milestones/M06/verify_nightly.py",
+  "cost_claim": "the nightly makes no Bedrock call; `opus_tokens_spent` is the measurement of that, not a restatement of it",
+  "how": "IN-PROCESS. `ops.nightly.handler` run in this process against the deployed environment. NightlyCheckFn is not deployed, so this exercises the same code and the same AWS reads but NOT the Lambda's IAM role, its EventBridge schedule, or EMF reaching CloudWatch.",
+  "opus_tokens_after": 0,
+  "opus_tokens_before": 0,
+  "opus_tokens_spent": 0,
+  "region": "us-west-2",
+  "registry_table": "regdelta-core-RegistryTableF2430F90-2FKHSM738R7Y",
+  "result": {
+    "checked": "graph logic and infrastructure only; no golden questions, no model call, no retrieval query",
+    "corpus": {
+      "available": true,
+      "documents": 52,
+      "documents_sha": "35a293e17117",
+      "newest_pub_date": "2026-08-19",
+      "oldest_pub_date": "2024-12-27"
+    },
+    "eval_staleness": {
+      "hours": null,
+      "reason": "no EvalPassRate ever published"
+    },
+    "graph_logic": {
+      "checked": [
+        "2024-29957",
+        "2025-03118",
+        "2025-00830"
+      ],
+      "errors": [],
+      "ok": true,
+      "undated": []
+    },
+    "staleness_alarm_hours": 168.0,
+    "status": "ok",
+    "tier": "s3vectors"
+  },
+  "sha": "89342f1"
+}
