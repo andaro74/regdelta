@@ -544,13 +544,18 @@ fix for this failure.
 - **`>= 80%` as a form of bar.** At twenty questions it permits four failures
   where it permitted two at ten. Recommendation on file is an absolute count,
   with an ADR, before the set grows again.
-- **`infra/core/core_stack.py` ships `../src` with no exclude at all.** Measured
-  by `security-reviewer` during the M04 asset fix: **75 files staged, 39 of them
-  non-`.py`** — `.pytest_cache/`, every `__pycache__/*.pyc` — into the poller,
-  processor and query Lambdas, on the **persistent** stack. Larger blast radius
-  than the ephemeral stack the fix closed, and `core_stack` has **no test
-  coverage at all**. Not fixed here: it is a persistent-stack change needing
-  `make core`, and SPEC/04's scope is the demo. For the human seat.
+- ~~**`infra/core/core_stack.py` ships `../src` with no exclude at all.**~~
+  **CLOSED IN M04 at `63c3d6d`, and this entry was left stale.** It was
+  measured by `security-reviewer` during the M04 asset fix — **75 files staged,
+  39 of them non-`.py`**, `.pytest_cache/` and every `__pycache__/*.pyc`, into
+  the poller, processor and query Lambdas on the **persistent** stack — and
+  deferred here on the reasoning that it needed a `make core` outside SPEC/04's
+  scope. It was then fixed anyway, in the same milestone: every Lambda in
+  `core_stack` now ships through `asset_policy.python_source()`, an allowlist of
+  `**/*.py` under `IgnoreMode.DOCKER`, and the CWD-relative path went with it.
+  Struck rather than deleted, because a deferral list that quietly loses entries
+  is worse than one that shows its corrections — and because this stale entry
+  was read back three times as open M05 work before anyone checked the code.
 - **The CDK pin does not cover its own transitives.** `aws-cdk-lib==2.263.0` is
   now in `requirements-dev.txt` so CI runs the twenty infra tests it was
   silently skipping — but it pulls eight unnamed packages, three of which float.

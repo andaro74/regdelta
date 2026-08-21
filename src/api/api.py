@@ -292,6 +292,23 @@ def _shape(state: dict, thread_id: str) -> dict:
         # this field, and it must be able to show "no retrieval" as itself.
         "tier": state.get("retrieval_tier"),
         "fallback_reason": state.get("retrieval_fallback"),
+        # WHY THE MODEL STOPPED, carried to the scorecard rather than left in
+        # the graph. `nodes.verdict` records `stop_reason`/`truncated` (M05,
+        # the M04 thread), and the first live golden run after that change came
+        # back with `stop_reason: null` on all twenty questions — because this
+        # mapping is an ALLOWLIST and the field was not in it. The instrument
+        # existed and reached nobody.
+        #
+        # That is the third time this exact shape has bitten this function:
+        # `dropped_citations` and `retrieval_ms` both read as "nothing to
+        # report" for the same reason, and both notes are directly above. A
+        # truncated verdict yields an EMPTY answer with `status: ok`, which is
+        # the pause-shaped failure a scorecard cannot otherwise tell from a
+        # model that had nothing to say — `truncated` is None when nothing was
+        # observed, so "we did not look" stays distinct from "we looked and it
+        # was fine".
+        "stop_reason": state.get("stop_reason"),
+        "truncated": state.get("truncated"),
         # RETRIEVAL latency, measured by the router inside this request — the
         # number SPEC/04's UI readout displays. The browser already knows the
         # round trip; what it cannot see is how much of it was retrieval, and

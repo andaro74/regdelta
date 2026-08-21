@@ -122,6 +122,10 @@ class _FakeTable:
         # dropping rows, which is how three of them shipped.
         self.page_size = page_size
         self.queries = 0
+        #: Every partition key this table was ASKED FOR, in order. Counting
+        #: queries says how many reads happened; only this says WHAT was read,
+        #: which is the claim SPEC/05's split is about.
+        self.queried_pks: list[str] = []
 
     def put_item(self, Item):
         self.items[(Item["pk"], Item["sk"])] = dict(Item)
@@ -141,6 +145,7 @@ class _FakeTable:
             pk, prefix = values[0]._values[1], values[1]._values[1]
         else:                                   # bare pk equality
             pk, prefix = values[1], ""
+        self.queried_pks.append(pk)
         rows = [dict(v) for (p, s), v in self.items.items()
                 if p == pk and s.startswith(prefix)]
         rows.sort(key=lambda i: i["sk"], reverse=not ScanIndexForward)
@@ -524,6 +529,52 @@ def test_delete_thread_deletes_the_review_item():
     assert not any(pk.startswith("REVIEW#") for pk, _ in table.items), \
         "the review item survived delete_thread"
     assert table.items == {}
+
+
+def test_delete_thread_never_reads_the_review_partition():
+    """SPEC/05: the query role may WRITE `REVIEW#*` and may not READ it.
+
+    That queue carries the asker's question text and is the SME seat's
+    (ROLES.md). `delete_thread` used to find the review row by QUERYING
+    `pk=REVIEW#<thread>` — a read — so under the new policy it would take
+    AccessDenied and leave the row sitting until TTL, which is the defect
+    `test_delete_thread_deletes_the_review_item` above was written to close,
+    returning by another route.
+
+    Asserted on the PARTITION ASKED FOR, not on the query count: a count says
+    how many reads happened and this is a claim about which. The row is
+    addressable without a read because `write_review_item`'s key is
+    deterministic — the same property that makes it idempotent.
+    """
+    table = _FakeTable()
+    saver = DynamoDBSaver(table=table)
+    saver.put(_config(), _checkpoint("ckpt-1"), {}, {})
+    write_review_item("t1", {"question": "Are we affected?",
+                             "reason": "confidence 0.41 below 0.70"}, table=table)
+
+    saver.delete_thread("t1")
+
+    assert not any(pk.startswith("REVIEW#") for pk in table.queried_pks), \
+        f"delete_thread read the review queue: {table.queried_pks}"
+    # And it still removed it — a version that simply stopped touching
+    # REVIEW# would pass the assertion above and reintroduce the old defect.
+    assert not any(pk.startswith("REVIEW#") for pk, _ in table.items), \
+        "the review item survived delete_thread"
+
+
+def test_the_review_row_is_addressed_by_one_shared_sort_key():
+    """The writer and the deleter must not be able to disagree about `sk`.
+
+    `delete_thread` can no longer discover this key by querying, so it carries
+    one. Two literals would be the key duplicated — the shape that drifted
+    `_EDGE_PREDICATE` at M01c — and a drift would silently leave behind exactly
+    the row the method exists to remove, with no failing call anywhere.
+    """
+    from graph.checkpoint import REVIEW_ITEM_SK
+
+    table = _FakeTable()
+    write_review_item("t1", {"question": "Are we affected?"}, table=table)
+    assert ("REVIEW#t1", REVIEW_ITEM_SK) in table.items
 
 
 def test_pending_writes_are_not_truncated_at_a_page_boundary():

@@ -340,6 +340,16 @@ def run(tier_requested: str, record: bool, allow_dirty: bool = False) -> int:
         suffix = f"-rerank{int(config.RERANK)}" if config.RERANK else ""
         if config.RETRIEVAL_LEXICAL_LANE:
             suffix += "-lex1"
+        # STILL OVERWRITES AT ONE SHA, and that is a deferral rather than a
+        # closed thread. `run_evals.record()` gained supersession at M05 (the
+        # M04 thread), so a golden-set run can no longer be repeated until it
+        # goes green without leaving a trace; retrieval cards and
+        # run_demo_parity's artifact still can. Not folded in because the M04
+        # thread named the golden set specifically, and because `run_parity`
+        # pairs cards by exact filename — giving these a trail means deciding
+        # what the pair means when one half has been re-run, which is a
+        # question about the parity gate, not about recording. Raised by
+        # eng-code-reviewer at M05 so it does not read as already handled.
         out = HISTORY / f"{sha}-retrieval-{tier_requested}{suffix}.json"
         out.write_text(json.dumps({
             "sha": sha,

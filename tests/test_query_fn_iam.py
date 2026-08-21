@@ -182,21 +182,24 @@ def test_s3vectors_is_scoped_to_this_stack_s_bucket_and_index(template):
 
 
 # ----------------------------------------------------------------------- aoss
-def test_aoss_is_scoped_to_this_account_and_region(template):
-    """`aoss:APIAccessAll` on `*` reaches every collection in the account.
+def test_the_persistent_stack_grants_no_aoss_at_all(template):
+    """SPEC/05 moved this grant out of core, and the move is the fix.
 
-    It cannot be pinned to a collection ID: the collection is created by the
-    EPHEMERAL search stack, gets a fresh id on every `make up`, and this
-    persistent stack is deployed before it exists. Account-and-region is the
-    honest floor, and AOSS's own data access policy — which names this role —
-    is what actually admits the request.
+    M04 got it to `collection/*` in this account and region and recorded the
+    reason it could go no further: a persistent stack is deployed before the
+    collection exists, so there is no id to name. True — which is why the
+    statement does not belong here. It now lives in `search_stack.py`, where
+    `collection.attr_arn` is concrete, and it is created and destroyed with the
+    collection instead of outliving it by weeks.
+
+    Asserted as an ABSENCE here and as a PRESENCE in
+    `tests/test_search_stack_access.py`. Either test alone would pass while the
+    grant went missing entirely, or while a second copy stayed behind.
     """
     granted = [str(r) for s in _for_action(template, "aoss:APIAccessAll")
                for r in _resources(s)]
-    assert granted, "no aoss grant found"
-    for r in granted:
-        assert r != "*", "aoss:APIAccessAll on * reaches every collection"
-        assert ACCOUNT in r and REGION in r, r
+    assert granted == [], \
+        f"the persistent stack still grants aoss:APIAccessAll on {granted}"
 
 
 # ------------------------------------------------------- what did NOT change
@@ -240,3 +243,132 @@ def test_the_models_granted_are_the_models_the_function_is_told_to_use(template)
         assert var in env, f"{var} is not pinned into the function environment"
         assert env[var] in granted, \
             f"{var}={env[var]} is what the function will call, and it is not granted"
+
+
+# ------------------------------------------------------------------ dynamodb
+# SPEC/05's state-table split. `QueryFn` may read and write `THREAD#*` and
+# write `REVIEW#*`, and may NOT read `REVIEW#*` — that queue carries the
+# asker's question text verbatim (`write_review_item` stores it truncated to
+# 2000 chars) and belongs to the SME seat (docs/governance/ROLES.md).
+#
+# Until M05 this role held `grant_read_write_data`, which is Get/BatchGet/
+# Query/Scan plus every write, unconditioned, on the whole table.
+_READ_ACTIONS = ("dynamodb:GetItem", "dynamodb:BatchGetItem", "dynamodb:Query")
+_WRITE_ACTIONS = ("dynamodb:PutItem", "dynamodb:UpdateItem",
+                  "dynamodb:DeleteItem", "dynamodb:BatchWriteItem")
+
+
+def _leading_keys(stmt):
+    """The LeadingKeys patterns this statement is conditioned on, or None.
+
+    None means UNCONDITIONED — the statement reaches every partition — and the
+    tests below distinguish that from an empty list, because `[]` would read as
+    "reaches nothing" and is the friendlier of the two mistakes.
+    """
+    cond = stmt.get("Condition") or {}
+    for operator, kv in cond.items():
+        if "LeadingKeys" in str(kv):
+            keys = kv.get("dynamodb:LeadingKeys")
+            return (operator, keys if isinstance(keys, list) else [keys])
+    return None
+
+
+def _state_table_logical_id(template):
+    """The state table, found by the property that distinguishes it.
+
+    Two DynamoDB tables are in this stack. The registry is the corpus index and
+    is read unconditioned by design; the STATE table is the one holding
+    `THREAD#*` and `REVIEW#*`. They are told apart by TTL — SPEC/03 makes the
+    checkpoint TTL a review deadline, and the registry has none.
+    """
+    ids = [k for k, r in template["Resources"].items()
+           if r["Type"] == "AWS::DynamoDB::Table"
+           and "TimeToLiveSpecification" in r["Properties"]]
+    assert len(ids) == 1, f"expected one TTL table, found {ids}"
+    return ids[0]
+
+
+def _state_table_statements(template):
+    """Statements naming the STATE table, and only those.
+
+    Filtering on `dynamodb:` alone is the ADR-0013 defect in miniature: it also
+    catches `registry_table.grant_read_data`, which is unconditioned and does
+    grant `Scan`. Every assertion below would then be reporting on a table it
+    is not about — three of them failed exactly that way when this helper was
+    first written.
+    """
+    table = _state_table_logical_id(template)
+    out = []
+    for stmt in query_statements(template):
+        if not any(a.startswith("dynamodb:") for a in _actions(stmt)):
+            continue
+        if table in str(_resources(stmt)):
+            out.append(stmt)
+    return out
+
+
+def test_no_dynamodb_data_grant_is_unconditioned(template):
+    """THE FINDING, as one assertion.
+
+    An unconditioned statement on this table reaches `REVIEW#*` whatever its
+    action list says. `DescribeTable` is the one exception and is asserted
+    separately below rather than excluded quietly here.
+    """
+    offenders = [_actions(s) for s in _state_table_statements(template)
+                 if _leading_keys(s) is None
+                 and _actions(s) != ["dynamodb:DescribeTable"]]
+    assert offenders == [], f"unconditioned state-table grants: {offenders}"
+
+
+def test_the_review_queue_is_never_readable(template):
+    """The spec sentence, read off the policy.
+
+    Every statement carrying a READ action must be conditioned on `THREAD#*`
+    alone. A read statement that also named `REVIEW#*` would be the defect.
+    """
+    for stmt in _state_table_statements(template):
+        actions = _actions(stmt)
+        if not any(a in _READ_ACTIONS for a in actions):
+            continue
+        lk = _leading_keys(stmt)
+        assert lk is not None, f"unconditioned read: {actions}"
+        _operator, keys = lk
+        assert keys == ["THREAD#*"], \
+            f"read actions {actions} reach {keys}, not THREAD#* alone"
+
+
+def test_the_review_queue_is_writable(template):
+    """The other half. Writing it is the whole point — `write_review_item` is
+    how a paused run reaches a human — so a split that merely removed
+    `REVIEW#*` everywhere would pass the test above and break HITL."""
+    writable = [keys for s in _state_table_statements(template)
+                if any(a in _WRITE_ACTIONS for a in _actions(s))
+                and (lk := _leading_keys(s)) for _op, keys in [lk]]
+    assert any("REVIEW#*" in keys for keys in writable), \
+        f"nothing may write the review queue: {writable}"
+
+
+def test_writes_to_both_prefixes_live_in_one_statement(template):
+    """Not a style preference — a mixed `BatchWriteItem` depends on it.
+
+    `dynamodb:LeadingKeys` under `ForAllValues:` requires EVERY key in the
+    request to match the statement's own patterns. `delete_thread` issues one
+    batch carrying both a `THREAD#` key and the `REVIEW#` key, so two
+    per-prefix write statements would each see a key they do not cover and the
+    batch would be denied by both. Splitting by ACTION rather than by PREFIX is
+    the only form that survives it.
+    """
+    write_stmts = [s for s in _state_table_statements(template)
+                   if any(a in _WRITE_ACTIONS for a in _actions(s))]
+    assert len(write_stmts) == 1, \
+        f"{len(write_stmts)} write statements; a mixed batch satisfies neither"
+    _operator, keys = _leading_keys(write_stmts[0])
+    assert sorted(keys) == ["REVIEW#*", "THREAD#*"], keys
+
+
+def test_scan_is_not_granted(template):
+    """`LeadingKeys` cannot constrain a Scan — it has no key condition — so a
+    Scan grant hands back everything the two statements above just took away.
+    Nothing in `src/` scans."""
+    granted = {a for s in _state_table_statements(template) for a in _actions(s)}
+    assert "dynamodb:Scan" not in granted

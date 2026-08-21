@@ -68,6 +68,20 @@ class CheckpointTooLargeError(RuntimeError):
     """
 
 
+#: The review item's sort key. ONE constant, read by the writer and by
+#: `delete_thread`, because the deleter can no longer discover it.
+#:
+#: Until M05 the deleter found this row by QUERYING `pk=REVIEW#<thread_id>` and
+#: deleting whatever came back, so the two sides could disagree about `sk` and
+#: nothing would notice. SPEC/05 takes that read away from the query role — the
+#: row carries the asker's question text and belongs to the SME seat — which
+#: leaves the deleter addressing the row by a key it must already know. A
+#: literal `"ITEM"` in both places would be that key duplicated, i.e. the shape
+#: that drifted `_EDGE_PREDICATE` at M01c; a drift here would silently leave the
+#: one row `delete_thread` exists to remove.
+REVIEW_ITEM_SK = "ITEM"
+
+
 def _now() -> int:
     return int(dt.datetime.now(dt.timezone.utc).timestamp())
 
@@ -99,7 +113,7 @@ def write_review_item(thread_id: str, request: dict, *, table=None,
 
     table.put_item(Item={
         "pk": f"REVIEW#{thread_id}",
-        "sk": "ITEM",
+        "sk": REVIEW_ITEM_SK,
         "thread_id": str(thread_id),
         "status": str(request.get("status") or ""),
         "reason": str(request.get("reason") or ""),
@@ -347,13 +361,34 @@ class DynamoDBSaver(BaseCheckpointSaver):
         from boto3.dynamodb.conditions import Key
 
         with self.table.batch_writer() as batch:
-            for pk in (f"THREAD#{thread_id}", f"REVIEW#{thread_id}"):
-                kwargs = {"KeyConditionExpression": Key("pk").eq(pk),
-                          "ProjectionExpression": "pk, sk"}
-                while True:
-                    resp = self.table.query(**kwargs)
-                    for item in resp.get("Items") or []:
-                        batch.delete_item(Key={"pk": item["pk"], "sk": item["sk"]})
-                    if not (last := resp.get("LastEvaluatedKey")):
-                        break
-                    kwargs["ExclusiveStartKey"] = last
+            # THREAD#: swept by query, because the sort keys are generated
+            # (one CHECKPOINT and one WRITE#... row per superstep) and cannot
+            # be enumerated without looking.
+            kwargs = {"KeyConditionExpression": Key("pk").eq(f"THREAD#{thread_id}"),
+                      "ProjectionExpression": "pk, sk"}
+            while True:
+                resp = self.table.query(**kwargs)
+                for item in resp.get("Items") or []:
+                    batch.delete_item(Key={"pk": item["pk"], "sk": item["sk"]})
+                if not (last := resp.get("LastEvaluatedKey")):
+                    break
+                kwargs["ExclusiveStartKey"] = last
+
+            # REVIEW#: deleted BY KEY, never queried. Third defect, found at
+            # M05 while scoping the query role to SPEC/05's split.
+            #
+            # The old code queried this partition too, which is a READ of the
+            # row holding the asker's question text — the one read SPEC/05
+            # forbids this role. Under the new policy that query returns
+            # AccessDenied, and the review row would outlive the checkpoint it
+            # refers to until TTL, which is defect 2 above returning by a
+            # different route.
+            #
+            # It needs no read: `write_review_item` uses a DETERMINISTIC key,
+            # which is the same property that makes it idempotent across the
+            # replayed region. Exactly one row can exist, and its key is
+            # `REVIEW#<thread_id>` / `REVIEW_ITEM_SK`. `DeleteItem` on an absent
+            # key is a no-op, so a thread that never paused costs one write and
+            # raises nothing.
+            batch.delete_item(Key={"pk": f"REVIEW#{thread_id}",
+                                   "sk": REVIEW_ITEM_SK})

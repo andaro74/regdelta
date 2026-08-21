@@ -268,10 +268,112 @@ def corpus_drift(corpus: dict, tier: str, subset: str | None) -> str | None:
         f"    between them cannot be attributed to either one alone.")
 
 
+# Where a card goes when a later run at the same sha takes its name.
+#
+# A SUBDIRECTORY, not a sibling. `previous_card()` globs
+# `*-{tier}-{subset}.json` and `replay_history` globs `*.json`, neither
+# recursively — so an archived card cannot become "the most recent card" for
+# drift comparison, and cannot be replayed twice as though it were two runs.
+#
+# A NAME plus a function, rather than a `HISTORY / "superseded"` constant.
+# The constant version was unreachable by its own test: the fixture pointed
+# HISTORY at a tmp_path and had to point this at a tmp_path too, which
+# overrode the sibling-vs-subdirectory choice instead of exercising it — so
+# the mutation that flattens it into a sibling SURVIVED. Derived at call time,
+# patching HISTORY is enough and the test measures the real decision.
+SUPERSEDED_DIRNAME = "superseded"
+
+
+def superseded_dir() -> Path:
+    return HISTORY / SUPERSEDED_DIRNAME
+
+
+def _entry(run: int, name: str, card: dict) -> dict:
+    return {"run": run, "file": name, "at": card.get("at"),
+            "passed": card.get("passed"), "total": card.get("total")}
+
+
+def _archived_trail(stem: str) -> list[dict]:
+    """Runs already archived for this card, read off the ARCHIVE ITSELF.
+
+    Rebuilt from the files rather than copied out of the outgoing card's own
+    `supersedes`. The files are what the trail is a claim about, and reading
+    the copy has a failure the original does not: a card that will not parse
+    yields `{}`, which used to restart the trail at empty and drop every
+    earlier run from the record while their files sat right there. ADR-0013.
+    """
+    archive = superseded_dir()
+    if not archive.exists():
+        return []
+    out = []
+    for p in archive.glob(f"{stem}.run*.json"):
+        try:
+            run = int(p.name.rsplit(".run", 1)[1].removesuffix(".json"))
+        except (IndexError, ValueError):
+            continue
+        try:
+            card = json.loads(p.read_text(encoding="utf-8"))
+        except ValueError:
+            card = {}
+        out.append(_entry(run, p.name, card))
+    return sorted(out, key=lambda e: e["run"])
+
+
+def _peek_trail(path: Path) -> list[dict]:
+    """The trail the card about to be written will carry, oldest first.
+
+    `record()` names each card `{sha}-{tier}-{subset}.json`, so a second run at
+    the same commit used to `write_text` straight over the first. A flaky
+    question could be re-run until it went green and the losing runs left no
+    trace — while every progress claim in this repo is a delta against exactly
+    these files. M04 recorded the defect; nothing had homed it.
+
+    Keeping the file is only half the fix, and the weaker half: an archive
+    nobody opens proves nothing. The trail lands INSIDE the card that gets
+    cited, where a reader meets it without going looking.
+
+    Separate from `_archive` so `record()` can serialize before it moves
+    anything — see the note there.
+    """
+    trail = _archived_trail(path.stem)
+    if not path.exists():
+        return trail
+    try:
+        prior = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        # Archived with nulls rather than refusing. Losing the good run to
+        # protect the corrupt one would be the wrong trade.
+        prior = {}
+
+    n = (trail[-1]["run"] + 1) if trail else 1
+    while (superseded_dir() / f"{path.stem}.run{n}.json").exists():
+        n += 1  # a hand-deleted card would otherwise collide
+    trail.append(_entry(n, f"{path.stem}.run{n}.json", prior))
+    return trail
+
+
+def _archive(path: Path, trail: list[dict]) -> None:
+    """Move the existing card into the slot `_peek_trail` reserved for it."""
+    if not path.exists() or not trail:
+        return
+    archive = superseded_dir()
+    archive.mkdir(parents=True, exist_ok=True)
+    path.replace(archive / trail[-1]["file"])
+
+
 def record(result: dict) -> Path:
     HISTORY.mkdir(exist_ok=True)
     path = HISTORY / f"{result['sha']}-{result['tier']}-{result['subset'] or 'full'}.json"
-    path.write_text(json.dumps(result, indent=2))
+    # SERIALIZE FIRST, ARCHIVE SECOND. Archiving is a `path.replace`, so doing
+    # it before `json.dumps` opens a window where a serialization error leaves
+    # the old card moved aside and no new card written — zero top-level cards
+    # at that sha, after which `previous_card()` finds nothing and corpus-drift
+    # detection silently switches off. Ordering it this way closes the window
+    # entirely rather than handling it. Found by eng-code-reviewer.
+    trail = _peek_trail(path)
+    body = json.dumps({**result, "supersedes": trail}, indent=2)
+    _archive(path, trail)
+    path.write_text(body)
     return path
 
 
@@ -568,6 +670,16 @@ def main() -> int:
             "questions": per_q,
         })
         print(f"recorded → {out}")
+        # Said out loud, not just written to the file. The failure mode this
+        # closes is a run being repeated until it goes green, and the person
+        # doing that is at this terminal.
+        if trail := json.loads(out.read_text(encoding="utf-8"))["supersedes"]:
+            print(f"   ⚠ this is run {len(trail) + 1} at {git_sha()} for "
+                  f"tier={tier} subset={args.subset or 'full'}. Earlier runs, "
+                  f"kept in {SUPERSEDED_DIRNAME}/:")
+            for prev in trail:
+                print(f"     run {prev['run']}: {prev['passed']}/{prev['total']} "
+                      f"at {prev['at']} → {prev['file']}")
 
     return 0 if passed == total else 1
 

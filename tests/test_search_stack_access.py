@@ -422,3 +422,78 @@ def test_a_fault_drop_that_cannot_fail_a_deploy_is_rejected(monkeypatch, bad):
     monkeypatch.delenv("REGDELTA_DEV_PRINCIPAL_ARN", raising=False)
     with pytest.raises(Exception, match="faultDrop"):
         synth({"faultDrop": bad})
+
+
+# ------------------------------------------------- the query role's IAM grant
+# The other half of SPEC/05's `aoss:APIAccessAll` scoping. `tests/
+# test_query_fn_iam.py` asserts the persistent stack grants none; these assert
+# THIS stack grants it, on the collection ARN. Split deliberately: either test
+# alone passes while the grant vanishes entirely, or while a second copy is
+# left behind in core.
+def query_role_aoss_statements(template: dict) -> list[dict]:
+    """`aoss:APIAccessAll` statements attached to the imported query role.
+
+    Found by the role the policy is attached to, not by policy name — CDK
+    derives the name from a construct path, and pinning that would make this
+    test fail on a rename that changes nothing.
+
+    MATCHED ON THE ROLE NAME, NOT THE ARN. `AWS::IAM::Policy.Roles` carries
+    names; an imported role appears there as the last ARN segment
+    (`"QueryFn"`), never as `arn:aws:iam::...:role/QueryFn`. Filtering on the
+    ARN found nothing and reported the grant missing while the template held it
+    — the same instrument-reads-the-wrong-field shape as ADR-0013, in the test
+    written to check the fix.
+    """
+    role_name = QUERY_ROLE.rsplit("/", 1)[-1]
+    out = []
+    for res in template["Resources"].values():
+        if res["Type"] != "AWS::IAM::Policy":
+            continue
+        if role_name not in res["Properties"].get("Roles", []):
+            continue
+        for stmt in res["Properties"]["PolicyDocument"]["Statement"]:
+            actions = stmt["Action"]
+            if "aoss:APIAccessAll" in (actions if isinstance(actions, list)
+                                       else [actions]):
+                out.append(stmt)
+    return out
+
+
+def test_the_query_role_is_granted_aoss_on_the_collection_arn():
+    """The grant SPEC/05 asks for, on the resource SPEC/05 names.
+
+    `Fn::GetAtt: [Collection, Arn]` is the collection ITSELF — the id AWS
+    generates at creation — and not `collection/*`, which is the widest thing
+    the persistent stack could say.
+    """
+    template = synth()
+    stmts = query_role_aoss_statements(template)
+    assert len(stmts) == 1, f"expected one aoss grant on the query role: {stmts}"
+    assert stmts[0]["Resource"] == {"Fn::GetAtt": ["Collection", "Arn"]}, \
+        stmts[0]["Resource"]
+
+
+def test_the_grant_dies_with_the_collection():
+    """Why it lives here rather than in core, as a property of the template.
+
+    The statement is in an `AWS::IAM::Policy` OWNED BY THIS STACK, so
+    `cdk destroy regdelta-search` removes it. In core it survived `make down`,
+    leaving the one internet-facing role in the account holding AOSS reach over
+    every collection here — including other projects' — until the next
+    `make up`.
+    """
+    template = synth()
+    stmts = query_role_aoss_statements(template)
+    assert stmts, "the grant is not in the ephemeral stack; it cannot expire"
+
+
+def test_the_query_role_gets_no_write_permission_from_iam_either():
+    """IAM is the necessary half; the data-access policy above is the
+    sufficient half. Both must be read-only for this role, and a test of one
+    is not a test of the other."""
+    template = synth()
+    for stmt in query_role_aoss_statements(template):
+        actions = stmt["Action"]
+        actions = actions if isinstance(actions, list) else [actions]
+        assert actions == ["aoss:APIAccessAll"], \
+            f"the query role's IAM grant carries more than API access: {actions}"

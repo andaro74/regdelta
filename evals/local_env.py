@@ -32,8 +32,28 @@ import sys
 REGION = os.environ.get("AWS_REGION", "us-west-2")
 FUNCTION_HINT = "QueryFn"
 # Names that would redirect tooling rather than configure RegDelta.
+# The output of this script is `eval`'d by the Makefile, so a name here
+# reaches the OPERATOR'S shell and every command after it. Values cannot
+# inject — `shlex.quote` single-quotes them and the Lambda API constrains names
+# to `[a-zA-Z][a-zA-Z0-9_]+` — so this list is not what makes `eval` safe. It
+# is what stops a variable from REDIRECTING tooling, which is its own comment's
+# stated job.
+#
+# Most of the original entries name variables Lambda's reserved-key check
+# already refuses to set; the SETTABLE redirects were the ones missing.
+# `AWS_CONTAINER_CREDENTIALS_*` points boto3's credential resolution at an
+# arbitrary URL, `AWS_SHARED_CREDENTIALS_FILE`/`AWS_CONFIG_FILE`/
+# `AWS_WEB_IDENTITY_TOKEN_FILE`/`AWS_ROLE_ARN` do the same by other routes,
+# `NODE_OPTIONS` reaches `npx cdk` in `make core`/`up`/`fault-drop` and can
+# `--require` arbitrary JS, and `BASH_ENV` is sourced by every non-interactive
+# bash — i.e. later make recipes. Precondition is
+# `lambda:UpdateFunctionConfiguration` on QueryFn, so this is defence in depth;
+# it moved from noise to worth-fixing when M05 put RESOLVE_ENV on the default
+# path for `make evals` and `make smoke`. security-reviewer, M05.
 _NOT_OURS = ("PATH", "PYTHON", "LD_", "DYLD_", "AWS_ENDPOINT", "AWS_CA_",
-             "AWS_PROFILE", "AWS_ACCESS", "AWS_SECRET", "AWS_SESSION")
+             "AWS_PROFILE", "AWS_ACCESS", "AWS_SECRET", "AWS_SESSION",
+             "AWS_CONTAINER", "AWS_SHARED", "AWS_CONFIG", "AWS_WEB_IDENTITY",
+             "AWS_ROLE", "NODE_", "BASH_ENV", "ENV", "PERL", "RUBYOPT")
 
 
 def _aws(*args: str) -> str:

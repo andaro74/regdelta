@@ -16,7 +16,7 @@ import time
 import boto3
 
 from retrieval import aoss_client
-from shared import models
+from shared import config, models
 
 CORPUS_PREFIX = "chunks/"
 BULK_BATCH = 500
@@ -42,8 +42,15 @@ def _s3_client():
     return _s3
 
 
-def _iter_chunk_records(bucket: str):
-    """Stream every chunk record in corpus/chunks/**/*.jsonl."""
+def iter_chunk_records(bucket: str):
+    """Stream every chunk record in corpus/chunks/**/*.jsonl.
+
+    Public because `evals/check_hydration.py` counts the corpus with it. The
+    gate's whole claim is "the index holds every chunk record the corpus has",
+    and a second walker with its own idea of what a chunk record is would make
+    that claim about two different sets — reporting a mismatch that is really
+    a disagreement between the instruments.
+    """
     paginator = _s3_client().get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=bucket, Prefix=CORPUS_PREFIX):
         for obj in page.get("Contents", []):
@@ -227,6 +234,124 @@ def _caller_arn() -> str:
         return f"<sts failed: {e}>"
 
 
+# ---------------------------------------------------------------- the gate
+#
+# THE ENDPOINT PARAMETER IS HYDRATION'S OUTPUT, NOT THE STACK'S.
+#
+# `regdelta-search` declares `/regdelta/search/endpoint` as a resource, so
+# CloudFormation used to write it the moment the collection had an endpoint —
+# with no `DependsOn` on the Trigger at all (verified in
+# infra/cdk.out/regdelta-search.template.json). The parameter therefore said
+# "the hot tier is up" when what it knew was "a collection exists".
+#
+# M02 found the consequence and deferred it here (milestones/M02/README.md:591):
+# on a stack UPDATE, a Trigger failure rolls the Lambda's environment back but
+# NOT the AOSS index contents, and the parameter from the earlier successful
+# deploy survives. `router.active_endpoint()` reads only that parameter, so
+# retrieval routes to a knowingly-short index and answers, with citations. A
+# scorecard can be recorded against it.
+#
+# So the parameter is retired first and republished last. Between those two
+# points there is no endpoint, and `router.active_endpoint()` returns None —
+# which routes to S3 Vectors, the always-on tier that is never short. Every
+# failure path in this module, including the ones that raise before reaching
+# the publish, therefore leaves THE PARAMETER absent.
+#
+# THAT IS A CLAIM ABOUT THE PARAMETER, NOT ABOUT ITS READERS, and the
+# difference is a real residual rather than a quibble. `router.py` memoises
+# the endpoint for `_TTL = 60` seconds per container, so for up to a minute
+# after the retire a WARM query container still routes to AOSS. TWO failure
+# modes live in that window, and NEITHER of them raises:
+#
+#   EMPTY INDEX. `_create_index` DELETEs and immediately PUTs, so the index is
+#   missing for one round trip and then exists and is empty. A search against
+#   an existing empty index returns HTTP 200 with `hits: []` —
+#   `aoss_tier._hits` raises only on an `error` key, and `router._resolve`
+#   falls back only on `AossError`. So there is no raise and no fallback: the
+#   request returns zero chunks as `tier="aoss"` with `fallback_reason=None`,
+#   and the verdict node runs with `passages = "(none)"`. In the response and
+#   on the scorecard that is INDISTINGUISHABLE from a healthy AOSS query that
+#   legitimately found nothing.
+#
+#   PARTIAL INDEX. Once `_bulk` starts landing batches the same containers see
+#   some of the corpus and answer with citations, which is the M02 residue
+#   itself.
+#
+# The first is arguably worse for an operator: the second at least leaves
+# citations to check, while the first leaves no signal at all. Both are
+# bounded at ~60s per hydration.
+#
+# Two earlier drafts of this paragraph were wrong in the same direction — the
+# first claimed no exposure at all, the second claimed the early seconds were
+# safe because the tier would raise. It does not raise. Corrected by
+# security-reviewer twice; a comment about a deliberately-accepted risk has to
+# be exactly as true as it says it is, because the milestone's record depends
+# on it.
+#
+# NOT CLOSED HERE, deliberately. The fixes on the table — a hydration
+# sentinel the tier checks, or a document-count floor in `aoss_tier` — are
+# retrieval-path design, not deploy lifecycle, and this milestone's scope is
+# the deploy. Raised by security-reviewer on the M05 branch and carried into
+# the milestone's open threads with this cost written down, rather than fixed
+# quietly at the end of a session. An earlier draft of this comment asserted
+# the stronger claim; it was wrong.
+#
+# Two CloudFormation behaviours make this safe, and both were RUN rather than
+# assumed (milestones/M05/orphan_param_probe.py):
+#
+#   * DeleteStack succeeds when the parameter is already gone. If it did not,
+#     a failed hydration would strand the stack in DELETE_FAILED and an AOSS
+#     collection would bill at ~$0.24/hr until someone noticed by hand — a
+#     worse bug than the one this fixes.
+#   * A later UPDATE that does not change the parameter does not re-create it.
+#     If it did, a redeploy would republish the endpoint without re-running
+#     hydration and the gate would leak.
+#
+# The consequence of the second one is worth stating plainly: after a failed
+# hydration the parameter stays absent until a deploy actually re-runs this
+# Lambda. `make down && make up` always does. A no-op redeploy does not, and
+# leaves retrieval on S3 Vectors — the safe direction, and the honest one.
+
+_ssm = None
+
+
+def _ssm_client():
+    global _ssm
+    if _ssm is None:
+        _ssm = boto3.client("ssm")
+    return _ssm
+
+
+def _retire_endpoint() -> bool:
+    """Take the hot tier out of the router. Returns True if one was there.
+
+    The SAME constant `router.active_endpoint()` reads, imported rather than
+    spelled again: a writer and a reader that name the parameter separately
+    can disagree, and the disagreement looks exactly like a hot tier that is
+    down.
+    """
+    try:
+        _ssm_client().delete_parameter(Name=config.SSM_SEARCH_ENDPOINT)
+        return True
+    except _ssm_client().exceptions.ParameterNotFound:
+        return False
+
+
+def _publish_endpoint(endpoint: str) -> None:
+    """Hydration's last act. Reached only if every assertion above passed.
+
+    Overwrite=True because the parameter may still exist: `_retire_endpoint`
+    tolerates it being absent, but nothing guarantees a concurrent deploy did
+    not put one back.
+    """
+    _ssm_client().put_parameter(
+        Name=config.SSM_SEARCH_ENDPOINT, Value=endpoint, Type="String",
+        Overwrite=True,
+        Description="Written by the reindex Lambda AFTER count-parity and the "
+                    "kNN mapping assert both passed. Absent means retrieval "
+                    "routes to S3 Vectors.")
+
+
 def _await_count(endpoint: str, expected: int,
                  deadline_s: float | None = None) -> int | None:
     """Poll until the index count settles. None = it never became visible.
@@ -262,13 +387,21 @@ def handler(event, context):
     bucket = os.environ["CORPUS_BUCKET"]
     endpoint = aoss_client.check_endpoint(os.environ["COLLECTION_ENDPOINT"])
 
+    # FIRST, before the index is touched. `_create_index` DELETEs the index as
+    # its opening move, so from here until the republish below there is nothing
+    # to serve — and any window in which the parameter still points at this
+    # endpoint is a window where retrieval answers from an index being rebuilt.
+    retired = _retire_endpoint()
+    print(json.dumps({"endpoint_retired": retired,
+                      "parameter": config.SSM_SEARCH_ENDPOINT}))
+
     _create_index(endpoint)
 
     source = 0
     sent = 0
     dropped = 0
     batch: list[dict] = []
-    for record in _iter_chunk_records(bucket):
+    for record in iter_chunk_records(bucket):
         source += 1
         if dropped < FAULT_DROP:
             dropped += 1
@@ -307,5 +440,11 @@ def handler(event, context):
             f"corpus ({json.dumps(result)}). Failing the deploy — a partial "
             "index answers with citations and looks healthy.")
     _assert_knn_mapping(endpoint)
+
+    # Both assertions passed. Only now does the hot tier exist as far as
+    # `router.active_endpoint()` is concerned.
+    _publish_endpoint(endpoint)
+    result["endpoint_published"] = config.SSM_SEARCH_ENDPOINT
+    result["endpoint_retired"] = retired
     print(json.dumps(result))
     return result

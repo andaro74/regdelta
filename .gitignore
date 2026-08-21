@@ -16,3 +16,8 @@ infra/cdk.context.json
 # a pinned file — committing it would put wheels in git and let the layer drift
 # from the pins that produced it.
 build/
+
+# Local Claude Code permission rules. `.claude/settings.json` holds the shared
+# hooks and is tracked; this file holds allow-rules scoped to one operator's
+# AWS account and machine, which are not a property of the project.
+.claude/settings.local.json
