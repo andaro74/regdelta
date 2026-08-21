@@ -1,0 +1,51 @@
+{
+  "guard": "tests/test_graph_state_declares_node_outputs.py",
+  "baseline_green": true,
+  "tree_restored_and_green": true,
+  "mutations": 6,
+  "survivors": 0,
+  "results": [
+    {
+      "id": "M1-undeclare-stop-reason",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the exact M05 defect: verdict returns stop_reason, the schema does not declare it, LangGraph drops it and the API reports null",
+      "tail": null
+    },
+    {
+      "id": "M2-undeclare-truncated",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the sibling field, lost the same way",
+      "tail": null
+    },
+    {
+      "id": "M3-undeclare-retrieval-ms",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "SPEC/04's UI readout and SPEC/06's whole disposition measurement read this field; undeclared, it is silently null",
+      "tail": null
+    },
+    {
+      "id": "M4-new-undeclared-key-on-a-node",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the next field added to a node without a schema entry \u2014 the general case the guard exists for",
+      "tail": null
+    },
+    {
+      "id": "M5-node-returns-a-non-literal",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "a return shape the walker cannot read must FAIL, not be skipped \u2014 a walker that silently skips reports 'all declared' about code it never examined",
+      "tail": null
+    },
+    {
+      "id": "M6-unregister-a-node",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the node list is derived from graph.py; dropping a registration must not quietly shrink what the guard checks",
+      "tail": null
+    }
+  ]
+}
