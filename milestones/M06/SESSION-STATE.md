@@ -218,24 +218,39 @@ A 90/s load test scales the thing it is testing; price it that way next time.
 1. ~~Both amendments are still DRAFTS.~~ **ADOPTED 2026-08-21 (evening)**, both,
    as rulings with sources. No longer the blocker.
 2. ~~`eng-code-reviewer` and `security-reviewer`~~ **BOTH DONE.** Every finding
-   from both is taken; see `58b6af0` and `5feed4b`.
+   from both is taken; see `6e1864c` (engineering) and `77b4065` (security).
 
-   **BLOCKER, and it must be settled BEFORE this branch is pushed:**
-   `971123f` committed the live API host into `dashboard-traffic.json`. It is
-   redacted from the tree now, but it is still in that commit, and the repo is
-   PUBLIC. The branch is unpushed (`git branch -r --contains HEAD` is empty),
-   so it is fixable without a published rewrite.
+   **The live API host** went into `dashboard-traffic.json` at `09151a1`. It is
+   redacted from the tree, and it is still in that commit, and the repo is
+   PUBLIC.
 
-   **RULED 2026-08-21 (evening): SQUASH-MERGE.**
-
-   - **Squash-merge** — chosen. Branch history never reaches `main`, no rebase
-     is needed, and the evidence pack's `971123f` citations stay valid.
-   - ~~Rebase and drop the value~~ — rejected: it invalidates every sha from
-     `971123f` forward, which SESSION-STATE and both amendments cite.
+   **RULED 2026-08-21 (evening): SQUASH-MERGE**, and it is now also the fix for
+   this. A squash puts one commit on `main`; the branch commits — and the host
+   with them — never land.
 
    **M06's PR MUST be squashed, not merge-committed.** If it lands any other
    way the host reaches `main`'s history and the fix stops being a local
-   redaction and becomes a published rewrite. And redaction is obscurity, not a fix — the
+   redaction and becomes a published rewrite.
+
+   ### On the shas in this document
+
+   **Branch shas do not survive.** The rebase onto `main` (2026-08-21, after
+   PR #12 squashed) rewrote all 23 of them once, and the squash-merge will
+   discard them entirely: `971123f`→`09151a1`, `58b6af0`→`6e1864c`,
+   `5feed4b`→`77b4065`, and every other citation moved with them. They are
+   updated here to be valid **on this branch and in its PR**, which is where a
+   reviewer reads them, and they are expected to dangle afterwards.
+
+   **The one sha that must NOT dangle is the measurement's**, because
+   `tier-disposition-f651aea.json` names it and the clause's whole dirty-tree
+   refusal exists so a reader can reproduce the run from the tree it names.
+   Tagged before the rebase:
+
+       git show m06-disposition        # -> f651aea, KEEP, corpus 35a293e17117
+
+   **Push that tag with the branch.** A tag keeps the object reachable through
+   both rewrites; without it the artifact's filename is a dangling string and
+   the verdict stops being checkable by anyone but its author. And redaction is obscurity, not a fix — the
    endpoint is unauthenticated, spends model money per call, and is bounded
    only by a 20 rps throttle. That is a SPEC/04 scope question, not an M06 one,
    and it is now on the record.
