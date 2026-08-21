@@ -98,6 +98,26 @@ def _resources(stmt):
 
 
 # ------------------------------------------------------------------- the rule
+#: The ONLY actions permitted a wildcard resource on this role, and why.
+#:
+#: X-Ray's two daemon write actions are documented by AWS as not supporting
+#: resource-level permissions, and the AWS-managed `AWSXRayDaemonWriteAccess`
+#: policy is written the same way. They arrive with SPEC/06's per-node span:
+#: without ACTIVE tracing there is no daemon, and every subsegment
+#: `shared/observability.py` builds goes nowhere.
+#:
+#: THIS EXEMPTION IS DOCUMENTED, NOT MEASURED, AND SAYS SO. "These actions do
+#: not accept resource ARNs at all" was asserted in this repo once before, about
+#: `aoss:DeleteCollection`, and it was false — M05's open thread 5 records the
+#: correction. The difference here is that the claim is bounded by an action
+#: allowlist a test pins, so if it is wrong again the blast radius is two write
+#: actions against this account's own trace store rather than every collection
+#: in the account. Verifying it properly needs a denied `PutTraceSegments`
+#: against a resource-scoped policy, which costs a live trace and a role; it is
+#: worth doing and it is not done.
+WILDCARD_EXEMPT = frozenset({"xray:PutTraceSegments", "xray:PutTelemetryRecords"})
+
+
 def test_no_inline_grant_on_the_internet_facing_role_uses_a_bare_wildcard(template):
     """THE FINDING, as one assertion. Anything reachable by a stranger's HTTP
     request should not be able to name every resource in the account.
@@ -107,8 +127,25 @@ def test_no_inline_grant_on_the_internet_facing_role_uses_a_bare_wildcard(templa
     quietly included in a claim about "the role".
     """
     offenders = [(_actions(s), _resources(s)) for s in query_statements(template)
-                 if s.get("Effect") == "Allow" and "*" in _resources(s)]
+                 if s.get("Effect") == "Allow" and "*" in _resources(s)
+                 and not set(_actions(s)) <= WILDCARD_EXEMPT]
     assert offenders == [], f"wildcard resources on QueryFn: {offenders}"
+
+
+def test_the_wildcard_exemption_has_not_grown(template):
+    """An allowlist nobody pins is a hole that widens one action at a time.
+
+    Written as an equality on the SET rather than a membership check, so adding
+    a third action fails here and has to be argued for, and so REMOVING X-Ray
+    fails here too — a stale exemption is a standing permission to widen.
+    """
+    assert {"xray:PutTraceSegments", "xray:PutTelemetryRecords"} == WILDCARD_EXEMPT
+
+    exempted = [s for s in query_statements(template)
+                if s.get("Effect") == "Allow" and "*" in _resources(s)]
+    assert len(exempted) == 1, (
+        f"expected exactly one wildcard statement (X-Ray), got {exempted}")
+    assert set(_actions(exempted[0])) == WILDCARD_EXEMPT
 
 
 def test_the_role_attaches_only_the_managed_policies_we_expect(template):

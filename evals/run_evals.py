@@ -12,7 +12,6 @@ Exit code 0 = all pass. Non-zero = failures (usable as a CI/hook gate).
 """
 import argparse
 import datetime as dt
-import hashlib
 import json
 import os
 import subprocess
@@ -96,56 +95,22 @@ def git_dirty(exclude: tuple[str, ...] = ()) -> bool:
 def corpus_fingerprint() -> dict:
     """What the corpus looked like when this run happened.
 
-    Retrieval scorecards carry a `corpus_snapshot`, but it is a human-authored
-    string in retrieval_truth.json — fine when the corpus changed only when
-    someone re-ingested it. It no longer does: the daily poller took the corpus
-    from 4 FR documents to 34 between 2026-07-30 and 2026-08-12, unattended, and
-    nobody edited a string. A golden-set number measured against a corpus that
-    moves on its own is not reproducible unless the card says which corpus.
+    DELEGATES to `shared.corpus.fingerprint`. The formula moved there at M06,
+    unchanged, after the nightly check computed a DIFFERENT hash for the same
+    52 documents — `8e9b3176dcb2` against this function's `35a293e17117` —
+    because it joined the sorted document numbers with "|" where this one used
+    "
+". Two fingerprints of one corpus that do not compare defeat the only
+    thing the field is for: "did the corpus move under us?" as a string
+    comparison between two cards. That comparison is what ruled the corpus in
+    or out in one line when q03 regressed during the M05 window.
 
-    `documents_sha` is the point — one short hash over the sorted document
-    numbers, so "same corpus?" is a string comparison between two cards rather
-    than a diff of two lists.
-
-    Best-effort, like `git_sha`: no credentials, no table, or a transient error
-    yields `{"available": False}` and the run still produces a scorecard. A
-    missing fingerprint is visible; a run that died collecting one is not.
+    The digest is byte-for-byte what it was, so every `documents_sha` already
+    recorded in `evals/history/` stays comparable.
     """
-    from shared import config
+    from shared.corpus import fingerprint
 
-    if not config.REGISTRY_TABLE:
-        return {"available": False, "reason": "REGISTRY_TABLE unset"}
-    try:
-        import boto3
-        from boto3.dynamodb.conditions import Attr
-
-        table = boto3.resource("dynamodb", region_name=config.REGION) \
-            .Table(config.REGISTRY_TABLE)
-        docs, dates, kwargs = [], [], {
-            "FilterExpression": Attr("sk").eq("META"),
-            "ProjectionExpression": "pk, pub_date",
-        }
-        while True:
-            resp = table.scan(**kwargs)
-            for item in resp.get("Items", []):
-                docs.append(str(item["pk"]).removeprefix("DOC#"))
-                if item.get("pub_date"):
-                    dates.append(str(item["pub_date"]))
-            if not resp.get("LastEvaluatedKey"):
-                break
-            kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
-
-        docs.sort()
-        digest = hashlib.sha256("\n".join(docs).encode()).hexdigest()[:12]
-        return {
-            "available": True,
-            "documents": len(docs),
-            "documents_sha": digest,
-            "newest_pub_date": max(dates) if dates else None,
-            "oldest_pub_date": min(dates) if dates else None,
-        }
-    except Exception as e:  # noqa: BLE001 — provenance must never fail a run
-        return {"available": False, "reason": f"{type(e).__name__}: {e}"[:200]}
+    return fingerprint()
 
 
 # Anything that is not a POSITIVE statement of a bypass. `hit` is the observed
@@ -374,7 +339,52 @@ def record(result: dict) -> Path:
     body = json.dumps({**result, "supersedes": trail}, indent=2)
     _archive(path, trail)
     path.write_text(body)
+    publish_pass_rate(result)
     return path
+
+
+def publish_pass_rate(result: dict, *, client=None) -> dict:
+    """Put the recorded pass rate on CloudWatch, for SPEC/06's regression alarm.
+
+    PUBLISHED HERE, AND ONLY HERE, because this is the moment a real
+    measurement exists. SPEC/06 asks for a "pass-rate metric + regression
+    alarm", and the obvious home is the nightly Lambda — but a pass rate is a
+    property of a golden run, golden runs cost Bedrock tokens against a
+    NON-ADJUSTABLE daily cap, and a nightly one would spend 4.5% of that cap
+    every night to re-measure something that did not change. So the nightly
+    check publishes STALENESS (how long since this last fired) and this
+    publishes the rate itself. Two alarms, two questions, neither pretending to
+    be the other.
+
+    `PutMetricData` rather than an EMF line, and this is the one place in the
+    project where that is right: EMF needs a log group that a CloudWatch agent
+    reads, and this runs on a laptop from `make evals`, whose stdout goes to a
+    terminal.
+
+    NEVER FAILS THE RUN. A scorecard is evidence and it is already on disk by
+    the time this is called; losing the network after a 20-question run must
+    not discard it. The outcome is returned so the caller can say what happened
+    rather than assume it worked.
+    """
+    try:
+        import boto3
+
+        from shared import config
+
+        rate = (result["passed"] / result["total"]) if result.get("total") else None
+        if rate is None:
+            return {"published": False, "reason": "no total on the scorecard"}
+        client = client or boto3.client("cloudwatch", region_name=config.REGION)
+        client.put_metric_data(Namespace="RegDelta", MetricData=[
+            {"MetricName": "EvalPassRate", "Value": rate, "Unit": "None"},
+            {"MetricName": "EvalPassed", "Value": float(result["passed"]),
+             "Unit": "Count"},
+            {"MetricName": "EvalTotal", "Value": float(result["total"]),
+             "Unit": "Count"},
+        ])
+        return {"published": True, "pass_rate": round(rate, 4)}
+    except Exception as e:  # noqa: BLE001 — the scorecard is already written
+        return {"published": False, "reason": f"{type(e).__name__}: {e}"[:200]}
 
 
 def resolve_api_url(cli: str | None) -> str:
