@@ -3,11 +3,12 @@
     "tests/test_instrument_span_sink.py",
     "tests/test_janitor.py",
     "tests/test_load_driver_iam.py",
+    "tests/test_retrieval_load_driver.py",
     "tests/test_search_stack_access.py"
   ],
   "baseline_green": true,
   "tree_restored_and_green": true,
-  "mutations": 7,
+  "mutations": 20,
   "survivors": 0,
   "results": [
     {
@@ -64,6 +65,110 @@
       "outcome": "killed",
       "exit": 1,
       "why": "the four actions CDK's own Tracing.ACTIVE would attach. The wildcard exemption is pinned at two and has to be argued for to grow; picking up two more as a side effect is the widening the pin exists to stop",
+      "tail": null
+    },
+    {
+      "id": "R1-driver-loses-its-aoss-iam-grant",
+      "guard": "tests/test_search_stack_access.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "SECURITY-REVIEWER'S M8, and the reason this family exists: deleting these four lines left the ENTIRE SUITE green. The data-access policy is the sufficient half and IAM is the necessary half; without it every AOSS call is denied, the router falls back silently, and Tier B is retired on Tier A's numbers",
+      "tail": null
+    },
+    {
+      "id": "R2-query-role-loses-its-aoss-iam-grant",
+      "guard": "tests/test_search_stack_access.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the same absence on the role that has carried the grant since SPEC/05 \u2014 the parameterised family must cover both roles, not just the new one",
+      "tail": null
+    },
+    {
+      "id": "R3-driver-drops-out-of-index-readers",
+      "guard": "tests/test_search_stack_access.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the other necessary half. An IAM grant with no data-access entry is the same bare 403 by the other route",
+      "tail": null
+    },
+    {
+      "id": "R4-driver-loses-the-embedding-grant",
+      "guard": "tests/test_load_driver_iam.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "every retrieval embeds; without this every call fails identically on BOTH tiers, which is the one failure mode that would read as a tie \u2014 and ties retire",
+      "tail": null
+    },
+    {
+      "id": "R5-driver-loses-the-ssm-grant",
+      "guard": "tests/test_load_driver_iam.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the router reads the endpoint parameter to pick a tier; denied, it resolves to S3 Vectors and both halves measure Tier A",
+      "tail": null
+    },
+    {
+      "id": "R6-driver-loses-a-vector-index-action",
+      "guard": "tests/test_load_driver_iam.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the Tier A half's own backend, removed one action at a time \u2014 the shape a subset bound cannot see",
+      "tail": null
+    },
+    {
+      "id": "R7-driver-loses-the-registry-read",
+      "guard": "tests/test_load_driver_iam.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "`retrieval/expansion.py` reads the registry on the retrieval path, so a driver without it measures a retrieval that half-failed \u2014 on both tiers, equally, which again reads as a tie",
+      "tail": null
+    },
+    {
+      "id": "R8-driver-picks-up-a-managed-policy",
+      "guard": "tests/test_load_driver_iam.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the M04 finding on QueryFn, which this role did not inherit until now: every inline-policy assertion in the file reads identically with AdministratorAccess attached",
+      "tail": null
+    },
+    {
+      "id": "T1-eligibility-ignores-the-tier",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the state the code was in when security-reviewer measured it: tiers_observed ['s3vectors'], errors 0, dispositive_eligible true, on a step pointed at aoss",
+      "tail": null
+    },
+    {
+      "id": "T2-tier-check-becomes-a-membership-test",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "a partial propagation delay makes SOME calls fall back; a membership test accepts a p95 computed over a mixture of both tiers and labelled as one of them",
+      "tail": null
+    },
+    {
+      "id": "T3-a-fallback-reason-stops-counting",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "a per-call fallback that lands back on the expected tier still means the router did not do what was asked",
+      "tail": null
+    },
+    {
+      "id": "T4-the-handler-guesses-the-expected-tier",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "defaulting to active_tier() compares the SSM parameter against itself and passes for any fallback at all \u2014 the assertion becomes a tautology",
+      "tail": null
+    },
+    {
+      "id": "T5-the-fallback-list-is-uncapped-again",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "5,400 reasons of up to 300 characters on ONE CloudWatch log event, which caps at 256 KiB: the record is truncated and span_status, error_rate and dispositive_eligible are what get lost",
       "tail": null
     }
   ]

@@ -34,6 +34,24 @@ SPEC/06 defines the measured interval as the one carried on the per-node
 retrieval span. Measuring a different call than the clause names would be the
 substitution the clause exists to prevent.
 
+## A step must reach the tier it is a measurement of
+
+`router._resolve` catches `AossError` and falls back to S3 Vectors silently and
+by design, so a broken hot tier cannot take the API down. That design is a trap
+for this driver: a data-access-policy propagation delay after `make up` makes
+every AOSS call fall back, and the step then reports real latencies, zero
+errors and a clean arrival rate — Tier A's numbers, filed under Tier B. The
+disposition's DEFAULT OUTCOME IS RETIREMENT, so the trap does not produce a
+missing measurement, it produces a retirement.
+
+Measured on this file before the check existed (security-reviewer, M06): with
+the endpoint live and every AOSS call raising 403, `run_step` returned
+`tiers_observed: ["s3vectors"], errors: 0, dispositive_eligible: true`. Every
+step therefore states `expected_tier`, and a step whose observed tiers are not
+exactly that one — or which recorded any fallback reason at all — is reported
+and is not eligible to be dispositive. `run_evals` and `run_parity` have
+asserted the same property since SPEC/02 criterion 2.
+
 ## What counts as an error, and what does not
 
 SPEC/06 excludes Bedrock throttles from the retrieval error rate: they are an
@@ -103,6 +121,22 @@ def _percentile(values: list[float], q: float) -> float | None:
     return round(ordered[rank - 1], 1)
 
 
+def _tier_is_as_asked(tiers_observed: list[str], expected: str) -> bool:
+    """Exactly one tier answered, and it is the one this step is about.
+
+    An EQUALITY, not a membership test. `expected in tiers_observed` passes a
+    step in which 5,399 calls fell back to S3 Vectors and one reached AOSS,
+    which is the shape a partial propagation delay produces and is the worst
+    of the three cases: a p95 computed over a mixture of both tiers, labelled
+    as one of them.
+
+    An empty list is a miss too. A step in which every call raised before the
+    router could report a tier has observed nothing, and "nothing" must not
+    read as "no disagreement".
+    """
+    return tiers_observed == [expected]
+
+
 def _one_call(question: str, inflight: _InFlight, out: list, lock) -> None:
     from graph import instrument, nodes
 
@@ -144,10 +178,15 @@ def _one_call(question: str, inflight: _InFlight, out: list, lock) -> None:
 
 
 def run_step(*, rate: float, seconds: float, questions: list[str],
-             label: str = "") -> dict:
+             expected_tier: str, label: str = "") -> dict:
     """Dispatch `rate` calls per second for `seconds`, then wait for stragglers.
 
     Returns everything the report needs and nothing it has to infer.
+
+    `expected_tier` is what this step is a measurement OF, and it is required
+    rather than defaulted. See `_tier_is_as_asked` below: the router falls back
+    to S3 Vectors silently and by design, so a step that never says what it was
+    pointed at cannot report having missed.
     """
     util.reset_retry_stats()
     inflight = _InFlight()
@@ -204,6 +243,7 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
     errors = [s for s in samples if s["error"]]
     tiers = sorted({s["tier"] for s in samples if s["tier"]})
     retries = util.retry_stats()
+    fallbacks = [s["fallback"] for s in samples if s["fallback"]]
     # Counted, not summarised to one word. A step in which 5,399 spans were
     # `sent` and one `failed` is a different fact from one in which every span
     # was `off`, and the amended clause asks for the status, not for a boolean.
@@ -217,7 +257,34 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
     # else False`, which is what was meant — but a reader has to work that out,
     # and the two uses had to agree.
     within = (abs(achieved - rate) / rate <= 0.05) if rate else False
-    eligible = within and retries["total"] == 0
+    # THE TIER CHECK, AND IT IS THE ONE THAT DECIDES A MILESTONE.
+    #
+    # `router._resolve` catches AossError and falls back to S3 Vectors
+    # silently and by design, so that a broken hot tier cannot take the API
+    # down. Under this driver that design becomes a trap: a data-access-policy
+    # propagation delay after `make up` — the bare 403
+    # `infra/search/search_stack.py` warns about by name — makes every AOSS
+    # call fall back, and the step then reports Tier A's latencies with zero
+    # errors and a clean rate.
+    #
+    # Measured, on this exact code before the check existed: with the hot tier
+    # configured and every AOSS call raising 403, the step returned
+    # `tiers_observed: ["s3vectors"], errors: 0, error_rate: 0.0,
+    # dispositive_eligible: true`. Both halves of the disposition would then
+    # read identical, and the clause's DEFAULT OUTCOME IS RETIREMENT — so
+    # Tier B is retired on an IAM propagation delay, from an artifact that
+    # looks green. Found by security-reviewer on the M06 infra diff.
+    #
+    # This is SPEC/02 criterion 2, which `run_evals` and `run_parity` already
+    # assert and which the dispositive instrument did not: derive the tier,
+    # then assert it against what was asked for.
+    #
+    # A FALLBACK IS A MISS EVEN WHEN IT LANDS ON THE RIGHT TIER. The Tier A
+    # half runs with the endpoint absent, where `retrieve_traced` may still
+    # record a fallback reason for a per-call failure; counting only
+    # `tiers_observed` would let those through as clean samples.
+    tier_ok = _tier_is_as_asked(tiers, expected_tier) and not fallbacks
+    eligible = within and retries["total"] == 0 and tier_ok
     return {
         "label": label,
         "driven_rate": rate,
@@ -238,7 +305,14 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
                              "answer-parity-3966b47.json",
         "inflight_mean": inflight.mean(elapsed),
         "inflight_peak": inflight.peak,
+        # WHAT ANSWERED, not what was configured. `handler` records
+        # `resolved_tier` beside it from `router.active_tier()`, which is an
+        # SSM read describing what is CONFIGURED — the two agree right up until
+        # the hot tier fails, which is the case the distinction exists for.
+        # Both are reported; only this one is gated on.
         "tiers_observed": tiers,
+        "expected_tier": expected_tier,
+        "tier_as_asked": tier_ok,
         # SPEC/06 defines the measured interval as the one carried on the
         # per-node retrieval span, so the report says what became of the span.
         # RECORDED, NOT GATED ON: the interval is the router's own
@@ -246,7 +320,16 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
         # reached the daemon. What would be dishonest is claiming a span that
         # never left, and that is what this prevents.
         "span_status": dict(sorted(span_status.items())),
-        "fallbacks": [s["fallback"] for s in samples if s["fallback"]],
+        # COUNT PLUS A SAMPLE, capped the way `error_sample` is. Uncapped,
+        # a 90-call/s step in which everything fell back carries 5,400 reasons
+        # of up to 300 characters — 1.7 MB — and `handler` prints the whole
+        # result as ONE CloudWatch log event, which caps at 256 KiB. The event
+        # is truncated and what is lost with it is `span_status`, `error_rate`
+        # and `dispositive_eligible`: the fields the clause asks the report to
+        # carry, gone in precisely the run where they matter. The eligibility
+        # check above needs only the count. security-reviewer, M06.
+        "fallbacks": len(fallbacks),
+        "fallback_sample": fallbacks[:5],
         # SPEC/06's error rate numerator: search-backend failures only. Titan
         # throttles are Bedrock throttles and are excluded from it, counted
         # separately below, and disqualify the step from being dispositive.
@@ -266,10 +349,19 @@ def handler(event, context):
     router.reset_cache()          # a warm container can hold a stale endpoint
 
     questions = event.get("questions") or _default_questions()
+    # NO DEFAULT. `event["expected_tier"]` raises KeyError on an invocation
+    # that did not say which tier it is measuring, and the alternative —
+    # defaulting to `router.active_tier()` — would make the assertion compare
+    # the SSM parameter against itself and pass for any fallback at all.
     result = run_step(rate=float(event["rate"]),
                       seconds=float(event.get("seconds", 60)),
                       questions=questions,
+                      expected_tier=str(event["expected_tier"]),
                       label=str(event.get("label") or ""))
+    # CONFIGURED, not observed, and the name says so. Kept because a
+    # disagreement between this and `tiers_observed` is itself the diagnosis —
+    # "the endpoint was live and every call fell back" is a different fault
+    # from "the endpoint was gone".
     result["resolved_tier"] = router.active_tier()
     result["questions"] = len(questions)
     print(json.dumps({"retrieval_load": {

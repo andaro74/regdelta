@@ -60,7 +60,12 @@ def node(monkeypatch):
     measured interval the one SPEC/06's clause names.
     """
     state = {"service_ms": 5.0, "fail_every": 0, "calls": 0,
-             "span_status": "sent"}
+             "span_status": "sent", "tier": "aoss", "fallback": None,
+             # `fall_back_every`: the silent fallback the real router performs
+             # on an AossError. Nth call reports the OTHER tier, exactly as
+             # `router._resolve` does — it does not raise, and that is the
+             # whole difficulty.
+             "fall_back_every": 0}
     counter_lock = threading.Lock()
 
     def observed(_name, _fn, on_span=None):
@@ -84,9 +89,14 @@ def node(monkeypatch):
                 time.sleep(state["service_ms"] / 1000.0)
                 if state["fail_every"] and mine % state["fail_every"] == 0:
                     raise RuntimeError("AossError: 503 from the search backend")
-                return {"retrieval_ms": state["service_ms"],
-                        "retrieval_tier": "aoss", "retrieval_fallback": None,
-                        "retrieved": [1, 2, 3]}
+                fell_back = (state["fall_back_every"]
+                             and mine % state["fall_back_every"] == 0)
+                return {
+                    "retrieval_ms": state["service_ms"],
+                    "retrieval_tier": "s3vectors" if fell_back else state["tier"],
+                    "retrieval_fallback": ("AossError: 403" if fell_back
+                                           else state["fallback"]),
+                    "retrieved": [1, 2, 3]}
             finally:
                 if on_span is not None:
                     on_span((state["span_status"], None))
@@ -107,7 +117,7 @@ def test_it_dispatches_on_a_schedule_not_on_completion(node):
     """
     node["service_ms"] = 40.0
     out = retrieval_load.run_step(rate=50, seconds=1.0, questions=["q"],
-                                  label="open-loop")
+                                  expected_tier="aoss", label="open-loop")
     assert out["dispatched"] >= 45
     assert out["achieved_rate"] == pytest.approx(50, rel=0.15)
     # Concurrency is arrival rate x service time = 50 * 0.04 = 2, and the
@@ -132,7 +142,7 @@ def test_a_driver_that_cannot_keep_up_reports_it_and_is_not_dispositive(monkeypa
 
     monkeypatch.setattr(retrieval_load.threading, "Thread", SlowThread)
     out = retrieval_load.run_step(rate=1000, seconds=0.1, questions=["q"],
-                                  label="unmeetable")
+                                  expected_tier="aoss", label="unmeetable")
 
     assert out["achieved_rate"] < 1000
     assert out["rate_within_5pct"] is False
@@ -145,7 +155,8 @@ def test_a_step_that_meets_its_rate_is_eligible(node):
     A guard that can only refuse is indistinguishable from one that is broken.
     """
     node["service_ms"] = 1.0
-    out = retrieval_load.run_step(rate=20, seconds=0.4, questions=["q"])
+    out = retrieval_load.run_step(rate=20, seconds=0.4, questions=["q"],
+                                  expected_tier="aoss")
     assert out["rate_within_5pct"] is True
     assert out["bedrock_retries"]["total"] == 0
     assert out["dispositive_eligible"] is True
@@ -162,7 +173,8 @@ def test_a_bedrock_throttle_disqualifies_the_step(monkeypatch, node):
     node["service_ms"] = 1.0
     monkeypatch.setattr(retrieval_load.util, "retry_stats",
                         lambda: {"total": 1, "by_error": {"ThrottlingException": 1}})
-    out = retrieval_load.run_step(rate=20, seconds=0.3, questions=["q"])
+    out = retrieval_load.run_step(rate=20, seconds=0.3, questions=["q"],
+                                  expected_tier="aoss")
 
     assert out["rate_within_5pct"] is True      # the rate was met...
     assert out["dispositive_eligible"] is False  # ...and it still cannot count
@@ -205,7 +217,8 @@ def test_errors_are_counted_separately_from_latency(node):
     """
     node["service_ms"] = 2.0
     node["fail_every"] = 3
-    out = retrieval_load.run_step(rate=30, seconds=0.5, questions=["q"])
+    out = retrieval_load.run_step(rate=30, seconds=0.5, questions=["q"],
+                                  expected_tier="aoss")
 
     assert out["errors"] > 0
     assert out["n"] == out["returned"] - out["errors"]
@@ -225,7 +238,8 @@ def test_the_percentile_method_is_nearest_rank_and_is_stated():
 
 def test_the_report_states_the_percentile_method(node):
     node["service_ms"] = 1.0
-    out = retrieval_load.run_step(rate=10, seconds=0.2, questions=["q"])
+    out = retrieval_load.run_step(rate=10, seconds=0.2, questions=["q"],
+                                  expected_tier="aoss")
     assert "nearest-rank" in out["percentile_method"]
     assert out["n"] > 0
 
@@ -267,7 +281,8 @@ def test_the_question_set_is_varied_and_is_not_the_golden_set():
 def test_the_step_report_tallies_the_span_status_per_call(node):
     node["service_ms"] = 1.0
     node["span_status"] = "sent"
-    out = retrieval_load.run_step(rate=20, seconds=0.4, questions=["q"])
+    out = retrieval_load.run_step(rate=20, seconds=0.4, questions=["q"],
+                                  expected_tier="aoss")
     assert out["span_status"] == {"sent": out["returned"]}
     assert out["returned"] > 0
 
@@ -277,7 +292,8 @@ def test_an_unemitted_span_is_reported_and_does_not_masquerade_as_sent(node):
     off. A report that could only say "sent" would be evidence of nothing."""
     node["service_ms"] = 1.0
     node["span_status"] = "off"
-    out = retrieval_load.run_step(rate=20, seconds=0.3, questions=["q"])
+    out = retrieval_load.run_step(rate=20, seconds=0.3, questions=["q"],
+                                  expected_tier="aoss")
     assert out["span_status"] == {"off": out["returned"]}
 
 
@@ -286,7 +302,8 @@ def test_the_span_status_of_a_failed_call_is_recorded_too(node):
     counted under their own status rather than dropped with their latency."""
     node["service_ms"] = 1.0
     node["fail_every"] = 3
-    out = retrieval_load.run_step(rate=30, seconds=0.5, questions=["q"])
+    out = retrieval_load.run_step(rate=30, seconds=0.5, questions=["q"],
+                                  expected_tier="aoss")
     assert out["errors"] > 0
     assert sum(out["span_status"].values()) == out["returned"]
 
@@ -306,3 +323,146 @@ def test_the_driver_does_not_read_the_module_level_emission_report():
            ).read_text(encoding="utf-8")
     assert "emission_report" not in src.replace(
         "`observability.emission_report()`", "")
+
+
+# ------------------------------------------------------- the tier assertion
+# THE DEFECT THIS GUARDS, in one sentence: the router falls back to S3 Vectors
+# silently and by design, the disposition's default outcome is RETIREMENT, and
+# so a Tier B step that never reached Tier B retires Tier B while reporting
+# zero errors and a clean rate. Measured on this code before the check existed
+# (security-reviewer, M06 infra diff):
+#
+#   tiers_observed: ["s3vectors"]  errors: 0  error_rate: 0.0
+#   dispositive_eligible: true     resolved_tier: "aoss"
+#
+# `run_evals` and `run_parity` have asserted the same property since SPEC/02
+# criterion 2. The dispositive instrument did not.
+
+
+def test_a_step_that_reached_the_tier_it_was_pointed_at_is_eligible(node):
+    """The positive half, first. A guard that can only refuse is
+    indistinguishable from one that is broken."""
+    node["service_ms"] = 1.0
+    out = retrieval_load.run_step(rate=20, seconds=0.4, questions=["q"],
+                                  expected_tier="aoss")
+    assert out["tiers_observed"] == ["aoss"]
+    assert out["expected_tier"] == "aoss"
+    assert out["tier_as_asked"] is True
+    assert out["fallbacks"] == 0
+    assert out["dispositive_eligible"] is True
+
+
+def test_a_silent_fallback_to_the_other_tier_is_not_a_measurement(node):
+    """THE FINDING. Every call falls back; nothing raises.
+
+    The rate is met, no Titan throttle fires, the error count is zero and the
+    latencies are real — they are just Tier A's. Without this the step is
+    eligible and its p95 is filed under Tier B.
+    """
+    node["service_ms"] = 1.0
+    node["fall_back_every"] = 1
+    out = retrieval_load.run_step(rate=20, seconds=0.4, questions=["q"],
+                                  expected_tier="aoss")
+
+    assert out["tiers_observed"] == ["s3vectors"]
+    assert out["errors"] == 0, "the router does not raise on a fallback"
+    assert out["rate_within_5pct"] is True, "the rate was met; that is the trap"
+    assert out["tier_as_asked"] is False
+    assert out["dispositive_eligible"] is False
+
+
+def test_a_partial_fallback_is_refused_too(node):
+    """The worst of the three cases, and the one a membership test lets past.
+
+    A partial data-access-policy propagation makes SOME calls fall back. The
+    step then holds a p95 computed over a mixture of both tiers and labelled
+    as one of them — which `expected in tiers_observed` would accept.
+    """
+    node["service_ms"] = 1.0
+    node["fall_back_every"] = 3
+    out = retrieval_load.run_step(rate=30, seconds=0.5, questions=["q"],
+                                  expected_tier="aoss")
+
+    assert out["tiers_observed"] == ["aoss", "s3vectors"]
+    assert out["fallbacks"] > 0
+    assert out["tier_as_asked"] is False
+    assert out["dispositive_eligible"] is False
+
+
+def test_a_fallback_reason_alone_disqualifies_the_step(node):
+    """A per-call fallback that lands back on the expected tier still means the
+    router did not do what was asked. Counting only `tiers_observed` would let
+    it through as a clean sample."""
+    node["service_ms"] = 1.0
+    node["fallback"] = "AossError: 503, retried on the same tier"
+    out = retrieval_load.run_step(rate=20, seconds=0.3, questions=["q"],
+                                  expected_tier="aoss")
+
+    assert out["tiers_observed"] == ["aoss"]
+    assert out["fallbacks"] > 0
+    assert out["dispositive_eligible"] is False
+
+
+def test_a_step_where_nothing_reported_a_tier_is_not_a_pass(node):
+    """`tiers_observed == []` is a miss, not an absence of disagreement.
+
+    Every call raises before the router can name a tier. An `expected not in
+    observed` formulation reads the empty list as agreement.
+    """
+    node["service_ms"] = 1.0
+    node["fail_every"] = 1
+    out = retrieval_load.run_step(rate=20, seconds=0.3, questions=["q"],
+                                  expected_tier="aoss")
+
+    assert out["tiers_observed"] == []
+    assert out["tier_as_asked"] is False
+    assert out["dispositive_eligible"] is False
+
+
+def test_the_tier_check_is_an_equality_on_the_observed_set():
+    """The predicate on its own, at the three boundaries a load run cannot
+    reliably reproduce in a unit test."""
+    assert retrieval_load._tier_is_as_asked(["aoss"], "aoss") is True
+    assert retrieval_load._tier_is_as_asked(["s3vectors"], "aoss") is False
+    assert retrieval_load._tier_is_as_asked(["aoss", "s3vectors"], "aoss") is False
+    assert retrieval_load._tier_is_as_asked([], "aoss") is False
+
+
+def test_the_expected_tier_has_no_default():
+    """Required, not defaulted. A default of `router.active_tier()` would
+    compare the SSM parameter against itself and pass for any fallback."""
+    with pytest.raises(TypeError):
+        retrieval_load.run_step(rate=1, seconds=0.01, questions=["q"])
+
+
+def test_the_handler_refuses_an_invocation_that_names_no_tier(monkeypatch):
+    """`make tier-disposition` supplies it per half. A console Test-button
+    invocation that omits it must fail loudly rather than measure something
+    nobody can label."""
+    import sys
+    import types
+
+    stub = types.ModuleType("retrieval.router")
+    stub.reset_cache = lambda: None
+    stub.active_tier = lambda: "aoss"
+    monkeypatch.setitem(sys.modules, "retrieval.router", stub)
+
+    with pytest.raises(KeyError):
+        retrieval_load.handler({"rate": 1, "seconds": 0.01}, None)
+
+
+# ------------------------------------------------------- the log-line budget
+def test_the_fallback_list_is_capped_and_counted(node):
+    """`handler` prints the whole result as ONE CloudWatch log event, and that
+    caps at 256 KiB. Uncapped, a 90-call/s step in which everything fell back
+    is 5,400 reasons of up to 300 characters — 1.7 MB — so the event is
+    truncated and `span_status`, `error_rate` and `dispositive_eligible` are
+    what get lost, in exactly the run where they matter."""
+    node["service_ms"] = 1.0
+    node["fall_back_every"] = 1
+    out = retrieval_load.run_step(rate=40, seconds=0.5, questions=["q"],
+                                  expected_tier="aoss")
+
+    assert out["fallbacks"] == out["returned"] > 5
+    assert isinstance(out["fallbacks"], int)
+    assert len(out["fallback_sample"]) == 5

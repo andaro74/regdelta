@@ -98,13 +98,28 @@ def _resources(stmt):
 
 
 # ------------------------------------------------------------------- the rule
-#: The ONLY actions permitted a wildcard resource on this role, and why.
+#: The ONLY actions permitted a wildcard resource on the roles that carry it,
+#: and why.
+#:
+#: TWO ROLES NOW, not one. `QueryFn` and SPEC/06's `LoadDriverFn`, which is not
+#: internet-facing and which reaches this exemption through the same
+#: `infra/core/observability.py:enable_xray` helper. `tests/
+#: test_load_driver_iam.py` IMPORTS this object rather than restating it, so
+#: there is still exactly one place to widen and one place to argue about it.
+#: The paragraphs below were written in the singular when the exemption served
+#: one role; they are about the ACTIONS, and they transfer unchanged.
 #:
 #: X-Ray's two daemon write actions are documented by AWS as not supporting
 #: resource-level permissions, and the AWS-managed `AWSXRayDaemonWriteAccess`
 #: policy is written the same way. They arrive with SPEC/06's per-node span:
 #: without ACTIVE tracing there is no daemon, and every subsegment
 #: `shared/observability.py` builds goes nowhere.
+#:
+#: NOT `_lambda.Tracing.ACTIVE`, which attaches that managed policy and its
+#: FOUR actions. `enable_xray` sets the property override and grants these two
+#: by hand, so the convenience flag cannot widen the exemption as a side
+#: effect. `milestones/M06/load_driver_guard_mutations.py` M7 is that mutation,
+#: and it is killed.
 #:
 #: THIS EXEMPTION IS DOCUMENTED, NOT MEASURED, AND SAYS SO. "These actions do
 #: not accept resource ARNs at all" was asserted in this repo once before, about
@@ -114,7 +129,8 @@ def _resources(stmt):
 #: actions against this account's own trace store rather than every collection
 #: in the account. Verifying it properly needs a denied `PutTraceSegments`
 #: against a resource-scoped policy, which costs a live trace and a role; it is
-#: worth doing and it is not done.
+#: worth doing and it is not done. ONE such probe settles it for BOTH
+#: principals at the same cost, since the claim is about the actions.
 WILDCARD_EXEMPT = frozenset({"xray:PutTraceSegments", "xray:PutTelemetryRecords"})
 
 

@@ -18,6 +18,21 @@ checkable:
     between "every errored call reported its span status" and "every errored
     call was reported as having emitted nothing".
 
+THE SECOND FAMILY EXISTS BECAUSE THE FIRST ONE WAS BIASED. M1-M7 all *widen* a
+grant or *break* a behaviour some test already asserts positively, and
+security-reviewer's verdict on them was that none is a specimen written to pass
+— but that **not one of them removes a grant**. That asymmetry is not academic:
+`granted <= allowed` and every membership assertion stay green when a grant
+simply vanishes, and the reviewer demonstrated it by deleting the driver's
+`aoss:APIAccessAll` and watching the entire suite pass.
+
+A MISSING grant is the milestone's worst case, not a benign one. The driver
+would take a bare 403 on every AOSS call, `router._resolve` would fall back to
+S3 Vectors silently and by design, and the Tier B half of a disposition whose
+DEFAULT OUTCOME IS RETIREMENT would carry Tier A's latencies with zero errors.
+So R1-R8 remove one grant each, and T1-T5 attack the check that now refuses
+that run.
+
 Offline, free, no AWS: every guard here reads a synthesised CloudFormation
 template or runs an in-process node. Every mutation is applied to a copy of the
 file's text and reverted in a `finally`, so a crash cannot leave the tree
@@ -43,6 +58,8 @@ IAM_TEST = "tests/test_load_driver_iam.py"
 ACCESS_TEST = "tests/test_search_stack_access.py"
 JANITOR_TEST = "tests/test_janitor.py"
 SINK_TEST = "tests/test_instrument_span_sink.py"
+DRIVER_TEST = "tests/test_retrieval_load_driver.py"
+DRIVER = ROOT / "src" / "ops" / "retrieval_load.py"
 
 #: (id, file, guard, find, replace, why it must be caught)
 MUTATIONS = [
@@ -122,6 +139,120 @@ MUTATIONS = [
      "the four actions CDK's own Tracing.ACTIVE would attach. The wildcard "
      "exemption is pinned at two and has to be argued for to grow; picking up "
      "two more as a side effect is the widening the pin exists to stop"),
+
+    # ------------------------------------------------------------ R: removals
+    # One grant deleted per mutation. THE GUARD MUST NOTICE AN ABSENCE, which
+    # is the half `granted <= allowed` and every membership assertion are blind
+    # to.
+
+    ("R1-driver-loses-its-aoss-iam-grant", SEARCH, ACCESS_TEST,
+     """        driver_role = iam.Role.from_role_arn(
+            self, "LoadDriverRole", load_driver_role_arn, mutable=True)
+        driver_role.add_to_principal_policy(iam.PolicyStatement(
+            actions=["aoss:APIAccessAll"], resources=[collection.attr_arn]))""",
+     "",
+     "SECURITY-REVIEWER'S M8, and the reason this family exists: deleting "
+     "these four lines left the ENTIRE SUITE green. The data-access policy is "
+     "the sufficient half and IAM is the necessary half; without it every AOSS "
+     "call is denied, the router falls back silently, and Tier B is retired on "
+     "Tier A's numbers"),
+
+    ("R2-query-role-loses-its-aoss-iam-grant", SEARCH, ACCESS_TEST,
+     """        query_role.add_to_principal_policy(iam.PolicyStatement(
+            actions=["aoss:APIAccessAll"], resources=[collection.attr_arn]))""",
+     "",
+     "the same absence on the role that has carried the grant since SPEC/05 — "
+     "the parameterised family must cover both roles, not just the new one"),
+
+    ("R3-driver-drops-out-of-index-readers", SEARCH, ACCESS_TEST,
+     "        index_readers = [query_lambda_role_arn, load_driver_role_arn]",
+     "        index_readers = [query_lambda_role_arn]",
+     "the other necessary half. An IAM grant with no data-access entry is the "
+     "same bare 403 by the other route"),
+
+    ("R4-driver-loses-the-embedding-grant", CORE, IAM_TEST,
+     """        load_driver.add_to_role_policy(iam.PolicyStatement(
+            actions=["bedrock:InvokeModel"],
+            resources=[self._embed_model_arn()]))""",
+     "",
+     "every retrieval embeds; without this every call fails identically on "
+     "BOTH tiers, which is the one failure mode that would read as a tie — and "
+     "ties retire"),
+
+    ("R5-driver-loses-the-ssm-grant", CORE, IAM_TEST,
+     """        load_driver.add_to_role_policy(iam.PolicyStatement(
+            actions=["ssm:GetParameter"],
+            resources=[self.format_arn(
+                service="ssm", resource="parameter",
+                resource_name=SSM_ENDPOINT_PARAM.lstrip("/"))]))""",
+     "",
+     "the router reads the endpoint parameter to pick a tier; denied, it "
+     "resolves to S3 Vectors and both halves measure Tier A"),
+
+    ("R6-driver-loses-a-vector-index-action", CORE, IAM_TEST,
+     """        load_driver.add_to_role_policy(iam.PolicyStatement(
+            actions=["s3vectors:QueryVectors", "s3vectors:GetVectors"],""",
+     """        load_driver.add_to_role_policy(iam.PolicyStatement(
+            actions=["s3vectors:GetVectors"],""",
+     "the Tier A half's own backend, removed one action at a time — the shape "
+     "a subset bound cannot see"),
+
+    ("R7-driver-loses-the-registry-read", CORE, IAM_TEST,
+     "        self.registry_table.grant_read_data(load_driver)\n",
+     "",
+     "`retrieval/expansion.py` reads the registry on the retrieval path, so a "
+     "driver without it measures a retrieval that half-failed — on both tiers, "
+     "equally, which again reads as a tie"),
+
+    ("R8-driver-picks-up-a-managed-policy", CORE, IAM_TEST,
+     "        enable_xray(load_driver)",
+     "        enable_xray(load_driver)\n"
+     "        load_driver.role.add_managed_policy(\n"
+     "            iam.ManagedPolicy.from_aws_managed_policy_name("
+     '"AdministratorAccess"))',
+     "the M04 finding on QueryFn, which this role did not inherit until now: "
+     "every inline-policy assertion in the file reads identically with "
+     "AdministratorAccess attached"),
+
+    # ------------------------------------------------------ T: the tier check
+    # The guard that stops a Tier B run which never reached Tier B from being
+    # recorded as one. The clause's default outcome is retirement, so a false
+    # pass here is the most expensive single failure in the milestone.
+
+    ("T1-eligibility-ignores-the-tier", DRIVER, DRIVER_TEST,
+     '    eligible = within and retries["total"] == 0 and tier_ok',
+     '    eligible = within and retries["total"] == 0',
+     "the state the code was in when security-reviewer measured it: "
+     "tiers_observed ['s3vectors'], errors 0, dispositive_eligible true, on a "
+     "step pointed at aoss"),
+
+    ("T2-tier-check-becomes-a-membership-test", DRIVER, DRIVER_TEST,
+     "    return tiers_observed == [expected]",
+     "    return expected in tiers_observed",
+     "a partial propagation delay makes SOME calls fall back; a membership "
+     "test accepts a p95 computed over a mixture of both tiers and labelled as "
+     "one of them"),
+
+    ("T3-a-fallback-reason-stops-counting", DRIVER, DRIVER_TEST,
+     "    tier_ok = _tier_is_as_asked(tiers, expected_tier) and not fallbacks",
+     "    tier_ok = _tier_is_as_asked(tiers, expected_tier)",
+     "a per-call fallback that lands back on the expected tier still means the "
+     "router did not do what was asked"),
+
+    ("T4-the-handler-guesses-the-expected-tier", DRIVER, DRIVER_TEST,
+     '                      expected_tier=str(event["expected_tier"]),',
+     "                      expected_tier=str(event.get('expected_tier') or "
+     "router.active_tier()),",
+     "defaulting to active_tier() compares the SSM parameter against itself "
+     "and passes for any fallback at all — the assertion becomes a tautology"),
+
+    ("T5-the-fallback-list-is-uncapped-again", DRIVER, DRIVER_TEST,
+     '        "fallbacks": len(fallbacks),\n'
+     '        "fallback_sample": fallbacks[:5],',
+     '        "fallbacks": fallbacks,',
+     "5,400 reasons of up to 300 characters on ONE CloudWatch log event, which "
+     "caps at 256 KiB: the record is truncated and span_status, error_rate and "
+     "dispositive_eligible are what get lost"),
 ]
 
 
