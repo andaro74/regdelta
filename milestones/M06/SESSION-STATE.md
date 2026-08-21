@@ -1,49 +1,85 @@
-# M06 — session state, 2026-08-20
+# M06 — session state, 2026-08-21
 
-Written at the end of the first M06 session so the next one starts from a
-record rather than from a re-derivation. **Nothing is deployed. Nothing has
-been spent.** Every AWS call this session made was read-only: Service Quotas,
-CloudWatch metrics, Cost Explorer, DynamoDB reads, and one `logs:TestMetricFilter`.
+Written so the next session starts from a record rather than a re-derivation.
+**Nothing is deployed. Nothing has been spent.** Every AWS call across both
+M06 sessions has been read-only: Service Quotas, CloudWatch metrics, Cost
+Explorer, DynamoDB reads, and one `logs:TestMetricFilter`.
 
 Branch `m06-load-and-observability`, cut from `m05-deploy-lifecycle` at
-`f1de2a3` (**not** from `main`; PR #12 is untouched and `main` is untouched).
-Head **`65c15e4`**, four commits, 29 files, +4541/-66. Working tree clean.
+`f1de2a3` (**not** from `main`; PR #12 and `main` are untouched).
 
-Suite: **1044 passed, 1 skipped, 3 failed** — the three failures are the known
+Suite: **1129 passed, 1 skipped, 3 failed** — the three are the known
 `test_replay_exit_codes` q03 FRAGILE gate, red by the seat's M05 decision.
 Lint clean across `src evals infra tests loadtest`.
 
 ---
 
-## The two findings that shaped the milestone
+## What the second session did
 
-### 1. SPEC/06's Tier B disposition clause cannot be executed in this account
+Session one built observability and found that SPEC/06's disposition clause
+could not be executed. Session two built the thing that executes the amended
+one, and **three review passes found five ways it would have retired Tier B
+without measuring it.** That is the milestone's real finding and it is why the
+file is this long.
 
-`L-ED2BADF9` caps Claude Opus 4.6 at **2,592,000 tokens/day** and reports
-`Adjustable: false`. One uncached `/query` costs **5,881.8 Opus tokens**
-(CloudWatch `AWS/Bedrock`, 60 golden calls of the M05 window), so the cap is
-**440 queries/day for everything this account does**.
+### The deploy surface (step 1)
 
-At SPEC/06's 500-concurrent-user profile the cap is gone **13.6 s** into the
-first of six required runs. Six five-minute holds are **324,688,133 tokens —
-125× the cap — $2,629**.
+`LoadDriverFn` in `regdelta-core`, its role threaded through `infra/app.py`
+into `regdelta-search`'s data-access policy as an index READER. It lives in the
+persistent stack because the Tier A half is taken with the hot tier destroyed;
+its AOSS grant lives in the ephemeral one, so the permission exists exactly as
+long as the collection does.
 
-And the profile does not measure what the clause names: retrieval is 2.6–5.8%
-of an uncached request, so 500 closed-loop users deliver **11.4 (Tier A) /
-25.8 (Tier B)** concurrent retrieval calls, not 500.
+`bedrock:InvokeModel` is scoped to **Titan Text Embeddings V2 alone**. Reusing
+`_bedrock_model_arns()` is the obvious edit and would hand a 90-call-per-second
+driver a grant on Opus 4.6. `loadtest/budget.py` cannot help there — it is a
+Python object inside the orchestrator and cannot constrain a console invoke.
+IAM can.
 
-`milestones/M06/spec06-disposition-amendment.md` is the proposal. **DRAFT v3,
-not adopted.** Two `pm-spec-reviewer` passes returned 10 then 13 blockers; all
-23 are dispositioned inline, six of them arithmetic that did not re-derive.
+### The orchestrator (step 2)
 
-### 2. LangGraph silently drops undeclared state keys
+`loadtest/retrieval_load.py` walks the pre-registered schedule (10/25/50/75/90
+calls/s × 60 s, three runs per tier, first discarded), invokes the driver per
+step, checkpoints after every run, merges each half into
+`loadtest/reports/tier-disposition-<sha>.json` and judges. Six exit codes.
+Everything gated is **re-derived** from the recorded steps —
+`dispositive_eligible` is the driver's word and is deliberately not read.
 
-`nodes.verdict` returned `stop_reason` and `truncated`; `RegDeltaState`
-declared neither, so M05's fix could never have worked. **This closes M05 open
-thread 9** — not "we have not looked" but "it cannot work". Found by compiling
-a two-node graph offline, for $0.
+`make tier-disposition` and `make tier-disposition-price`.
 
-Fixed, and generalised into `tests/test_graph_state_declares_node_outputs.py`.
+---
+
+## The five ways it would have retired Tier B without measuring it
+
+Each was found by a review, each is fixed, and each has the mutation that
+would undo it.
+
+| # | found by | the defect |
+|---|---|---|
+| 1 | security-reviewer | A step could report `tiers_observed ["s3vectors"]`, `errors 0`, `dispositive_eligible true` while pointed at AOSS. The router falls back silently by design, so a data-access-policy propagation delay filed **Tier A's latencies under Tier B**. |
+| 2 | security-reviewer | The driver's `aoss:APIAccessAll` grant was guarded by nothing — deleting all four lines left the **entire suite green**. Without it every AOSS call 403s, the router falls back, same outcome as 1. |
+| 3 | security-reviewer | The p95 was computed over **survivors**. A call that never returned was in no sample, so invisible in `n` AND in the error rate; measured, 2 of 20 calls returned and the step reported `error_rate 0.0` and called itself eligible. Biased toward whichever tier failed more — it can manufacture a `keep` as readily as a `retire`. |
+| 4 | eng-code-reviewer | `attempts_per_tier` counted **recorded attempts, not failed measurements**. Reproduced: one gate-failed attempt (the corpus moved between halves) plus one real failed measurement gave `verdict: retire`, exit 5. |
+| 5 | pm-spec-reviewer | A fallback **disqualified** a step, so Tier B degrading under concurrency — the only regime its remaining case is about — produced no error, no dispositive step, no failed measurement and no attempt. Only unbounded re-runs, with the default outcome unreachable by the behaviour the clause exists to measure. |
+
+Two more that would have measured the wrong thing rather than the wrong tier:
+
+- **`s3vectors_tier`'s connection pool was botocore's default 10**, against ~32
+  (Tier A) and ~80 (Tier B) calls in flight at the top step. The excess blocks
+  in urllib3 **inside `router.retrieve()`** — the interval the p95 is defined
+  over — so the comparison would have been between two queues in one process.
+  `config.RETRIEVAL_POOL_SIZE`.
+- **`aoss_client` rebuilt a botocore Session per request**: 6.430 ms median of
+  GIL-bound CPU, AOSS path only, inside the measured interval — 579 ms of CPU
+  per wall second at 90 calls/s. Measured offline,
+  `milestones/M06/aoss_per_call_overhead.json`. Memoised.
+
+**Still present and RULED, not fixed:** `aoss_client` opens a fresh TCP+TLS
+connection per call because nothing installs an opener with a pool, while Tier
+A holds a urllib3 pool. Not measurable offline, and not a change to make in the
+week Tier B is disposed of. The seat ruled **option 2 — record it and run**, and
+it is in every report as `known_limitations`, which bounds a `retire` verdict to
+*RegDelta's AOSS tier as implemented* rather than to OpenSearch Serverless.
 
 ---
 
@@ -52,84 +88,77 @@ Fixed, and generalised into `tests/test_graph_state_declares_node_outputs.py`.
 | area | state |
 |---|---|
 | `shared/observability.py` | EMF + X-Ray subsegment over the daemon UDP socket. **No new runtime dependency.** |
-| `graph/instrument.py` | Per-node span policy. Every `RegDeltaState` key has an explicit disposition; five are `SECRET` and never logged. |
-| `graph/graph.py` | All seven nodes wrapped. |
-| Token capture | `supervisor_usage` / `verdict_usage`, one key per model-calling node. |
-| `api.py` | Request-level `QueryLatency` / `Queries` by cache status and verdict status. |
-| `infra/core/observability.py` | Dashboard `regdelta`, 5 alarms, 2 janitor metric filters, X-Ray tracing, nightly rule. |
-| `src/ops/nightly.py` | Free nightly check — graph logic, tier, corpus, eval staleness. **Verified live: 52 docs, 3/3 dated, $0.** |
-| `src/ops/retrieval_load.py` | The open-loop step driver. Tested, not yet deployed. |
-| `loadtest/budget.py` | The seat's **$20 ceiling**, as two refusals: dollars, and non-adjustable daily caps. |
-| `shared/corpus.py` | One fingerprint definition; both callers agree and match the M05 card. |
-| `shared/util.py` | `retry` now counts throttles — the exclusion SPEC/06 states was unenforceable without it. |
+| `graph/instrument.py` | Per-node span policy; optional `on_span` sink so the driver can record each span's emission status per call. |
+| `src/ops/retrieval_load.py` | The open-loop step driver. Thread ceiling, absolute join deadline, three disjoint call outcomes, all three populations reported. |
+| `loadtest/retrieval_load.py` | The orchestrator and the judgement. |
+| `loadtest/budget.py` | The $20 ceiling as two refusals. **`Meter` is UNUSED and now says so** — three comments and the recorded artifact claimed it enforced the ceiling on actuals. |
+| `evals/check_opus_headroom.py` | **NEW.** The seat's "Opus must not reach throttle", as a measured pre-flight refusal. Wired into `make smoke` and `make evals` with `&&`. |
+| `infra/core/observability.py` | Dashboard, 5 alarms, 2 janitor filters, X-Ray, nightly rule. `EvalStalenessAlarm` now BREACHES on missing data. |
+| `src/ops/nightly.py` | Free nightly check; emits a staleness **sentinel** rather than nothing when no pass rate was ever recorded. |
+| `loadtest/DEFERRED.md` | **NEW.** The three Done-when clauses with no disposition in writing, now with reasons. `locustfile.py` deleted. |
 
-**Mutation harnesses, all clean:** `state_declaration_mutations` 6/6,
-`budget_guard_mutations` 11/11. `janitor_filter_probe` puts six real janitor
-outputs through `logs:TestMetricFilter` — all six match as intended.
-
----
-
-## Decisions the human seat made this session
-
-1. **Observability in full; the `/query` load profiles (100- and 500-user) are
-   DEFERRED**, quota as the stated reason.
-2. **The 28-cent Tier B disposition measurement IS wanted.**
-3. **Hard ceiling of $20 on any load test.** Now `config.LOADTEST_BUDGET_USD`,
-   enforced by `loadtest/budget.py`, pinned by a test, mutation-checked.
-4. **The nightly job must be free** — hence no golden questions in it.
-
-Consequence: **`locust` is no longer needed.** No new dependency has been added
-at any point this milestone.
+**Mutation harnesses:** `load_driver_guard_mutations` and
+`disposition_guard_mutations`, five families each
+(widen / remove / tier / sample-completeness / population / ordering). Two
+survivors this session were real gaps — an idempotency case and a redundancy
+that let a mutation hide — and both are closed.
 
 ---
 
-## What is left, in order
+## The rulings taken 2026-08-21
 
-1. **Deploy surface for the driver.** `LoadDriverFn` in `regdelta-core`;
-   `infra/app.py` passes its role ARN to the search stack; `search_stack.py`
-   adds it to `index_readers` (the AOSS data-access policy — the driver cannot
-   read the index without it). This is an infra/IAM diff → **security-reviewer**.
-2. **`loadtest/retrieval_load.py`** — the orchestrator that walks the
-   pre-registered schedule (10/25/50/75/90 calls/s × 60 s), invokes the driver
-   per step per tier, and writes
-   `loadtest/reports/tier-disposition-<sha>.json` with the verdict.
-3. **`make tier-disposition`** — exits non-zero on a dirty sha, mismatched
-   corpus fingerprints across halves, a resolved tier that disagrees with the
-   half it was recorded under, or no qualifying dispositive step.
-4. **Amendment v4** — add the `/query` deferral and the nightly-set
-   interpretation as named changes, then **re-run `pm-spec-reviewer`** and take
-   the seat's ruling.
-5. **`security-reviewer`** on the infra/IAM diff, **`eng-code-reviewer`** on the
-   whole branch. Note for the reviewer: `WILDCARD_EXEMPT` in
-   `tests/test_query_fn_iam.py` is a new, pinned, two-action X-Ray exemption to
-   an existing security rule, recorded as **documented-not-measured** because
-   this repo asserted the same "no resource ARNs" claim about `aoss` at M05 and
-   it was false.
-6. **The window** — `make core`, `make up`, the disposition run, one
-   `make smoke` (~$0.24) to populate the dashboard, dashboard screenshot,
-   `make down`. Budget **≈ $0.55**; ceiling $20.
+Recorded in `spec06-disposition-amendment.md` as **rulings with sources**, not
+approvals (CLAUDE.md, ADR-0005).
 
-**The disposition run is BLOCKED until step 1 lands**, and the amendment says
-so: SPEC/06 defines the measured interval as the one carried on the per-node
-retrieval span, and the report must record the span emission status.
+1. **Item E — the fallback split ADOPTED.** A resolved-tier mismatch is a gate
+   refusal; a fallback during a step is a search-backend failure, counted in
+   the error rate, leaving the step dispositive with no latency sample from it.
+2. **Item D — option 2.** Record the transport asymmetry and run.
+3. **Item B — ratified**, with its direction corrected: it IS a strictness
+   change against Tier B, in one region.
+4. **Change 8 split out** into `spec06-nightly-amendment.md` — it amends
+   Observability, not the disposition clause.
+5. **Done-when: both `/query` profiles, the report artifacts and the chaos test
+   DEFERRED**, reasons in `loadtest/DEFERRED.md`.
+6. **Session ceiling $25**; `config.LOADTEST_BUDGET_USD` stays at the ruled $20.
+
+**Both amendments are DRAFTS awaiting adoption.** If they are not adopted, the
+deferrals have no authority and M06 does not close.
+
+---
+
+## What is left
+
+1. **The window.** `make core`, `make up`, the disposition run, one
+   `make smoke`, dashboard screenshot, `make down`. Priced at **≈$0.49** by
+   `make tier-disposition-price` plus the smoke run; ceiling $20 in code, $25
+   for the session.
+2. **The nightly verification artifact** — `pm-spec-reviewer` blocker B8. One
+   free read-only invocation of `NightlyCheckFn`, recorded as
+   `milestones/M06/nightly-verification.json`. Owed before the nightly
+   amendment is acted on.
+3. **Re-run `security-reviewer` and `eng-code-reviewer`** on this session's
+   fix commits before the PR.
 
 ---
 
 ## Traps, so the next session does not re-learn them
 
-- **A unit test of the driver reached the real retrieval path** and asked for
-  50,000 calls/second. It hung, was killed, and `AWS/Bedrock` showed no Titan
-  invocations, so nothing was spent — luck, not design. Both fixtures in
-  `tests/test_retrieval_load_driver.py` are now `autouse`, and one of them fails
-  any test that constructs a boto3 client. **Keep it that way.**
-- **The driver over-reported its own rate by 14%** at small n, because it
-  divided by the gap between first and last dispatch rather than the window it
-  held. That made a well-behaved step *ineligible*.
-- **`DocTimeline` has no `dates` attribute.** The nightly check asked for one
-  through `getattr(..., default)` and would have reported every document
-  undated, nightly, forever.
-- **Two corpus fingerprints of the same 52 documents** differed by one
-  separator. One definition now, in `shared/corpus.py`.
+- **A heredoc is not a literal.** Three separate edits to the mutation
+  harnesses were written as `bash <<'PY'` with `\n` inside generated string
+  literals, and all three produced a file with real newlines inside quotes —
+  fourteen syntax errors each time. The working rule says write scripts to a
+  file; it exists for this. Anchors are now read out of the source and
+  `repr`'d, so a reflowed line cannot silently turn a mutation into
+  NOT-APPLIED.
+- **`make` exits 2 for any nonzero recipe status.** The six exit codes do not
+  survive it; read `disposition.verdict` from the artifact.
+- **A NOT-APPLIED mutation is a guard nobody checked** wearing the word
+  "killed" in the previous run's JSON.
+- **Redundant defences hide mutations.** Two places excluded fallen-back calls
+  from the latency population, so deleting either one survived. One place now.
+- **Piping a harness into `tail` masks its exit code** — done once this
+  session, on the run that had a survivor.
 - `q03` stays failing, `q12`/`q15` stay deferred, and
   `milestones/M05/negation_scope_false_passes.py` remains the acceptance bar
   for any future attempt. **Not M06's work.**

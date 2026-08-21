@@ -145,17 +145,41 @@ def test_the_nightly_alarm_treats_missing_data_as_breaching(template):
 
 
 @pytest.mark.parametrize("metric", ["JanitorCouldNotAct", "HotTierUp",
-                                    "EvalPassRate", "EvalStalenessHours"])
+                                    "EvalPassRate"])
 def test_the_sparse_alarms_do_not_fire_on_a_quiet_day(template, metric):
-    """These four are fed by events that legitimately do not happen daily.
+    """These three are fed by events that legitimately do not happen daily.
 
     `JanitorCouldNotAct` comes from a log filter that emits nothing on a night
     the janitor had nothing to report; `EvalPassRate` is published only when a
     golden run records one. Breaching-on-missing would fire every healthy day.
+
+    `EvalStalenessHours` WAS IN THIS LIST and has been taken out — see the test
+    below. It is not sparse: the nightly emits it on every run.
     """
     alarm = next(p for p in _alarms(template).values()
                  if p.get("MetricName") == metric)
     assert alarm["TreatMissingData"] == "notBreaching"
+
+
+def test_the_staleness_alarm_breaches_on_missing_data(template):
+    """THE HOLE, and it was the whole watch.
+
+    `EvalStalenessHours` used to be treated as sparse, alongside metrics that
+    genuinely do not appear every day. It is not sparse — the nightly emits it
+    on every run — and treating it as such produced the exact failure it
+    exists to catch: with no `EvalPassRate` ever published, `nightly` omitted
+    the metric entirely, the alarm sat in INSUFFICIENT_DATA, and
+    INSUFFICIENT_DATA was notBreaching. Nobody had measured anything, and
+    nothing said so. eng-code-reviewer, M06.
+
+    Two changes close it and both are needed: the nightly emits a sentinel
+    rather than nothing (`src/ops/nightly.py:NEVER_RECORDED_HOURS`), which
+    covers "no run has ever recorded a pass rate"; and this, which covers the
+    nightly not running at all.
+    """
+    alarm = next(p for p in _alarms(template).values()
+                 if p.get("MetricName") == "EvalStalenessHours")
+    assert alarm["TreatMissingData"] == "breaching"
 
 
 def test_the_regression_alarm_sits_below_the_ruled_false_fail(template):

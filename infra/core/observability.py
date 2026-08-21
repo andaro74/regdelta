@@ -246,11 +246,20 @@ def add_observability(scope: Construct, *, query_fn: _lambda.Function,
             threshold=168,      # one week
             comparison_operator=cw.ComparisonOperator.GREATER_THAN_THRESHOLD,
             evaluation_periods=1,
-            treat_missing_data=cw.TreatMissingData.NOT_BREACHING,
+            # BREACHING, and the change is a finding. This was NOT_BREACHING,
+            # and `src/ops/nightly.py` omitted `EvalStalenessHours` entirely
+            # when no pass rate had ever been published — so the state this
+            # alarm exists for, "nobody has measured anything", produced no
+            # datapoint and therefore no alarm. The nightly now emits a
+            # sentinel; this covers the other way in, which is the nightly not
+            # running at all. eng-code-reviewer, M06.
+            treat_missing_data=cw.TreatMissingData.BREACHING,
             alarm_description=(
                 "No golden run has recorded a pass rate for over a week, so "
                 "the regression alarm above has had nothing to watch. A gate "
-                "nobody runs is not a gate."),
+                "nobody runs is not a gate. Missing data BREACHES: an absent "
+                "metric here means the nightly did not run, which is the same "
+                "failure by another route."),
         ),
     ]
 

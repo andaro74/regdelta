@@ -181,9 +181,16 @@ RETRIEVAL_POOL_SIZE = int(os.environ.get("RETRIEVAL_POOL_SIZE", "128"))
 
 # The dollar ceiling a load run may not cross. Approved by the human seat at
 # M06 open. `loadtest/budget.py` refuses BEFORE spending anything if the plan
-# exceeds it, and aborts DURING the run if measured spend reaches it — the
-# second is the one that matters, because a pre-flight estimate is a model and
-# the meter is a measurement.
+# exceeds it.
+#
+# It does NOT abort mid-run. This comment used to say it did — "the second is
+# the one that matters" — and `loadtest.budget.Meter`, the thing that would
+# have done it, has no caller outside its own tests. Corrected rather than
+# implemented, because for THIS run a per-call meter is the wrong instrument:
+# the disposition's Bedrock cost is three cents of a twenty-three-cent run, the
+# rest is Lambda-seconds and OCU-hours that a token meter cannot express, and
+# the control that actually bounds a runaway is the load driver's IAM grant —
+# Titan embeddings and no other model. eng-code-reviewer, M06.
 LOADTEST_BUDGET_USD = float(os.environ.get("LOADTEST_BUDGET_USD", "20.00"))
 
 # ------------------------------------------------------------- graph (03)

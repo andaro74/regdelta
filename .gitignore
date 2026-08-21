@@ -21,3 +21,8 @@ build/
 # hooks and is tracked; this file holds allow-rules scoped to one operator's
 # AWS account and machine, which are not a property of the project.
 .claude/settings.local.json
+
+# A mutation harness leaves one of these only while a mutation is applied
+# (milestones/M06/*_guard_mutations.py). Committing one would be committing a
+# mutated source waiting to be restored over a real edit.
+*.mutation-backup

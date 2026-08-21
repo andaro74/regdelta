@@ -35,9 +35,12 @@ failure a nightly job that never runs the set would otherwise hide.
 
 ## Everything here is free
 
-DynamoDB reads on-demand, one SSM read, and `PutMetricData`. No Bedrock, no
-S3 Vectors query, no AOSS query. A nightly job that costs money is a nightly
-job someone eventually turns off.
+DynamoDB reads on-demand, one SSM read, and one CloudWatch READ
+(`GetMetricStatistics`). No `PutMetricData` — the metrics leave through EMF on
+stdout, which is why the role has no metric-write grant and the numbers on the
+dashboard are not forgeable from a second place. No Bedrock, no S3 Vectors
+query, no AOSS query. A nightly job that costs money is a nightly job someone
+eventually turns off.
 """
 from __future__ import annotations
 
@@ -54,6 +57,16 @@ from shared import config, observability
 #: silence means the golden set has stopped gating anything.
 STALENESS_ALARM_HOURS = float(os.environ.get("EVAL_STALENESS_ALARM_HOURS", "168"))
 
+#: What `EvalStalenessHours` reports when no pass rate has EVER been recorded,
+#: or when the lookback found none.
+#:
+#: A SENTINEL, not a guess, and it has to be a number rather than an absence:
+#: an omitted metric leaves the alarm in INSUFFICIENT_DATA, which was
+#: `NOT_BREACHING`, so the one state the watch exists for produced silence.
+#: 8,760 hours is a year — comfortably above any threshold anyone would set,
+#: and honest, because "no run has ever been recorded" is at least that stale.
+NEVER_RECORDED_HOURS = 8_760
+
 
 def _cloudwatch():
     return boto3.client("cloudwatch", region_name=config.REGION)
@@ -63,10 +76,17 @@ def _tier() -> dict:
     """Which retrieval tier is live, and therefore whether OCU is billing.
 
     `router.active_tier()` reads the SSM parameter through the same memo the
-    request path uses. A hot tier still up at 01:00 is not an error — the
-    janitor runs at the same hour and may not have finished — but it is the
-    single most expensive fact this function can report, so it is reported as a
-    metric rather than only as prose.
+    request path uses. THIS FUNCTION RUNS AT 02:00 UTC, an hour after the
+    janitor's 01:00 — deliberately, so it reports the state the janitor LEFT
+    rather than the state it was about to change; at the same hour the two
+    would race and the metric would be noise. A hot tier still up at 02:00 is
+    therefore not "the janitor may not have finished", it is the janitor having
+    failed to stop the billing, which is the single most expensive fact this
+    function can report. So it is a metric, not only prose.
+
+    (The earlier version of this comment said 01:00 and offered the race as the
+    excuse. Both were wrong about the schedule this code actually runs on —
+    `infra/core/observability.py` sets the rule. eng-code-reviewer, M06.)
     """
     from retrieval import router
 
@@ -140,11 +160,24 @@ def _graph_logic() -> dict:
 def _eval_staleness() -> dict:
     """Hours since a golden run last recorded a pass rate.
 
-    Reads the metric `evals/run_evals.py --record` publishes. `None` when the
-    metric has never been published, which is DISTINCT from zero and from a
-    large number: "no run has ever been recorded" is a different state from
-    "the last one was long ago", and the alarm treats missing data as breaching
-    for exactly that reason.
+    Reads the metric `evals/run_evals.py --record` publishes.
+
+    `hours` is None when the metric has never been published, or when the read
+    itself failed. Those are DISTINCT states from "the last run was long ago"
+    and the report keeps them distinct — but the metric this function EMITS
+    must not go missing in either of them, and it used to.
+
+    THE HOLE, and it was the whole watch: with no `EvalPassRate` ever published
+    (or none inside the ninety-day lookback), `handler` omitted
+    `EvalStalenessHours` entirely, and `EvalStalenessAlarm` was
+    `NOT_BREACHING`. No datapoint, no alarm — in precisely the state the alarm
+    exists to catch, which is "nobody has measured anything". The comment here
+    asserted the opposite ("the alarm treats missing data as breaching for
+    exactly that reason"), and that was false. eng-code-reviewer, M06.
+
+    Both halves are fixed: `handler` now emits a SENTINEL rather than nothing,
+    and the alarm treats missing data as breaching so a nightly that does not
+    run at all is also visible.
     """
     try:
         end = time.time()
@@ -191,13 +224,21 @@ def handler(event, context):
         "GraphLogicChecked": (float(len(logic["checked"])), "Count"),
     }
     if tier["hot_tier_up"] is not None:
-        # 1 means OCU is billing at 01:00 UTC, which is the fact this whole
+        # 1 means OCU is billing at 02:00 UTC — an hour after the janitor
+        # was supposed to have stopped it — which is the fact this whole
         # lifecycle exists to prevent going unnoticed.
         metrics["HotTierUp"] = (1.0 if tier["hot_tier_up"] else 0.0, "Count")
     if corpus.get("available"):
         metrics["CorpusDocuments"] = (float(corpus["documents"]), "Count")
-    if staleness.get("hours") is not None:
-        metrics["EvalStalenessHours"] = (float(staleness["hours"]), "None")
+    # ALWAYS EMITTED. See `_eval_staleness`: an absent metric was not an alarm,
+    # so the state "no golden run has ever recorded a pass rate" — the exact
+    # state this watch is for — produced silence. The sentinel is a real number
+    # above the threshold rather than a magic one: it says "at least this
+    # stale", which is true, and it puts the alarm into ALARM rather than
+    # INSUFFICIENT_DATA.
+    metrics["EvalStalenessHours"] = (
+        float(staleness["hours"]) if staleness.get("hours") is not None
+        else float(NEVER_RECORDED_HOURS), "None")
 
     observability.emit(metrics, {"check": "nightly"},
                        {"tier": tier["tier"],

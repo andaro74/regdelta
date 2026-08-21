@@ -1,6 +1,26 @@
 # DRAFT v4 — proposed amendment to SPEC/06's Tier B disposition clause
 
 **Status: DRAFT for the PM seat. Not adopted. Nothing has been spent.**
+
+> ## Rulings taken 2026-08-21, and the sources they rest on
+>
+> The human seat ruled on the five items this document had open. Recorded as
+> **rulings with sources**, not as approvals: what makes a ruling here sound is
+> a citation a reader can falsify, never a signature (CLAUDE.md, ADR-0005).
+>
+> | item | ruling | the source it rests on |
+> |---|---|---|
+> | **IIb E** — a fallback disqualifies a step | **SPLIT ADOPTED.** A resolved-tier mismatch is a gate refusal; a fallback during a step is a search-backend failure, goes in the error rate, and leaves the step dispositive with no latency sample from it. | `router._resolve` catches `AossError` and RETURNS, so the call is not an error — traced by `pm-spec-reviewer`. Under the old rule Tier B's most likely failure mode produced no error, no dispositive step, no failed measurement and no attempt. Implemented; `tests/test_retrieval_load_driver.py` carries the three cases. |
+> | **IIb D** — the AOSS transport asymmetry | **OPTION 2.** Record it as a stated limitation and run. | The clause retires "the `regdelta-search` stack, the AOSS client, the reindex Lambda and the routing branch" — an implementation, not a judgement about OpenSearch Serverless. `loadtest/retrieval_load.py:KNOWN_LIMITATIONS` is the field blocker B9 required; without it option 2 was a promise the report could pass every gate without keeping. |
+> | **IIb B** — comparability | **RATIFIED**, with its direction as the review corrected it: a strictness change against Tier B in one region (>5 pp worse on errors *and* faster on p95). | `security-reviewer` measured a step reporting `n 3`, `error_rate 0.95`, `dispositive_eligible true`. The threshold is non-binding wherever the error disjunct decides, so it adds no new material number. |
+> | **IIb A / C** | **CORRECTION and RATIFICATION** as proposed. | `n_dispositive` pooled is 1,200–10,800; the completeness condition makes Change 3's own words operative. |
+> | **Change 8** — the nightly set | **SPLIT OUT.** It amends the Observability contract, not this clause. | `pm-spec-reviewer` blocker B2. Now `milestones/M06/spec06-nightly-amendment.md`, ruled separately. |
+> | **Done-when** — both `/query` profiles, the report artifacts, the chaos test | **DEFERRED, with reasons in writing.** | `loadtest/DEFERRED.md`. Change 7 carries the profiles; the chaos test is narrowed and deferred because reaching a real Opus throttle is $23.63 and 115.7% of a non-adjustable daily cap, and the seat's standing instruction is that Opus must not reach throttle (`evals/check_opus_headroom.py` enforces it). |
+>
+> **The seat also set a $25 ceiling on the session** and required that Opus not
+> reach throttle. `config.LOADTEST_BUDGET_USD` stays at the $20 ruled at M06
+> open — the disposition prices at $0.23 — and the Opus instruction is
+> implemented as a measured pre-flight refusal rather than as a note.
 Raised by engineering at M06 open, before any M06 measurement exists, because
 the clause as written **cannot be executed in this account**.
 
@@ -120,8 +140,10 @@ they describe only the 20%.*
 - `R_hit` ≤ 0.5 s — **`SPEC/04:40`, "a cached repeat query returns < 500ms".
   A criterion, not a measurement**, used as an upper bound. Faster hits make
   this finding stronger.
-- **Think time zero.** `loadtest/locustfile.py` is a two-line TODO stub; there
-  is no `wait_time` to cite either way.
+- **Think time zero.** There was no `wait_time` to cite either way:
+  `loadtest/locustfile.py` was a two-line TODO stub, and at M06 close it was
+  deleted — locust is not a dependency and the profiles it named are deferred
+  (`loadtest/DEFERRED.md`).
 - **No server-side saturation** — per-request latency is held at its unloaded
   value with 500 in flight. This flatters the finding, and it is harmless:
   `R` would have to rise from 3.096 s to **68 s — 22× — before even one
@@ -460,7 +482,18 @@ instead. Recorded because the alternative was priced and is still available:
 $4.09 and $10.23, both inside the $20 ceiling, and both measuring
 RegDelta-with-Haiku rather than RegDelta.
 
-### Change 8 — the nightly set is the deterministic graph checks, and runs no golden question
+### Change 8 — MOVED to `milestones/M06/spec06-nightly-amendment.md`
+
+*`pm-spec-reviewer` blocker B2, ruled 2026-08-21: this amends SPEC/06's
+**Observability** section, not the Tier B disposition clause, and a ruling on
+the disposition should not silently carry it. Split into its own one-page
+amendment, which can be ruled on separately and in either order. The finding,
+the proposed clause text, the cost and the staleness-alarm hole are all there.*
+
+*Kept as a heading rather than deleted so the numbering in the table above and
+in the corrections list still resolves.*
+
+### Change 8, as it stood here — the nightly set is the deterministic graph checks
 
 *Also decided at M06 open — "the nightly job must stay free" — and implemented
 in `src/ops/nightly.py`. Written here because it is an INTERPRETATION of
@@ -667,7 +700,7 @@ a judgement about the service. But the seat should choose, because "Tier B was
 slower" and "our AOSS client was slower" are different sentences and the
 artifact will carry one of them.
 
-### E — OPEN. A fallback disqualifies a step, and the review says that is the wrong answer
+### E — RULED 2026-08-21. The split is adopted, and implemented
 
 *Blockers B1 and B6 from `pm-spec-reviewer`'s third pass. Left OPEN rather than
 resolved: this is a change to what the clause means, in the direction of `keep`,
@@ -722,9 +755,16 @@ measurement — bounded at two attempts by Change 6, reaching `retire` by the
 default outcome. That terminates, which is the property the current design
 lacks.
 
-**Not implemented pending the ruling.** Part III below carries the built
-behaviour, marked. Changing it is roughly a ten-line change to `_step_ok` and
-the driver's sample partition, plus the mutations that would delete it.
+**RULED: the split is adopted.** Implemented in `src/ops/retrieval_load.py`
+(the sample partition: a fallen-back call carries no latency and is counted in
+the error-rate numerator) and in `loadtest/retrieval_load.py` (`_step_ok` no
+longer refuses on a fallback). `tests/test_retrieval_load_driver.py` carries
+the three cases — wholesale fallback, partial fallback, and a fallback that
+lands back on the expected tier — and the mutation harness carries the
+mutations that would undo it.
+
+*The three tests that encoded the OLD rule were rewritten rather than deleted,
+so the diff shows the semantics changing rather than assertions disappearing.*
 
 ---
 
@@ -838,14 +878,12 @@ deferred. `pm-spec-reviewer`, third pass, blocker B3.
 > within 5% of the driven rate for the whole step, neither tier recorded a
 > Titan throttle in it, **the driver accounted for every call it dispatched,
 > at least one call returned a latency, and every call that answered came from
-> the tier the step was pointed at with no fallback recorded** — **Part IIb E,
-> WHICH IS OPEN.** The call-accounting and at-least-one-latency conditions are
-> IIb C and are settled; the tier-provenance and no-fallback conditions are
-> what E asks the seat to rule on, and if the split is adopted this sentence
-> becomes "…and the resolved tier at step start matched the half, with any
-> fallback counted in that tier's error rate rather than disqualifying the
-> step". The report carries all three populations per step — dispatched,
-> returned, and the number carrying a latency. p95 is computed within that step, per tier; every other
+> the tier the step was pointed at** — with **any fallback counted in that
+> tier's retrieval error rate rather than disqualifying the step**, and
+> contributing no latency sample, since a fallen-back call's timing describes
+> the tier that rescued it (Part IIb E, ruled 2026-08-21). The report carries
+> all three populations per step — dispatched, returned, and the number
+> carrying a latency — and, per step, the reasons any refusal was made. p95 is computed within that step, per tier; every other
 > step is reported beside it and is not dispositive. **If no step qualifies the
 > run is a failed measurement and not a retirement**, and the run is repeated
 > once at the same schedule; a second failure is recorded and the clause is

@@ -227,16 +227,29 @@ MUTATIONS = [
      "every inline-policy assertion in the file reads identically with "
      "AdministratorAccess attached"),
 
+
+    ("S7-the-thread-ceiling-blocks-instead-of-refusing", DRIVER, DRIVER_TEST,
+     '        if inflight.current >= THREAD_CEILING:',
+     '        while inflight.current >= THREAD_CEILING:\n            time.sleep(0.001)\n        if False:',
+     "waiting for a slot CLOSES THE LOOP: the offered load becomes a "
+     "function of the tier's own latency, which is the single property "
+     "this driver exists to avoid, and the achieved-rate check would "
+     "report the reduced rate as though it were the schedule"),
+
+    ("S8-the-achieved-rate-is-over-dispatched-not-offered", DRIVER, DRIVER_TEST,
+     '    achieved = offered / dispatch_elapsed if dispatch_elapsed > 0 else 0.0',
+     '    achieved = dispatched / dispatch_elapsed if dispatch_elapsed > 0 else 0.0',
+     "a driver that refused half its dispatches would report the reduced "
+     "rate as the schedule — coordinated omission by another route, and "
+     "`rate_within_5pct` would call it well behaved"),
     # ------------------------------------------------------ T: the tier check
     # The guard that stops a Tier B run which never reached Tier B from being
     # recorded as one. The clause's default outcome is retirement, so a false
     # pass here is the most expensive single failure in the milestone.
 
     ("T1-eligibility-ignores-the-tier", DRIVER, DRIVER_TEST,
-     '    eligible = (within and retries["total"] == 0 and tier_ok and complete\n'
-     '                and bool(latencies))',
-     '    eligible = (within and retries["total"] == 0 and complete\n'
-     '                and bool(latencies))',
+     '    eligible = (within and retries["total"] == 0 and tier_ok and complete\n                and bool(latencies))',
+     '    eligible = (within and retries["total"] == 0 and complete\n                and bool(latencies))',
      "the state the code was in when security-reviewer measured it: "
      "tiers_observed ['s3vectors'], errors 0, dispositive_eligible true, on a "
      "step pointed at aoss"),
@@ -248,11 +261,21 @@ MUTATIONS = [
      "test accepts a p95 computed over a mixture of both tiers and labelled as "
      "one of them"),
 
-    ("T3-a-fallback-reason-stops-counting", DRIVER, DRIVER_TEST,
-     "    tier_ok = _tier_is_as_asked(tiers, expected_tier) and not fallbacks",
-     "    tier_ok = _tier_is_as_asked(tiers, expected_tier)",
-     "a per-call fallback that lands back on the expected tier still means the "
-     "router did not do what was asked"),
+    ("T3-a-fallback-stops-counting-as-an-error", DRIVER, DRIVER_TEST,
+     '    failures = fell_back + raised',
+     '    failures = list(raised)',
+     "Part IIb E, in the direction the ruling did NOT take. A fallback is "
+     "the search backend failing to answer — SPEC/06's numerator is exactly "
+     "'AOSS or S3 Vectors 5xx' — so dropping it from the error rate hides "
+     "Tier B's most likely failure mode from the one disjunct that could "
+     "still keep it"),
+
+    ("T3b-a-fallen-back-call-contributes-its-latency", DRIVER, DRIVER_TEST,
+     '            "ms": None if fallback else result.get("retrieval_ms"),',
+     '            "ms": result.get("retrieval_ms"),',
+     "the other half of the same ruling: a fallen-back call was timed by "
+     "the tier that RESCUED it, so folding its latency into this tier's "
+     "p95 measures the wrong backend under this one's name"),
 
     ("T4-the-handler-guesses-the-expected-tier", DRIVER, DRIVER_TEST,
      '                      expected_tier=str(event["expected_tier"]),',
@@ -269,23 +292,25 @@ MUTATIONS = [
     # biased toward the tier that failed more.
 
     ("S1-stragglers-are-abandoned", DRIVER, DRIVER_TEST,
-     "        t.join(timeout=JOIN_TIMEOUT_S)",
-     "        t.join(timeout=0)",
+     '        t.join(timeout=max(0.0, deadline - time.perf_counter()))',
+     '        t.join(timeout=0)',
+
      "SECURITY-REVIEWER'S OWN, kept verbatim: deleting the driver's entire "
      "wait-for-stragglers behaviour left the whole driver test file green, "
      "because every assertion in it was relative to `returned` and nothing "
      "compared `returned` to `dispatched`"),
 
     ("S2-only-a-tenth-of-the-calls-are-waited-for", DRIVER, DRIVER_TEST,
-     "    for t in threads:\n        t.join(timeout=JOIN_TIMEOUT_S)",
-     "    for t in threads[:max(1, len(threads) // 10)]:\n"
-     "        t.join(timeout=JOIN_TIMEOUT_S)",
+     '    for t in threads:\n        t.join(timeout=max(0.0, deadline - time.perf_counter()))',
+     '    for t in threads[:max(1, len(threads) // 10)]:\n        t.join(timeout=max(0.0, deadline - time.perf_counter()))',
+
      "the same defect as a subset rather than as a wholesale drop: a p95 over "
      "whichever tenth happened to be waited for"),
 
     ("S3-eligibility-stops-requiring-a-complete-account", DRIVER, DRIVER_TEST,
-     "    complete = returned == dispatched and dispatched > 0",
-     "    complete = True",
+     '    complete = (returned == dispatched == offered and offered > 0\n                and not abandoned)',
+     '    complete = True',
+
      "the clause the S family exists to protect. Measured before it existed: "
      "2 of 20 calls returned, error_rate 0.0, dispositive_eligible true"),
 
@@ -310,13 +335,43 @@ MUTATIONS = [
      "that was fast' — the third conjunct, unmutated until now"),
 
     ("T5-the-fallback-list-is-uncapped-again", DRIVER, DRIVER_TEST,
-     '        "fallbacks": len(fallbacks),\n'
-     '        "fallback_sample": fallbacks[:5],',
-     '        "fallbacks": fallbacks,',
+     '        "fallbacks": len(fell_back),\n        "fallback_sample": [s["fallback"] for s in fell_back[:5]],',
+     '        "fallbacks": [s["fallback"] for s in fell_back],',
+
      "5,400 reasons of up to 300 characters on ONE CloudWatch log event, which "
      "caps at 256 KiB: the record is truncated and span_status, error_rate and "
      "dispositive_eligible are what get lost"),
 ]
+
+
+#: Where a pristine copy lives while a mutation is applied.
+#:
+#: THE `finally` BELOW ONLY RUNS IF THE PROCESS GETS TO RUN IT. A tool timeout
+#: SIGKILLed this harness mid-mutation at M06 and left the source carrying one;
+#: the next run reported BASELINE IS RED for a reason that read like a broken
+#: test rather than like a leftover edit. A sidecar survives the kill.
+BACKUP_SUFFIX = ".mutation-backup"
+
+
+def _backup_path(path):
+    return path.with_suffix(path.suffix + BACKUP_SUFFIX)
+
+
+def recover(paths) -> list[str]:
+    """Restore any source left mutated by an interrupted run.
+
+    Returns what it restored, so the caller can say so rather than quietly
+    repairing the tree — a harness that silently fixes its own mess teaches
+    nobody that the mess happened.
+    """
+    restored = []
+    for path in paths:
+        backup = _backup_path(path)
+        if backup.exists():
+            path.write_text(backup.read_text(encoding="utf-8"), encoding="utf-8")
+            backup.unlink()
+            restored.append(str(path))
+    return restored
 
 
 def run_guard(test: str) -> tuple[int, str]:
@@ -328,6 +383,11 @@ def run_guard(test: str) -> tuple[int, str]:
 
 
 def main() -> int:
+    # BEFORE THE BASELINE. A source left mutated by an interrupted
+    # run would otherwise present as a failing test.
+    if restored := recover(sorted({m[1] for m in MUTATIONS})):
+        print("recovered from an interrupted run: "
+              + ", ".join(restored) + "\n")
     guards = sorted({m[2] for m in MUTATIONS})
     baseline = {}
     for guard in guards:
@@ -342,6 +402,7 @@ def main() -> int:
     results = []
     for mid, path, guard, find, replace, why in MUTATIONS:
         original = path.read_text(encoding="utf-8")
+        _backup_path(path).write_text(original, encoding="utf-8")
         if find not in original:
             results.append({"id": mid, "guard": guard, "outcome": "NOT-APPLIED",
                             "detail": "anchor text not found; the mutation does "
@@ -354,6 +415,7 @@ def main() -> int:
             rc, out = run_guard(guard)
         finally:
             path.write_text(original, encoding="utf-8")
+            _backup_path(path).unlink(missing_ok=True)
         outcome = "killed" if rc != 0 else "SURVIVED"
         results.append({"id": mid, "guard": guard, "outcome": outcome,
                         "exit": rc, "why": why, "tail": out if rc == 0 else None})

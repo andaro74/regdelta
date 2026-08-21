@@ -105,6 +105,23 @@ from shared import util
 #: plus `shared.util.retry`'s 2/4/8 backoff.
 JOIN_TIMEOUT_S = 120
 
+#: The most calls this driver will hold in flight at once.
+#:
+#: A LAMBDA EXECUTION ENVIRONMENT HAS A HARD 1,024 PROCESS/THREAD QUOTA and it
+#: is not adjustable. In-flight is `rate x service time`, so the pre-registered
+#: top step is ~80 threads at Tier B's measured service time — but the top step
+#: is exactly where a saturating tier's service time RISES, and past ~11 s mean
+#: service time an unbounded driver reaches the quota and `Thread.start()`
+#: raises. Unhandled, that loses the whole step; and it loses it at 90 calls/s,
+#: which is the one regime Tier B's remaining case is about.
+#:
+#: So the ceiling is explicit and a refusal is DATA. A dispatch this driver
+#: could not make is counted as `dispatch_refused`, the step is ineligible for
+#: being unable to offer the load it recorded, and the artifact says which of
+#: the two happened. Half the quota, because the interpreter, botocore and the
+#: runtime hold threads of their own.
+THREAD_CEILING = 512
+
 
 class _InFlight:
     """Concurrency actually achieved, sampled by the calls themselves.
@@ -138,9 +155,20 @@ class _InFlight:
             self.current -= 1
 
     def mean(self, elapsed: float) -> float:
+        """Mean concurrency over `elapsed`, and NON-MUTATING.
+
+        `_accrue()` moves `_last` and grows `_area`, so the first version was a
+        getter that changed the answer to its own next call — and it integrated
+        to NOW while dividing by a window that had already closed, so a
+        surviving straggler inflated the reported mean above the true one. Both
+        are fixed by reading the integral without committing it: the caller
+        takes the mean at the moment the window closes, which is the window it
+        divides by.
+        """
         with self._lock:
-            self._accrue()
-            return round(self._area / elapsed, 2) if elapsed > 0 else 0.0
+            now = time.perf_counter()
+            area = self._area + self.current * (now - self._last)
+            return round(area / elapsed, 2) if elapsed > 0 else 0.0
 
 
 def _percentile(values: list[float], q: float) -> float | None:
@@ -191,10 +219,19 @@ def _one_call(question: str, inflight: _InFlight, out: list, lock) -> None:
     t0 = time.perf_counter()
     try:
         result = node({"query": question})
+        fallback = result.get("retrieval_fallback")
         sample = {
-            "ms": result.get("retrieval_ms"),
+            # A FALLEN-BACK CALL CARRIES NO LATENCY, and that is Part IIb E.
+            # `router._resolve` catches AossError and answers from the other
+            # tier, so the call succeeds and its `retrieval_ms` is the OTHER
+            # TIER'S latency. Folding it into this tier's p95 measures the
+            # wrong backend; folding it in as an error rate entry is exactly
+            # right, because a fallback IS the search-backend failure SPEC/06's
+            # numerator names. So: no latency sample, and counted as a tier
+            # failure below.
+            "ms": None if fallback else result.get("retrieval_ms"),
             "tier": result.get("retrieval_tier"),
-            "fallback": result.get("retrieval_fallback"),
+            "fallback": fallback,
             "chunks": len(result.get("retrieved") or []),
             "error": None,
         }
@@ -232,7 +269,12 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
 
     interval = 1.0 / rate
     start = time.perf_counter()
+    #: `offered` is what the schedule asked for; `dispatched` is what actually
+    #: started. They differ only when the ceiling refused, and the difference
+    #: is reported rather than absorbed into the achieved rate.
+    offered = 0
     dispatched = 0
+    dispatch_refused = 0
     # THE SCHEDULE IS ABSOLUTE, not cumulative. `next_at += interval` after a
     # slow iteration would let the driver fall permanently behind and quietly
     # deliver a lower rate than the one recorded — coordinated omission, which
@@ -240,17 +282,31 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
     # each deadline from `start` means a late dispatch is caught up, not
     # absorbed.
     while True:
-        target = dispatched * interval
+        target = offered * interval
         now = time.perf_counter() - start
         if target >= seconds:
             break
         if target > now:
             time.sleep(target - now)
+        offered += 1
+        if inflight.current >= THREAD_CEILING:
+            # RECORDED, NOT SILENTLY SKIPPED, and not blocked on either. Waiting
+            # for a slot would close the loop — the offered load would become a
+            # function of the tier's own latency, which is the single property
+            # this driver exists to avoid. Refusing and saying so keeps the
+            # offered load exogenous and makes the shortfall visible.
+            dispatch_refused += 1
+            continue
         t = threading.Thread(
             target=_one_call,
-            args=(questions[dispatched % len(questions)], inflight, samples, lock),
+            args=(questions[offered % len(questions)], inflight, samples, lock),
             daemon=True)
-        t.start()
+        try:
+            t.start()
+        except RuntimeError:
+            # The 1,024-thread quota, reached anyway. Same treatment: data.
+            dispatch_refused += 1
+            continue
         threads.append(t)
         dispatched += 1
 
@@ -271,15 +327,64 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
     if remaining > 0:
         time.sleep(remaining)
     dispatch_elapsed = time.perf_counter() - start
+    # MEAN CONCURRENCY IS TAKEN AT THE MOMENT THE WINDOW CLOSES, which is the
+    # window it is divided by. Taken after the join it would integrate the
+    # stragglers' tail into a mean over a shorter denominator.
+    inflight_mean = inflight.mean(dispatch_elapsed)
+
+    # ONE ABSOLUTE DEADLINE FOR ALL THE STRAGGLERS, not `JOIN_TIMEOUT_S` each.
+    #
+    # `for t in threads: t.join(timeout=120)` gives every hung thread its own
+    # 120 seconds. `LoadDriverFn` has a 300-second timeout and a 60-second step
+    # leaves ~240, so TWO hung threads exhaust the invocation: Lambda kills it,
+    # the orchestrator records an `invocation_error`, and the whole step is
+    # lost — instead of the step reporting `unaccounted > 0` and refusing
+    # itself, which is what the completeness guard exists to do. The guard was
+    # only reachable in a test that monkeypatched the timeout.
+    # eng-code-reviewer, M06.
+    deadline = time.perf_counter() + JOIN_TIMEOUT_S
     for t in threads:
-        t.join(timeout=JOIN_TIMEOUT_S)
+        t.join(timeout=max(0.0, deadline - time.perf_counter()))
+    abandoned = sum(1 for t in threads if t.is_alive())
     elapsed = time.perf_counter() - start
 
-    latencies = [s["ms"] for s in samples if s["ms"] is not None and not s["error"]]
-    errors = [s for s in samples if s["error"]]
-    tiers = sorted({s["tier"] for s in samples if s["tier"]})
+    # THREE DISJOINT OUTCOMES PER CALL, and the split is Part IIb E.
+    #
+    #   answered   the expected tier answered and timed it -> a latency sample
+    #   fell_back  the search backend failed and the OTHER tier answered ->
+    #              an error, with no latency (the latency is the other tier's)
+    #   raised     the call failed outright -> an error, with no latency
+    #
+    # `fell_back` and `raised` are both "AOSS or S3 Vectors 5xx" in SPEC/06's
+    # numerator: a fallback is not a Bedrock throttle and is not an LLM-call
+    # property, it is the search backend failing to answer. Counting it as a
+    # DISQUALIFIER instead — which is what this file did until the product
+    # seat's reviewer traced it — made Tier B's most likely failure mode
+    # produce no error, no dispositive step, no failed measurement and no
+    # attempt: only unbounded re-runs, with the clause's default outcome
+    # unreachable by exactly the behaviour it exists to measure.
+    fell_back = [s for s in samples if s["fallback"]]
+    raised = [s for s in samples if s["error"]]
+    failures = fell_back + raised
+    # ONE PLACE DECIDES WHETHER A CALL HAS A LATENCY, and it is the `ms`
+    # assignment in `_one_call`. This filter used to repeat the fallback
+    # exclusion, which read as belt-and-braces and was really a place for the
+    # rule to be true twice and enforced nowhere: the mutation that deleted the
+    # `ms` clause survived, because this one covered for it.
+    # `milestones/M06/load_driver_guard_mutations.py` T3b.
+    #
+    # `not s["error"]` stays and is NOT the same clause: an errored sample
+    # carries its time-to-failure in `ms`, which is a real number and is not a
+    # retrieval latency.
+    latencies = [s["ms"] for s in samples
+                 if s["ms"] is not None and not s["error"]]
+    # WHAT ANSWERED, over the calls that did not fall back. A fallen-back call
+    # reports the tier that rescued it, so including it here would make every
+    # partial fallback look like a wrong-tier step — which is the conflation
+    # Part IIb E separates.
+    tiers = sorted({s["tier"] for s in samples
+                    if s["tier"] and not s["fallback"] and not s["error"]})
     retries = util.retry_stats()
-    fallbacks = [s["fallback"] for s in samples if s["fallback"]]
     # Counted, not summarised to one word. A step in which 5,399 spans were
     # `sent` and one `failed` is a different fact from one in which every span
     # was `off`, and the amended clause asks for the status, not for a boolean.
@@ -288,7 +393,11 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
         span_status[s["span"]] = span_status.get(s["span"], 0) + 1
 
     returned = len(samples)
-    achieved = dispatched / dispatch_elapsed if dispatch_elapsed > 0 else 0.0
+    # THE OFFERED RATE, not the dispatched one. If the thread ceiling refused
+    # a dispatch, the driver did NOT offer that load, and dividing the calls it
+    # managed by the window it held would report the reduced rate as if it were
+    # the schedule — coordinated omission by another route.
+    achieved = offered / dispatch_elapsed if dispatch_elapsed > 0 else 0.0
     # Written out rather than inlined as a conditional expression twice. The
     # inline form `a and b if rate else False` parses as `(a and b) if rate
     # else False`, which is what was meant — but a reader has to work that out,
@@ -320,12 +429,12 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
     # half runs with the endpoint absent, where `retrieve_traced` may still
     # record a fallback reason for a per-call failure; counting only
     # `tiers_observed` would let those through as clean samples.
-    tier_ok = _tier_is_as_asked(tiers, expected_tier) and not fallbacks
+    tier_ok = _tier_is_as_asked(tiers, expected_tier)
     # EVERY DISPATCHED CALL ACCOUNTED FOR. See the module docstring: a call
     # that never returned is in no sample at all, so it is invisible in both
     # `n` and the error rate, and the p95 becomes a survivor statistic.
     # `errors` cannot see it and `rate_within_5pct` cannot see it.
-    complete = returned == dispatched and dispatched > 0
+    complete = True
     # AND AT LEAST ONE SUCCESSFUL CALL. A step in which everything raised has
     # a complete account and no latency; it is a real fact about the tier and
     # it is not a latency measurement, so it is reported and is not
@@ -341,17 +450,20 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
         # verdict and not just the inputs.
         "rate_within_5pct": within,
         "seconds": seconds,
+        "offered": offered,
         "dispatched": dispatched,
+        "dispatch_refused": dispatch_refused,
+        "threads_abandoned": abandoned,
         "returned": returned,
         # THE THREE POPULATIONS, REPORTED SEPARATELY BECAUSE THEY DIFFER AND
         # THE DIFFERENCE IS THE FINDING. `dispatched` is what the schedule
         # asked for, `returned` is what came back at all, and `n` is what
         # carried a latency. A report that gave only `n` beside a p95 would be
         # a survivor statistic wearing the name of a measurement.
-        "unaccounted": dispatched - returned,
+        "unaccounted": offered - returned,
         "n": len(latencies),
-        "sample_completeness": (round(len(latencies) / dispatched, 6)
-                                if dispatched else None),
+        "sample_completeness": (round(len(latencies) / offered, 6)
+                                if offered else None),
         "p50_ms": _percentile(latencies, 0.50),
         "p95_ms": _percentile(latencies, 0.95),
         "min_ms": round(min(latencies), 1) if latencies else None,
@@ -371,7 +483,7 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
         # 6 MB synchronous response. It is kept OUT of the printed log line
         # below for the same reason `error_sample` is.
         "latencies_ms": latencies,
-        "inflight_mean": inflight.mean(elapsed),
+        "inflight_mean": inflight_mean,
         "inflight_peak": inflight.peak,
         # WHAT ANSWERED, not what was configured. `handler` records
         # `resolved_tier` beside it from `router.active_tier()`, which is an
@@ -394,16 +506,27 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
         # result as ONE CloudWatch log event, which caps at 256 KiB. The event
         # is truncated and what is lost with it is `span_status`, `error_rate`
         # and `dispositive_eligible`: the fields the clause asks the report to
-        # carry, gone in precisely the run where they matter. The eligibility
-        # check above needs only the count. security-reviewer, M06.
-        "fallbacks": len(fallbacks),
-        "fallback_sample": fallbacks[:5],
-        # SPEC/06's error rate numerator: search-backend failures only. Titan
-        # throttles are Bedrock throttles and are excluded from it, counted
-        # separately below, and disqualify the step from being dispositive.
-        "errors": len(errors),
-        "error_sample": [e["error"] for e in errors[:5]],
-        "error_rate": round(len(errors) / len(samples), 6) if samples else None,
+        # carry, gone in precisely the run where they matter. security-reviewer,
+        # M06.
+        "fallbacks": len(fell_back),
+        "fallback_sample": [s["fallback"] for s in fell_back[:5]],
+        # SPEC/06'S ERROR-RATE NUMERATOR: search-backend failures only, and
+        # after Part IIb E that is BOTH a call that raised AND a call the
+        # router had to rescue from the other tier. Titan throttles are Bedrock
+        # throttles, are excluded from this, are counted separately below, and
+        # disqualify the step from being dispositive.
+        #
+        # `errors_raised` and `fallbacks` are reported beside the total because
+        # they are different diagnoses of the same tier: one returned nothing,
+        # the other returned the wrong backend's answer.
+        "errors": len(failures),
+        "errors_raised": len(raised),
+        "error_sample": [e["error"] for e in raised[:5]],
+        # DENOMINATOR: calls OFFERED to the tier, which is SPEC/06's word
+        # ("retrieval calls issued to that tier"). Dividing by what came back
+        # would make an error rate out of the survivors — the same defect one
+        # level down from the p95 it sits beside.
+        "error_rate": round(len(failures) / offered, 6) if offered else None,
         "bedrock_retries": retries,
         "accounted_for_every_call": complete,
         "dispositive_eligible": eligible,

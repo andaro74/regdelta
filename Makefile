@@ -43,7 +43,7 @@ RESOLVE_ENV_STRICT = env=$$(python evals/local_env.py) || { echo "cannot resolve
 
 .PHONY: help bootstrap layer core up down status smoke evals agent-evals discrimination replay-history lint test demo ingest-backfill synth diff \
         retrieval-evals retrieval-parity preflight rebuild-vectors demo-parity fault-drop \
-        tier-disposition tier-disposition-price
+        tier-disposition tier-disposition-price opus-headroom
 
 help:
 	@echo "make layer           - build the Lambda dependency layer (needed by core)"
@@ -65,6 +65,8 @@ help:
 	@echo "make tier-disposition- SPEC/06: dispose of Tier B. Run once per tier"
 	@echo "                       across ONE up/down cycle at one sha"
 	@echo "make tier-disposition-price - what that would cost. Invokes nothing"
+	@echo "make opus-headroom   - Opus tokens left against the NON-ADJUSTABLE"
+	@echo "                       daily cap (QUESTIONS=n). Free, read-only"
 	@echo "make preflight       - date-attribution check alone (cheap)"
 	@echo "make rebuild-vectors - rebuild S3 Vectors from the corpus (no re-embed)"
 	@echo "make lint            - ruff (same scope as the eval gate)"
@@ -264,11 +266,39 @@ status:
 # S3 Vectors card, recorded with the environment resolved, settled it in one
 # line. The daily poller changes the corpus unattended (52 documents on
 # 2026-08-19, from 4 on 2026-07-30), so this is the common case, not the edge.
+# OPUS HEADROOM IS CHECKED BEFORE EITHER OF THESE SPENDS A TOKEN.
+#
+# The seat's instruction at the M06 window: Opus must not reach throttle.
+# `L-ED2BADF9` is 2,592,000 tokens a day and reports `Adjustable: false`, so
+# crossing it is not a bill — it is these two targets not working until 00:00
+# UTC. At the measured 5,881.8 Opus tokens per uncached query the cap is 440
+# queries a day for everything this account does, and a smoke run nobody
+# thought twice about is what takes the last of it.
+#
+# CHAINED WITH `&&`, so a refusal (exit 1) or an unreadable meter (exit 2) stops
+# the run. The meter is CloudWatch, summed from midnight UTC, and a read that
+# fails refuses rather than reporting an empty day.
+#
+# The question counts are the subsets these targets actually ask. They are
+# stated here rather than derived, so that a change to either subset shows up
+# as a diff against this number instead of silently loosening the guard;
+# `tests/test_eval_headroom_counts.py` pins them to the golden set.
 smoke:
-	@$(RESOLVE_ENV_STRICT) python evals/run_evals.py --subset smoke
+	@$(RESOLVE_ENV_STRICT) \
+	  python evals/check_opus_headroom.py --questions 5 && \
+	  python evals/run_evals.py --subset smoke
 
 evals:
-	@$(RESOLVE_ENV_STRICT) python evals/run_evals.py $(ARGS)
+	@$(RESOLVE_ENV_STRICT) \
+	  python evals/check_opus_headroom.py --questions 20 && \
+	  python evals/run_evals.py $(ARGS)
+
+# The guard alone, for deciding whether a window is affordable before opening
+# one. Read-only and free.
+opus-headroom:
+	@$(RESOLVE_ENV_STRICT) python evals/check_opus_headroom.py \
+	  --questions $(QUESTIONS) --json
+QUESTIONS ?= 20
 
 # Measures the INSTRUMENT, not the system: replays run_evals.check() against
 # hand-written right and wrong answers and requires it to tell them apart. No
@@ -466,10 +496,18 @@ demo: up
 # halves cannot be shown to have answered from the same corpus, and the gate
 # that says so silently stops gating.
 #
-# EXIT CODES ARE PROPAGATED, and there are six of them — 0 disposed, 1 a gate
-# refused, 2 only one half recorded, 3 the harness crashed, 4 a failed
-# measurement (re-run once), 5 a second failed measurement (disposed by the
-# default outcome). The module docstring is the reference.
+# THE SIX EXIT CODES DO NOT SURVIVE MAKE, and this comment used to claim they
+# did. GNU make exits 2 for ANY nonzero recipe status, so through this target
+# exit 1 (a gate refused), 4 (a failed measurement — re-run once) and 5 (a
+# second failure, disposed by the default outcome) are indistinguishable, and
+# they are three completely different next actions. Verified, not assumed.
+# eng-code-reviewer, M06.
+#
+# So the target ECHOES the code before make swallows it, and the artifact
+# carries `disposition.verdict`, which is the field to read. The harness's own
+# module docstring is the reference for what each means:
+#   0 disposed (keep or retire)   1 gate refused        2 only one half
+#   3 the harness crashed         4 failed measurement  5 second failure
 tier-disposition:
 	@out=$$(MSYS_NO_PATHCONV=1 aws ssm get-parameter --name $(SSM_ENDPOINT) \
 	    --region $(REGION) --query Parameter.Value --output text 2>&1); \
@@ -479,7 +517,12 @@ tier-disposition:
 	  echo "→ hot tier $$tier (RERANK=$(RERANK) LEXICAL_LANE=$(LEXICAL_LANE))"; \
 	  $(RESOLVE_ENV_STRICT) \
 	  RERANK=$(RERANK) RETRIEVAL_LEXICAL_LANE=$(LEXICAL_LANE) \
-	  python loadtest/retrieval_load.py --tier $$tier $(ARGS)
+	  python loadtest/retrieval_load.py --tier $$tier $(ARGS); \
+	  code=$$?; \
+	  echo "--- tier-disposition exit $$code (make will report 2 for any "; \
+	  echo "    nonzero; read disposition.verdict in the report for the"; \
+	  echo "    difference between a gate refusal and a failed measurement)"; \
+	  exit $$code
 
 # Free, offline, and the thing to run BEFORE asking anyone to approve a window.
 # It prices all three components — Bedrock, Lambda and OCU — against the seat's
