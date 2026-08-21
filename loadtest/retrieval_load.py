@@ -66,6 +66,7 @@ import os
 import sys
 import time
 import traceback
+import uuid
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -174,8 +175,22 @@ def embed_tokens_per_call() -> int:
 LAMBDA_USD_PER_GB_SECOND = 0.0000166667
 LAMBDA_MEMORY_GB = 2.0
 
-#: Two OCUs at the $0.242/hr measured at M05 (`infra/core/observability.py`).
-OCU_USD_PER_HOUR = 0.242
+#: The OCU rate, IMPORTED rather than restated. It was defined here as a second
+#: literal with a comment pointing at the other one, which is two places to
+#: change — and the per-OCU/per-pair ambiguity in that constant's own docstring
+#: is an open item, so whoever settles it must find both. eng-code-reviewer,
+#: M06.
+#:
+#: Imported lazily inside a try: `infra/` needs the CDK, which the orchestrator
+#: does not otherwise require and CI does not always install. The fallback is
+#: the same number and says where the authority lives.
+try:
+    sys.path.insert(0, str(ROOT / "infra"))
+    from core.observability import OCU_USD_PER_HOUR
+except Exception:                                    # noqa: BLE001
+    #: `infra/core/observability.py:OCU_USD_PER_HOUR` is the authority; this
+    #: mirror exists only so pricing works without the CDK installed.
+    OCU_USD_PER_HOUR = 0.242
 #: The window a disposition needs the hot tier up for: the ~20-minute reindex
 #: hydration ADR-0012 records, plus the three AOSS runs.
 OCU_HYDRATION_MINUTES = 20
@@ -367,6 +382,10 @@ def run_half(tier: str, sha: str, *, allow_dirty: bool) -> int:
 
     path = report_path(sha)
     runs: list[dict] = []
+    #: THIS INVOCATION'S OWN MARK, so a checkpoint can tell its own
+    #: in-progress attempt from one an earlier, killed invocation left behind.
+    #: See the replace-or-append branch below.
+    attempt_id = uuid.uuid4().hex[:12]
     # THE ATTEMPT IS CHECKPOINTED AFTER EVERY RUN, and the reason is the OCU
     # meter. Fifteen invocations take about sixteen minutes per half; with the
     # artifact written only at the end, one transient `TooManyRequestsException`
@@ -402,8 +421,23 @@ def run_half(tier: str, sha: str, *, allow_dirty: bool) -> int:
         # not judge a half-finished campaign as a failed measurement.
         if not final:
             record["verdict"] = "in-progress"
-        if half["attempts"] and not half["attempts"][-1].get("complete", True):
-            half["attempts"][-1] = record          # replace the in-progress one
+        # REPLACE ONLY THIS PROCESS'S OWN CHECKPOINT, never a previous one.
+        #
+        # The condition was `not half["attempts"][-1]["complete"]`, which is
+        # right within one `run_half` and wrong across two. An attempt killed
+        # after run 0 sits on disk incomplete; the NEXT invocation's FIRST
+        # checkpoint — written before any new step has landed — matched that
+        # condition and overwrote it. The prior campaign's completed run was
+        # gone, `interrupted_attempts_per_tier` then reported 0, and the two
+        # docstrings promising "nothing is lost" were both false on exactly the
+        # path the OCU-burn rationale above was written for.
+        #
+        # `attempt_id` is this invocation's own mark. Same id, replace; anyone
+        # else's, append and leave theirs alone. eng-code-reviewer, M06.
+        record["attempt_id"] = attempt_id
+        prior = half["attempts"][-1] if half["attempts"] else None
+        if prior is not None and prior.get("attempt_id") == attempt_id:
+            half["attempts"][-1] = record
         else:
             half["attempts"].append(record)
         artifact["tiers"][tier] = half
@@ -476,7 +510,13 @@ def _step_ok(step: dict, tier: str) -> bool:
       * achieved arrival rate within 5% of the driven rate, for the whole step
       * no Titan throttle recorded in it
       * and — the M06 security-review finding — the step actually reached the
-        tier it is a measurement of, with nothing having fallen back
+        tier it is a measurement of
+
+    **EVERY CONDITION HERE MUST HAVE AN ENTRY IN `_why_ineligible`.** A step
+    refused with no stated reason is worse than one wrongly admitted: the
+    artifact shows a 4,500-call step at the second-highest rate thrown away and
+    does not say what for. That is not hypothetical — it shipped. See
+    `_why_ineligible`, which now refuses to be silent.
     """
     if step.get("invocation_error"):
         return False
@@ -496,8 +536,33 @@ def _step_ok(step: dict, tier: str) -> bool:
         return False
     if step.get("tiers_observed") != [tier]:
         return False
-    if step.get("fallbacks"):
-        return False
+    # NO FALLBACK VETO HERE, AND ITS REMOVAL IS A CONFORMANCE FIX.
+    #
+    # This file carried `if step.get("fallbacks"): return False`, which
+    # CONTRADICTS the ruling it claims to implement. Part IIb E, adopted
+    # 2026-08-21: "a fallback during a step is a search-backend failure, goes
+    # in the ERROR RATE, and LEAVES THE STEP DISPOSITIVE with no latency sample
+    # from it." `src/ops/retrieval_load.py` implements exactly that; this file
+    # then vetoed the step the driver had correctly admitted, and printed the
+    # driver's `eligible True` to the console while doing it.
+    #
+    # It was not a close call, it was all-or-nothing on a COUNT: ONE fallback
+    # in 4,500 calls — 0.022% — disqualified AOSS's entire 75/s rate in the
+    # recorded run and pushed the dispositive step down to 50/s. A hot tier
+    # under concurrency emits `429 local_rate_limited`, so the veto fired most
+    # readily in the one regime Tier B's remaining case is ABOUT. That is the
+    # failure the driver's own test docstring names.
+    #
+    # Fallbacks are already priced, correctly and proportionately: the driver
+    # counts them in `errors`, `error_rate` carries them, and the comparability
+    # rule uses the clause's own 5-point materiality to decide whether the two
+    # p95 populations may be compared at all. 0.022% is inside that by three
+    # orders of magnitude. A second veto on the raw count was double-counting
+    # the same event with a threshold nobody chose.
+    #
+    # The recorded verdict does not change: S3 Vectors' 75/s steps are
+    # independently ineligible (243 dispatches refused; 67.79/s against a
+    # driven 75). eng-code-reviewer, M06.
     # A STEP WITH NO SUCCESSFUL CALL IS NOT A LATENCY MEASUREMENT. Belt and
     # braces with the tier check above, and not redundant with it: a step in
     # which every call raised observes NO tier, and an empty observed-set is
@@ -560,6 +625,22 @@ def _why_ineligible(step: dict, tier: str) -> list[str]:
     if step.get("expected_tier") != tier:
         why.append(f"recorded under {tier!r} but pointed at "
                    f"{step.get('expected_tier')!r}")
+    # THE SILENCE GUARD. This function is a hand-written mirror of `_step_ok`,
+    # and a mirror drifts: the `fallbacks` veto lived in `_step_ok` with no
+    # entry here, so `aoss/run2/75ps` shipped in the evidence pack refused with
+    # `"why": []` — a 4,500-call step at the second-highest rate thrown away
+    # and the artifact silent about it. The docstring above claimed the suite
+    # prevented exactly that; the test was a hand-list of ten broken steps
+    # enumerating every clause but the one that mattered.
+    #
+    # Comparing against `_step_ok` here makes the drift impossible to ship
+    # quietly: if the gate refuses and this function has nothing to say, the
+    # step carries that fact instead of an empty list. It reads as a defect
+    # because it IS one — in this file, not in the run.
+    if not why and not _step_ok(step, tier):
+        why.append("REFUSED BY A CONDITION WITH NO STATED REASON — this is a "
+                   "defect in `_why_ineligible`, not a property of the step; "
+                   "a clause was added to `_step_ok` without one here")
     return why
 
 
@@ -737,7 +818,26 @@ def dispose(artifact: dict) -> dict:
             steps = _steps_at(attempts[tier], rate)
             eligible = bool(steps) and all(_step_ok(s, tier) for s in steps)
             samples = [v for s in steps for v in s.get("latencies_ms") or []]
-            issued = sum(s.get("returned") or 0 for s in steps)
+            returned = sum(s.get("returned") or 0 for s in steps)
+            # THE DENOMINATOR IS WHAT WAS OFFERED, matching the driver's rule
+            # exactly: "dividing by what came back would make an error rate out
+            # of the survivors".
+            #
+            # This read `errors / returned` under the name `issued`, which is a
+            # SECOND definition of a quantity the artifact publishes under one
+            # name. For an eligible step the two agree — `dispatch_refused` is
+            # vetoed and `returned == dispatched == offered` — so no dispositive
+            # number was ever wrong. But the artifact publishes `error_rate` for
+            # INELIGIBLE rates too, and there they diverge: at 75/s the
+            # s3vectors entry has 243 unaccounted, so its published rate was
+            # over 8,757 survivors rather than the 9,000 offered.
+            #
+            # `offered` falls back to `dispatched` then `returned` for steps
+            # recorded before the field existed, so an older artifact still
+            # judges rather than dividing by None. eng-code-reviewer, M06.
+            offered = sum((s.get("offered") if s.get("offered") is not None
+                           else s.get("dispatched") if s.get("dispatched") is not None
+                           else s.get("returned") or 0) for s in steps)
             errors = sum(s.get("errors") or 0 for s in steps)
             entry[tier] = {
                 "steps": len(steps),
@@ -756,11 +856,13 @@ def dispose(artifact: dict) -> dict:
                 "n_per_run": [len(s.get("latencies_ms") or []) for s in steps],
                 "p50_ms": _percentile(samples, 0.50),
                 "p95_ms": _percentile(samples, 0.95),
+                "calls_offered": offered,
                 "calls_dispatched": sum(s.get("dispatched") or 0 for s in steps),
-                "calls_returned": issued,
+                "calls_returned": returned,
                 "unaccounted": sum(s.get("unaccounted") or 0 for s in steps),
                 "errors": errors,
-                "error_rate": round(errors / issued, 6) if issued else None,
+                "error_rate": round(errors / offered, 6) if offered else None,
+                "error_rate_denominator": "calls_offered",
                 "inflight_mean": [s.get("inflight_mean") for s in steps],
                 "inflight_peak": [s.get("inflight_peak") for s in steps],
                 "achieved_rate": [s.get("achieved_rate") for s in steps],

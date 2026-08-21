@@ -210,9 +210,13 @@ class Meter:
     control is the driver's IAM grant.
 
     Not thread-safe by construction, and that is stated rather than assumed:
-    `record` and `reserve` mutate one dict. A concurrent driver
-    so it must hold a lock around these or meter per worker and merge — see
-    `loadtest/retrieval_load.py`. A ceiling that races is not a ceiling.
+    `record` and `reserve` mutate one dict without a lock. A concurrent driver
+    calling either from several worker threads would interleave read-modify-
+    write on the same counters and undercount, so it must hold a lock around
+    these or meter per worker and merge — see `loadtest/retrieval_load.py`,
+    which does neither because it meters once per STEP from the orchestrator
+    thread, not once per call from the workers. A ceiling that races is not a
+    ceiling.
     """
 
     def __init__(self, *, ceiling: float | None = None, label: str = "run"):

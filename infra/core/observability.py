@@ -360,9 +360,17 @@ def add_observability(scope: Construct, *, query_fn: _lambda.Function,
         # And the divide-by-zero guard stays DELETED, which is the better
         # panel: `MAX([x, 1])` makes an idle period read 0% and $0.00 — a
         # measured zero where nothing was measured. A gap is what "no traffic"
-        # honestly looks like. `FILL(..., 0)` on the NUMERATOR is kept and does
-        # the job that actually mattered: an interval with misses and no hits
-        # is 0%, not a hole.
+        # honestly looks like.
+        #
+        # `FILL(..., 0)` on the NUMERATOR fills gaps WITHIN a series that
+        # exists. It cannot invent one that does not: while `cache="hit"` had
+        # never been published anywhere in the window — the state this panel
+        # was meant to make visible, and the state the account was in from M05
+        # until 2026-08-21 — `SUM(SEARCH(...))` returns empty and the whole
+        # ratio is a gap rather than 0%. Once a hit exists, an interval of pure
+        # misses reads 0% as intended. An earlier version of this comment
+        # claimed the unconditional behaviour and contradicted the HITL panel's
+        # comment forty lines down, which had it right. eng-code-reviewer, M06.
         #
         # Verified against the live account before deploying: hit rate returned
         # 50.0 and 0.0, cost/query $0.0297 and $0.0601 — the 50% being the

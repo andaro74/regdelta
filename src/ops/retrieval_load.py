@@ -425,10 +425,19 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
     # assert and which the dispositive instrument did not: derive the tier,
     # then assert it against what was asked for.
     #
-    # A FALLBACK IS A MISS EVEN WHEN IT LANDS ON THE RIGHT TIER. The Tier A
-    # half runs with the endpoint absent, where `retrieve_traced` may still
-    # record a fallback reason for a per-call failure; counting only
-    # `tiers_observed` would let those through as clean samples.
+    # WHAT THIS CHECKS IS THE TIER, AND ONLY THE TIER. A fallback does NOT
+    # disqualify the step — Part IIb E, adopted 2026-08-21: it "is a
+    # search-backend failure, goes in the error rate, and leaves the step
+    # dispositive with no latency sample from it". Its latency is already
+    # excluded at the one place that decides the population (`"ms": None` on
+    # the fallback branch), and `errors` already carries it.
+    #
+    # This comment previously read "A FALLBACK IS A MISS EVEN WHEN IT LANDS ON
+    # THE RIGHT TIER … counting only `tiers_observed` would let those through
+    # as clean samples", which described a rule the line below does not
+    # implement and that the adopted ruling forbids. The code was right and the
+    # comment was wrong; `tests/test_retrieval_load_driver.py` pins the code
+    # with its reason. eng-code-reviewer, M06.
     tier_ok = _tier_is_as_asked(tiers, expected_tier)
     # EVERY DISPATCHED CALL ACCOUNTED FOR. See the module docstring: a call
     # that never returned is in no sample at all, so it is invisible in both

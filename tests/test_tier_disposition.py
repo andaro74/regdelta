@@ -244,12 +244,33 @@ def test_a_step_that_did_not_reach_its_tier_cannot_be_dispositive():
     assert orch.exit_code(out) == 1
 
 
-def test_a_step_with_a_fallback_cannot_be_dispositive():
+def test_a_step_with_a_fallback_is_still_dispositive():
+    """Part IIb E, adopted 2026-08-21, stated as a test.
+
+    > a fallback during a step is a search-backend failure, goes in the ERROR
+    > RATE, and LEAVES THE STEP DISPOSITIVE with no latency sample from it.
+
+    THIS TEST USED TO ASSERT THE OPPOSITE, with no docstring and no
+    justification: `_step_ok` vetoed any step with `fallbacks >= 1` and this
+    pinned it. The veto contradicted the ruling, double-counted an event the
+    error rate already carries, and was all-or-nothing on a raw COUNT — in the
+    recorded run, ONE fallback in 4,500 calls threw away AOSS's whole 75/s rate
+    and pushed the dispositive step down to 50/s.
+
+    The direction matters: a hot tier under concurrency emits `429
+    local_rate_limited`, so the veto fired most readily in the one regime Tier
+    B's remaining case is about. A gate that refuses to measure the thing it
+    exists to measure is not a strict gate, it is a broken one.
+
+    Fallbacks are still priced — by the error rate, against the clause's own
+    5-point materiality — which is where the ruling puts them.
+    """
     out = orch.dispose(artifact(
         s3vectors=half("s3vectors", p95=300.0),
         aoss=half("aoss", p95=300.0, fallbacks=4, eligible_claim=True)))
-    assert out["dispositive_rate"] is None
-    assert out["verdict"] == "failed-measurement"
+    assert out["dispositive_rate"] == 90
+    assert out["verdict"] in ("keep", "retire")
+    assert out["dispositive"]["aoss"]["eligible"] is True
 
 
 def test_warmup_runs_are_excluded_from_the_dispositive_statistic():
@@ -797,9 +818,17 @@ def test_every_refused_step_carries_a_stated_reason():
     artifact that retires a tier could see that a step was refused and not
     which of the conditions refused it.
 
-    Asserted against `_step_ok` rather than against a list of conditions, so a
-    clause added to the gate without an entry in the explanation shows up here
-    as a step refused for no stated reason.
+    THIS DOCSTRING USED TO LIE, and the lie is why the defect shipped. It
+    claimed to assert "against `_step_ok` rather than against a list of
+    conditions" while being exactly a list of conditions: ten hand-written
+    broken steps, enumerating every clause in the gate except the one that
+    mattered. `_step_ok` vetoed on `fallbacks` and `_why_ineligible` had no
+    entry for it, so `aoss/run2/75ps` reached the evidence pack refused with
+    `"why": []` and this test stayed green.
+
+    It is now what it said it was. The hand list is kept as a floor — each of
+    those shapes must still explain itself — and the derived half below is the
+    part that catches drift.
     """
     broken = [
         step(90, "aoss", p95=300.0, n=10, achieved=1.0),
@@ -818,6 +847,55 @@ def test_every_refused_step_carries_a_stated_reason():
         assert orch._step_ok(s, "aoss") is False, s.get("label")
         why = orch._why_ineligible(s, "aoss")
         assert why, f"refused with no stated reason: {s}"
+
+
+def test_no_field_can_refuse_a_step_without_explaining_itself():
+    """The derived half, which the hand list above cannot be.
+
+    Takes a step the gate ACCEPTS and perturbs one field at a time, from the
+    fields the recorded artifact actually carries. Any perturbation that flips
+    `_step_ok` to False must produce a reason. A future clause keyed on a field
+    in this set fails here on the commit that adds it, whatever anyone
+    remembers to add to the hand list.
+
+    `aoss/run2/75ps` — one fallback in 4,500 calls, refused with `"why": []` —
+    is the specimen this is derived from, and it is in the list below.
+    """
+    good = step(90, "aoss", p95=300.0, n=10)
+    assert orch._step_ok(good, "aoss") is True, "the control must pass"
+
+    perturbations = {
+        "fallbacks": 1,
+        "dispatch_refused": 1,
+        "threads_abandoned": 1,
+        "preceded_by_abandoned_threads": True,
+        "invocation_error": "boom",
+        "unaccounted": 5,
+        "errors_raised": 1,
+        "error_rate": 0.5,
+        "sample_completeness": 0.5,
+        "accounted_for_every_call": False,
+        "span_status": {"failed": 10},
+        "inflight_peak": 0,
+        "max_ms": 99_999.0,
+    }
+    # ASSERTED AGAINST THE SENTINEL, NOT AGAINST EMPTINESS — and the first
+    # version of this test got that wrong. `_why_ineligible` now appends a
+    # "REFUSED BY A CONDITION WITH NO STATED REASON" marker when it has nothing
+    # to say, so `assert why` can never fail: the guard made its own test
+    # un-failable. What must be absent is the MARKER, which is the guard
+    # reporting that a clause exists with no explanation behind it.
+    unexplained = []
+    for field, value in perturbations.items():
+        s = {**good, field: value}
+        if orch._step_ok(s, "aoss"):
+            continue                      # not a gate field; nothing owed
+        why = orch._why_ineligible(s, "aoss")
+        assert why, f"{field}: refused with an empty reason list"
+        if any("NO STATED REASON" in w for w in why):
+            unexplained.append(field)
+    assert unexplained == [], \
+        f"these fields refuse a step and explain nothing: {unexplained}"
 
 
 def test_a_good_step_has_nothing_to_explain():

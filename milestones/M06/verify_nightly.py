@@ -65,19 +65,40 @@ def git_sha() -> str:
         return "nogit"
 
 
-def deployed_function() -> str | None:
-    """`NightlyCheckFn`'s physical name, or None if the stack has no such
-    resource. Absent is a fact about the account, not an error."""
+def deployed_function() -> tuple[str | None, str | None]:
+    """`(name, error)`. Exactly one is non-None.
+
+    ABSENT AND UNREADABLE ARE DIFFERENT ANSWERS AND THIS USED TO CONFLATE
+    THEM. The handler was a bare `except: return None`, which caught expired
+    credentials, a missing `aws` binary, a stack in a bad state and a timeout —
+    and then wrote "NightlyCheckFn is not in regdelta-core" into the artifact
+    that exists to close blocker B8 on the deployed function, and exited 0. A
+    credential failure would have produced a positive claim that the resource
+    does not exist. eng-code-reviewer, M06.
+
+    "Absent is a fact about the account, not an error" is true only for the
+    case where CloudFormation answered and the function was not among its
+    resources. That is the only case that returns `(None, None)`.
+    """
     try:
         names = subprocess.check_output(
             ["aws", "cloudformation", "describe-stack-resources",
              "--stack-name", "regdelta-core", "--region", config.REGION,
              "--query", "StackResources[?ResourceType=='AWS::Lambda::Function']"
                         ".PhysicalResourceId", "--output", "text"],
-            text=True, cwd=ROOT).split()
-    except Exception:                              # noqa: BLE001
-        return None
-    return next((n for n in names if "NightlyCheckFn" in n), None)
+            text=True, stderr=subprocess.PIPE, cwd=ROOT, timeout=120).split()
+    except subprocess.CalledProcessError as e:
+        err = (e.stderr or "").strip()
+        if "does not exist" in err:
+            # The stack itself is absent. Also a fact about the account, and a
+            # different one from "the stack has no such function".
+            return None, "regdelta-core does not exist"
+        return None, f"describe-stack-resources failed: {err[:300]}"
+    except FileNotFoundError:
+        return None, "the aws CLI is not on PATH"
+    except subprocess.TimeoutExpired:
+        return None, "describe-stack-resources timed out"
+    return next((n for n in names if "NightlyCheckFn" in n), None), None
 
 
 def invoke_deployed(name: str) -> dict:
@@ -133,7 +154,7 @@ def main() -> int:
     result = nightly.handler({}, None)
     after = opus.spent_today(config.MODEL_VERDICT)
 
-    fn = deployed_function()
+    fn, lookup_error = deployed_function()
     deployed = invoke_deployed(fn) if fn else None
 
     record = {
@@ -147,13 +168,17 @@ def main() -> int:
                "EventBridge schedule fires on its own; that is still owed and "
                "a manual invoke cannot supply it.",
         "deployed": deployed,
+        "deployed_lookup_error": lookup_error,
         "deployed_note": ("NightlyCheckFn was NOT deployed when this artifact "
                           "was first written on 2026-08-21; the M06 window "
                           "deployed it later the same day. The earlier record "
                           "said so and this one supersedes it."
                           if deployed else
-                          "NightlyCheckFn is not in regdelta-core. Only the "
-                          "in-process half exists."),
+                          f"the deployed half was NOT ATTEMPTED and this "
+                          f"artifact makes no claim about it: {lookup_error}"
+                          if lookup_error else
+                          "CloudFormation answered and regdelta-core has no "
+                          "NightlyCheckFn. Only the in-process half exists."),
         "command": 'eval "$(python evals/local_env.py)" && '
                    "python milestones/M06/verify_nightly.py",
         "region": config.REGION,
@@ -184,9 +209,20 @@ def main() -> int:
               f"status {deployed.get('status_code')}, "
               f"error {deployed.get('function_error')}, "
               f"{len(deployed.get('emf_lines') or [])} EMF lines")
+    elif lookup_error:
+        print(f"deployed invoke   : NOT ATTEMPTED — {lookup_error}")
     else:
         print("deployed invoke   : NightlyCheckFn not in the stack")
     print(f"-> {OUT.relative_to(ROOT)}")
+
+    if lookup_error:
+        # NOT a verification of the deployed function, and the exit code says
+        # so. Filing this as a pass is how a credential failure becomes
+        # evidence that a resource does not exist.
+        print(f"\n!! could not determine whether NightlyCheckFn is deployed: "
+              f"{lookup_error}. The in-process half ran; the deployed half is "
+              f"unverified.", file=sys.stderr)
+        return 4
 
     if deployed and (deployed.get("function_error") or deployed.get("error")):
         print("\n!! the DEPLOYED function failed. The in-process half passing "

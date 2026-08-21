@@ -501,9 +501,16 @@ def _partition_prefixes_in_src():
 
 
 def _covered(prefix, patterns):
-    """Does any granted LeadingKeys pattern match a key under this prefix?"""
+    """Does any granted LeadingKeys pattern match a key under this prefix?
+
+    `fnmatchcase`, for the reason spelled out in
+    `test_the_review_queue_is_never_readable`: plain `fnmatch` normalises case
+    through `os.path.normcase`, so it is case-insensitive on Windows and
+    case-sensitive in Linux CI while IAM `StringLike` is always case-sensitive.
+    This file used both and argued against itself. eng-code-reviewer, M06.
+    """
     probe = prefix + "x"
-    return any(fnmatch.fnmatch(probe, p) for p in patterns)
+    return any(fnmatch.fnmatchcase(probe, p) for p in patterns)
 
 
 def test_every_state_table_prefix_in_src_is_granted(template):
