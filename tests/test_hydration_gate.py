@@ -219,6 +219,7 @@ def synth() -> dict:
     RegDeltaSearchStack(
         app, "regdelta-search", corpus_bucket=bucket,
         query_lambda_role_arn="arn:aws:iam::111122223333:role/QueryFn",
+        load_driver_role_arn="arn:aws:iam::111122223333:role/LoadDriverFn",
         env=cdk.Environment(account="111122223333", region="us-west-2"))
     return app.synth().get_stack_by_name("regdelta-search").template
 

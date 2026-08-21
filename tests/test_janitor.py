@@ -373,7 +373,8 @@ def both_templates():
         core = RegDeltaCoreStack(app, "regdelta-core", env=env)
     search = RegDeltaSearchStack(
         app, "regdelta-search", env=env, corpus_bucket=core.corpus_bucket,
-        query_lambda_role_arn=core.query_lambda_role_arn)
+        query_lambda_role_arn=core.query_lambda_role_arn,
+        load_driver_role_arn=core.load_driver_role_arn)
     search.add_dependency(core)
     asm = app.synth()
     return (asm.get_stack_by_name("regdelta-core").template,

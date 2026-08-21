@@ -59,20 +59,37 @@ def node(monkeypatch):
     that it goes through `instrument.observed` at all. That is what makes the
     measured interval the one SPEC/06's clause names.
     """
-    state = {"service_ms": 5.0, "fail_every": 0, "calls": 0}
+    state = {"service_ms": 5.0, "fail_every": 0, "calls": 0,
+             "span_status": "sent"}
     counter_lock = threading.Lock()
 
-    def observed(_name, _fn):
+    def observed(_name, _fn, on_span=None):
+        """The stub honours `on_span`'s contract, INCLUDING on the error path.
+
+        The real wrapper fires the sink from a `finally`, so an errored call
+        still reports what became of its span. A stub that fired it only on
+        success would let the driver's aggregation look right here while
+        reporting every failed retrieval as `no-sink` in the region.
+
+        What this stub CANNOT establish is that the real wrapper behaves this
+        way — it is the driver's author's own specimen of the collaborator.
+        `test_the_real_wrapper_reports_the_span_status_on_both_paths` below
+        drives `graph.instrument.observed` itself for that.
+        """
         def run(_state, *a, **kw):
             with counter_lock:
                 state["calls"] += 1
                 mine = state["calls"]
-            time.sleep(state["service_ms"] / 1000.0)
-            if state["fail_every"] and mine % state["fail_every"] == 0:
-                raise RuntimeError("AossError: 503 from the search backend")
-            return {"retrieval_ms": state["service_ms"],
-                    "retrieval_tier": "aoss", "retrieval_fallback": None,
-                    "retrieved": [1, 2, 3]}
+            try:
+                time.sleep(state["service_ms"] / 1000.0)
+                if state["fail_every"] and mine % state["fail_every"] == 0:
+                    raise RuntimeError("AossError: 503 from the search backend")
+                return {"retrieval_ms": state["service_ms"],
+                        "retrieval_tier": "aoss", "retrieval_fallback": None,
+                        "retrieved": [1, 2, 3]}
+            finally:
+                if on_span is not None:
+                    on_span((state["span_status"], None))
         return run
 
     import graph.instrument as real
@@ -232,3 +249,60 @@ def test_the_question_set_is_varied_and_is_not_the_golden_set():
     stems = {q.get("question") for q in rows if isinstance(q, dict)}
     assert stems, "could not read the golden set; this check would be vacuous"
     assert not (set(questions) & stems), "the driver is reusing golden questions"
+
+
+# --------------------------------------------------------------- span status
+# SPEC/06 defines the measured interval as the one carried on the per-node
+# retrieval span, and the amended clause requires the report to record what
+# became of that span. Three things have to hold and they are separable:
+#
+#   1. the real wrapper hands a status to a sink, on BOTH paths
+#      -> tests/test_instrument_span_sink.py, which this module's autouse stub
+#         would otherwise replace out from under the assertion
+#   2. the driver collects one per call and tallies them        (below)
+#   3. the driver does not read `observability.emission_report()`, which is
+#      module-level and cannot attribute a status under concurrency (below)
+
+
+def test_the_step_report_tallies_the_span_status_per_call(node):
+    node["service_ms"] = 1.0
+    node["span_status"] = "sent"
+    out = retrieval_load.run_step(rate=20, seconds=0.4, questions=["q"])
+    assert out["span_status"] == {"sent": out["returned"]}
+    assert out["returned"] > 0
+
+
+def test_an_unemitted_span_is_reported_and_does_not_masquerade_as_sent(node):
+    """Off is a legitimate state — no daemon outside Lambda — and must READ as
+    off. A report that could only say "sent" would be evidence of nothing."""
+    node["service_ms"] = 1.0
+    node["span_status"] = "off"
+    out = retrieval_load.run_step(rate=20, seconds=0.3, questions=["q"])
+    assert out["span_status"] == {"off": out["returned"]}
+
+
+def test_the_span_status_of_a_failed_call_is_recorded_too(node):
+    """The errored calls are the ones whose spans matter most, and they are
+    counted under their own status rather than dropped with their latency."""
+    node["service_ms"] = 1.0
+    node["fail_every"] = 3
+    out = retrieval_load.run_step(rate=30, seconds=0.5, questions=["q"])
+    assert out["errors"] > 0
+    assert sum(out["span_status"].values()) == out["returned"]
+
+
+def test_the_driver_does_not_read_the_module_level_emission_report():
+    """The mis-attribution guard, asserted on the source.
+
+    `observability.emission_report()` returns a process-global whose stated
+    precondition — one request at a time — this driver is the first thing in
+    the repo to break. Under 80 in-flight retrievals it returns whichever call
+    finished last, for every call. Reading it here would produce a report that
+    looks complete and attributes statuses at random.
+    """
+    from pathlib import Path
+
+    src = (Path(__file__).parent.parent / "src" / "ops" / "retrieval_load.py"
+           ).read_text(encoding="utf-8")
+    assert "emission_report" not in src.replace(
+        "`observability.emission_report()`", "")

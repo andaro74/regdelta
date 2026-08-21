@@ -1,0 +1,70 @@
+{
+  "guards": [
+    "tests/test_instrument_span_sink.py",
+    "tests/test_janitor.py",
+    "tests/test_load_driver_iam.py",
+    "tests/test_search_stack_access.py"
+  ],
+  "baseline_green": true,
+  "tree_restored_and_green": true,
+  "mutations": 7,
+  "survivors": 0,
+  "results": [
+    {
+      "id": "M1-driver-gets-every-model",
+      "guard": "tests/test_load_driver_iam.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "THE obvious edit: the helper every other Lambda uses is right there and returns five ARNs including Opus 4.6. One minute of Opus at this account's per-minute quota is $23.63 and exceeds a NON-ADJUSTABLE daily cap, and the driver dispatches 90 calls a second",
+      "tail": null
+    },
+    {
+      "id": "M2-driver-loses-tracing",
+      "guard": "tests/test_load_driver_iam.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "SPEC/06 defines the measured interval as the one carried on the per-node span; with no daemon every span reads `off` and the report measures nothing the clause names",
+      "tail": null
+    },
+    {
+      "id": "M3-driver-becomes-an-index-writer",
+      "guard": "tests/test_search_stack_access.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "one word. The driver would hold aoss:* \u2014 DeleteIndex and WriteDocument on the corpus index the cited deadlines are drawn from",
+      "tail": null
+    },
+    {
+      "id": "M4-janitor-cannot-detach-the-driver",
+      "guard": "tests/test_janitor.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the M05 defect, one role along: regdelta-search attaches a policy to this core-owned role, so DeleteStack under the janitor's role takes AccessDenied, lands in DELETE_FAILED, and a collection bills all night. Invisible in dev \u2014 `make down` runs as the bootstrap admin role",
+      "tail": null
+    },
+    {
+      "id": "M5-span-sink-only-fires-on-success",
+      "guard": "tests/test_instrument_span_sink.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "an errored retrieval still emits its span \u2014 that is node_span's own argument \u2014 so a success-only sink reports every failed call as having emitted nothing, which is a false claim in the report the clause asks for",
+      "tail": null
+    },
+    {
+      "id": "M6-span-sink-reads-a-stale-result",
+      "guard": "tests/test_instrument_span_sink.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "`span_result` is assigned in node_span's own `finally`; a sink called from INSIDE the with-block reads the initial ('off', None) every time \u2014 a report saying the spans never left while the datagrams went out",
+      "tail": null
+    },
+    {
+      "id": "M7-xray-exemption-grows",
+      "guard": "tests/test_load_driver_iam.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the four actions CDK's own Tracing.ACTIVE would attach. The wildcard exemption is pinned at two and has to be argued for to grow; picking up two more as a side effect is the widening the pin exists to stop",
+      "tail": null
+    }
+  ]
+}

@@ -106,7 +106,17 @@ def _percentile(values: list[float], q: float) -> float | None:
 def _one_call(question: str, inflight: _InFlight, out: list, lock) -> None:
     from graph import instrument, nodes
 
-    node = instrument.observed("retrieval_agent", nodes.retrieval_agent)
+    # THE SPAN STATUS IS COLLECTED PER CALL, not read off
+    # `observability.emission_report()`. That function returns a module-level
+    # dict whose stated precondition is one request at a time per process, and
+    # this driver is the thing that breaks it: with 80 retrievals in flight,
+    # whatever it returns belongs to whichever call happened to finish last.
+    # The amended clause requires the report to record the span emission
+    # status, and a status attributed to the wrong call is not a record of
+    # anything.
+    spans: list[tuple] = []
+    node = instrument.observed("retrieval_agent", nodes.retrieval_agent,
+                               on_span=spans.append)
     inflight.enter()
     t0 = time.perf_counter()
     try:
@@ -124,6 +134,11 @@ def _one_call(question: str, inflight: _InFlight, out: list, lock) -> None:
                   "error": f"{type(e).__name__}: {e}"[:200]}
     finally:
         inflight.leave()
+    # `no-sink` cannot be produced by a call that reached the wrapper at all —
+    # the sink fires in the wrapper's own `finally`, on both paths. It is here
+    # so that a future edit which loses the sink is REPORTED rather than
+    # silently counted as one of the four real statuses.
+    sample["span"] = spans[0][0] if spans else "no-sink"
     with lock:
         out.append(sample)
 
@@ -189,6 +204,12 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
     errors = [s for s in samples if s["error"]]
     tiers = sorted({s["tier"] for s in samples if s["tier"]})
     retries = util.retry_stats()
+    # Counted, not summarised to one word. A step in which 5,399 spans were
+    # `sent` and one `failed` is a different fact from one in which every span
+    # was `off`, and the amended clause asks for the status, not for a boolean.
+    span_status: dict[str, int] = {}
+    for s in samples:
+        span_status[s["span"]] = span_status.get(s["span"], 0) + 1
 
     achieved = dispatched / dispatch_elapsed if dispatch_elapsed > 0 else 0.0
     # Written out rather than inlined as a conditional expression twice. The
@@ -218,6 +239,13 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
         "inflight_mean": inflight.mean(elapsed),
         "inflight_peak": inflight.peak,
         "tiers_observed": tiers,
+        # SPEC/06 defines the measured interval as the one carried on the
+        # per-node retrieval span, so the report says what became of the span.
+        # RECORDED, NOT GATED ON: the interval is the router's own
+        # `elapsed_ms`, which is the same number whether or not the datagram
+        # reached the daemon. What would be dishonest is claiming a span that
+        # never left, and that is what this prevents.
+        "span_status": dict(sorted(span_status.items())),
         "fallbacks": [s["fallback"] for s in samples if s["fallback"]],
         # SPEC/06's error rate numerator: search-backend failures only. Titan
         # throttles are Bedrock throttles and are excluded from it, counted
