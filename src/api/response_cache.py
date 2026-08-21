@@ -76,13 +76,38 @@ def key(question: str, company_profile: dict | None) -> str:
 
 
 def cacheable(body: dict) -> bool:
-    """Only a completed, unpaused answer may be stored.
+    """Only a completed, unpaused, ANSWERED body may be stored.
 
     `status: ok` and nothing carrying a resume capability. Checked on the BODY
     rather than trusted from the caller, because the caller is the code that
     just minted the token.
+
+    `status: ok` IS NOT A CLAIM THAT THERE IS AN ANSWER. `nodes.verdict`
+    hardcodes it (`graph/nodes.py:677`) and `_json_object` returns `{}` when it
+    cannot find a closing brace, so a `max_tokens` cut-off mid-object produces
+    an EMPTY answer with no citations and `status: "ok"` — the failure
+    `graph/nodes.py:128` describes. Storing one pins it for the TTL: an hour of
+    callers served an empty answer with no citations, and `_shape`'s hit path
+    already warns that the provenance fields on a hit describe the request that
+    populated the cache, so nothing on the response says "this is a stored
+    failure". "A wrong cache hit in compliance is worse than a slow answer" is
+    this file's own rule, and CLAUDE.md's is that an answer without citations
+    is a bug — the cache would convert one such bug into an hour of them.
+
+    Found by security-reviewer at M06. It was latent until then for a reason
+    worth recording: the cache had been AccessDenied since M05, so `put` never
+    ran in deployment and this branch had never stored anything at all. The
+    commit that granted `CACHE#*` is the commit that made it reachable, so the
+    grant and this clause ship together.
+
+    `truncated` is None when nothing was observed rather than False, and None
+    is falsy — deliberately. "We did not look" must not refuse a good answer;
+    the empty-answer and no-citations checks below catch that case on the
+    evidence rather than on the absence of it.
     """
     if body.get("status") != "ok":
+        return False
+    if body.get("truncated") or not body.get("answer") or not body.get("citations"):
         return False
     return not (body.get("resume_token") or body.get("thread_id"))
 

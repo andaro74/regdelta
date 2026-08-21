@@ -1,0 +1,2171 @@
+{
+  "_note": "Distilled for the repo. Identical to loadtest/reports/tier-disposition-f651aea.json except that the per-step raw latency arrays are elided: 90,000 samples per tier is 2.4 MB and loadtest/reports/ is gitignored for that reason. Every percentile, count and verdict here is the orchestrator's own, copied not recomputed. Regenerate the full report with `make tier-disposition`.",
+  "dirty": false,
+  "disposition": {
+    "at": "2026-08-21T17:14:30+00:00",
+    "attempts_per_tier": {
+      "aoss": 1,
+      "s3vectors": 1
+    },
+    "by_rate": {
+      "10": {
+        "aoss": {
+          "achieved_rate": [
+            10.0,
+            10.0
+          ],
+          "bedrock_retries": [
+            0,
+            0
+          ],
+          "calls_dispatched": 1200,
+          "calls_returned": 1200,
+          "eligible": true,
+          "error_rate": 0.0,
+          "errors": 0,
+          "ineligible_reasons": [],
+          "inflight_mean": [
+            1.45,
+            1.39
+          ],
+          "inflight_peak": [
+            3,
+            3
+          ],
+          "n": 1200,
+          "n_per_run": [
+            600,
+            600
+          ],
+          "p50_ms": 135.8,
+          "p95_ms": 178.3,
+          "span_status": {
+            "sent": 1200
+          },
+          "steps": 2,
+          "unaccounted": 0
+        },
+        "both_eligible": true,
+        "s3vectors": {
+          "achieved_rate": [
+            10.0,
+            10.0
+          ],
+          "bedrock_retries": [
+            0,
+            0
+          ],
+          "calls_dispatched": 1200,
+          "calls_returned": 1200,
+          "eligible": true,
+          "error_rate": 0.000833,
+          "errors": 1,
+          "ineligible_reasons": [],
+          "inflight_mean": [
+            1.96,
+            2.47
+          ],
+          "inflight_peak": [
+            3,
+            5
+          ],
+          "n": 1199,
+          "n_per_run": [
+            600,
+            599
+          ],
+          "p50_ms": 188.2,
+          "p95_ms": 257.2,
+          "span_status": {
+            "sent": 1200
+          },
+          "steps": 2,
+          "unaccounted": 0
+        }
+      },
+      "25": {
+        "aoss": {
+          "achieved_rate": [
+            25.0,
+            25.0
+          ],
+          "bedrock_retries": [
+            0,
+            0
+          ],
+          "calls_dispatched": 3000,
+          "calls_returned": 3000,
+          "eligible": true,
+          "error_rate": 0.0,
+          "errors": 0,
+          "ineligible_reasons": [],
+          "inflight_mean": [
+            3.61,
+            3.52
+          ],
+          "inflight_peak": [
+            6,
+            6
+          ],
+          "n": 3000,
+          "n_per_run": [
+            1500,
+            1500
+          ],
+          "p50_ms": 136.3,
+          "p95_ms": 177.9,
+          "span_status": {
+            "sent": 3000
+          },
+          "steps": 2,
+          "unaccounted": 0
+        },
+        "both_eligible": true,
+        "s3vectors": {
+          "achieved_rate": [
+            25.0,
+            25.0
+          ],
+          "bedrock_retries": [
+            0,
+            0
+          ],
+          "calls_dispatched": 3000,
+          "calls_returned": 3000,
+          "eligible": true,
+          "error_rate": 0.0,
+          "errors": 0,
+          "ineligible_reasons": [],
+          "inflight_mean": [
+            4.97,
+            4.95
+          ],
+          "inflight_peak": [
+            7,
+            8
+          ],
+          "n": 3000,
+          "n_per_run": [
+            1500,
+            1500
+          ],
+          "p50_ms": 189.0,
+          "p95_ms": 258.7,
+          "span_status": {
+            "sent": 3000
+          },
+          "steps": 2,
+          "unaccounted": 0
+        }
+      },
+      "50": {
+        "aoss": {
+          "achieved_rate": [
+            50.0,
+            50.0
+          ],
+          "bedrock_retries": [
+            0,
+            0
+          ],
+          "calls_dispatched": 6000,
+          "calls_returned": 6000,
+          "eligible": true,
+          "error_rate": 0.000667,
+          "errors": 4,
+          "ineligible_reasons": [],
+          "inflight_mean": [
+            7.43,
+            7.36
+          ],
+          "inflight_peak": [
+            15,
+            12
+          ],
+          "n": 5996,
+          "n_per_run": [
+            2996,
+            3000
+          ],
+          "p50_ms": 139.4,
+          "p95_ms": 185.9,
+          "span_status": {
+            "sent": 6000
+          },
+          "steps": 2,
+          "unaccounted": 0
+        },
+        "both_eligible": true,
+        "s3vectors": {
+          "achieved_rate": [
+            50.0,
+            50.0
+          ],
+          "bedrock_retries": [
+            0,
+            0
+          ],
+          "calls_dispatched": 6000,
+          "calls_returned": 6000,
+          "eligible": true,
+          "error_rate": 0.0,
+          "errors": 0,
+          "ineligible_reasons": [],
+          "inflight_mean": [
+            10.67,
+            10.88
+          ],
+          "inflight_peak": [
+            20,
+            19
+          ],
+          "n": 6000,
+          "n_per_run": [
+            3000,
+            3000
+          ],
+          "p50_ms": 199.8,
+          "p95_ms": 281.4,
+          "span_status": {
+            "sent": 6000
+          },
+          "steps": 2,
+          "unaccounted": 0
+        }
+      },
+      "75": {
+        "aoss": {
+          "achieved_rate": [
+            74.12,
+            72.03
+          ],
+          "bedrock_retries": [
+            0,
+            0
+          ],
+          "calls_dispatched": 9000,
+          "calls_returned": 9000,
+          "eligible": false,
+          "error_rate": 0.000111,
+          "errors": 1,
+          "ineligible_reasons": [
+            {
+              "step": "aoss/run2/75ps",
+              "why": []
+            }
+          ],
+          "inflight_mean": [
+            18.07,
+            46.51
+          ],
+          "inflight_peak": [
+            41,
+            281
+          ],
+          "n": 8999,
+          "n_per_run": [
+            4500,
+            4499
+          ],
+          "p50_ms": 271.4,
+          "p95_ms": 587.3,
+          "span_status": {
+            "sent": 9000
+          },
+          "steps": 2,
+          "unaccounted": 0
+        },
+        "both_eligible": false,
+        "s3vectors": {
+          "achieved_rate": [
+            74.98,
+            67.79
+          ],
+          "bedrock_retries": [
+            0,
+            0
+          ],
+          "calls_dispatched": 8757,
+          "calls_returned": 8757,
+          "eligible": false,
+          "error_rate": 0.0,
+          "errors": 0,
+          "ineligible_reasons": [
+            {
+              "step": "s3vectors/run1/75ps",
+              "why": [
+                "243 dispatches refused at the thread ceiling \u2014 load it did not offer"
+              ]
+            },
+            {
+              "step": "s3vectors/run2/75ps",
+              "why": [
+                "achieved 67.79/s against a driven 75.0/s \u2014 outside 5%"
+              ]
+            }
+          ],
+          "inflight_mean": [
+            203.84,
+            66.58
+          ],
+          "inflight_peak": [
+            512,
+            348
+          ],
+          "n": 8757,
+          "n_per_run": [
+            4257,
+            4500
+          ],
+          "p50_ms": 319.3,
+          "p95_ms": 3304.7,
+          "span_status": {
+            "sent": 8757
+          },
+          "steps": 2,
+          "unaccounted": 243
+        }
+      },
+      "90": {
+        "aoss": {
+          "achieved_rate": [
+            73.89,
+            74.09
+          ],
+          "bedrock_retries": [
+            0,
+            0
+          ],
+          "calls_dispatched": 10800,
+          "calls_returned": 10800,
+          "eligible": false,
+          "error_rate": 9.3e-05,
+          "errors": 1,
+          "ineligible_reasons": [
+            {
+              "step": "aoss/run1/90ps",
+              "why": [
+                "achieved 73.89/s against a driven 90.0/s \u2014 outside 5%"
+              ]
+            },
+            {
+              "step": "aoss/run2/90ps",
+              "why": [
+                "achieved 74.09/s against a driven 90.0/s \u2014 outside 5%"
+              ]
+            }
+          ],
+          "inflight_mean": [
+            24.94,
+            24.59
+          ],
+          "inflight_peak": [
+            46,
+            53
+          ],
+          "n": 10799,
+          "n_per_run": [
+            5400,
+            5399
+          ],
+          "p50_ms": 292.6,
+          "p95_ms": 418.5,
+          "span_status": {
+            "sent": 10800
+          },
+          "steps": 2,
+          "unaccounted": 0
+        },
+        "both_eligible": false,
+        "s3vectors": {
+          "achieved_rate": [
+            69.89,
+            68.25
+          ],
+          "bedrock_retries": [
+            0,
+            0
+          ],
+          "calls_dispatched": 10800,
+          "calls_returned": 10800,
+          "eligible": false,
+          "error_rate": 0.0,
+          "errors": 0,
+          "ineligible_reasons": [
+            {
+              "step": "s3vectors/run1/90ps",
+              "why": [
+                "achieved 69.89/s against a driven 90.0/s \u2014 outside 5%"
+              ]
+            },
+            {
+              "step": "s3vectors/run2/90ps",
+              "why": [
+                "achieved 68.25/s against a driven 90.0/s \u2014 outside 5%"
+              ]
+            }
+          ],
+          "inflight_mean": [
+            245.53,
+            40.07
+          ],
+          "inflight_peak": [
+            487,
+            167
+          ],
+          "n": 10800,
+          "n_per_run": [
+            5400,
+            5400
+          ],
+          "p50_ms": 312.7,
+          "p95_ms": 502.1,
+          "span_status": {
+            "sent": 10800
+          },
+          "steps": 2,
+          "unaccounted": 0
+        }
+      }
+    },
+    "config_agree": true,
+    "corpus": {
+      "aoss": {
+        "available": true,
+        "documents": 52,
+        "documents_sha": "35a293e17117",
+        "newest_pub_date": "2026-08-19",
+        "oldest_pub_date": "2024-12-27"
+      },
+      "s3vectors": {
+        "available": true,
+        "documents": 52,
+        "documents_sha": "35a293e17117",
+        "newest_pub_date": "2026-08-19",
+        "oldest_pub_date": "2024-12-27"
+      }
+    },
+    "corpus_agree": true,
+    "dispositive": {
+      "aoss": {
+        "achieved_rate": [
+          50.0,
+          50.0
+        ],
+        "bedrock_retries": [
+          0,
+          0
+        ],
+        "calls_dispatched": 6000,
+        "calls_returned": 6000,
+        "eligible": true,
+        "error_rate": 0.000667,
+        "errors": 4,
+        "ineligible_reasons": [],
+        "inflight_mean": [
+          7.43,
+          7.36
+        ],
+        "inflight_peak": [
+          15,
+          12
+        ],
+        "n": 5996,
+        "n_per_run": [
+          2996,
+          3000
+        ],
+        "p50_ms": 139.4,
+        "p95_ms": 185.9,
+        "span_status": {
+          "sent": 6000
+        },
+        "steps": 2,
+        "unaccounted": 0
+      },
+      "s3vectors": {
+        "achieved_rate": [
+          50.0,
+          50.0
+        ],
+        "bedrock_retries": [
+          0,
+          0
+        ],
+        "calls_dispatched": 6000,
+        "calls_returned": 6000,
+        "eligible": true,
+        "error_rate": 0.0,
+        "errors": 0,
+        "ineligible_reasons": [],
+        "inflight_mean": [
+          10.67,
+          10.88
+        ],
+        "inflight_peak": [
+          20,
+          19
+        ],
+        "n": 6000,
+        "n_per_run": [
+          3000,
+          3000
+        ],
+        "p50_ms": 199.8,
+        "p95_ms": 281.4,
+        "span_status": {
+          "sent": 6000
+        },
+        "steps": 2,
+        "unaccounted": 0
+      }
+    },
+    "dispositive_rate": 50,
+    "dispositive_rate_basis": "the highest arrival rate at which BOTH tiers completed the step; every other step is reported beside it and is not dispositive",
+    "error_rate_disjunct": {
+      "aoss": 0.000667,
+      "holds": false,
+      "required_advantage_pp": 5.0,
+      "s3vectors": 0.0
+    },
+    "failures": [],
+    "judged_by_sha": "f651aea",
+    "keep_condition": "Tier B keeps its place only if its p95 retrieval latency is at or below Tier A's, OR its retrieval error rate is at least 5 percentage points lower. Retirement is the default outcome; ties retire.",
+    "known_limitations": [
+      {
+        "bounds_the_verdict_to": "RegDelta's AOSS tier AS IMPLEMENTED. The clause retires a stack, a client, a reindex Lambda and a routing branch; it does not make a claim about OpenSearch Serverless.",
+        "direction": "against Tier B \u2014 toward the default outcome, retirement",
+        "id": "aoss-client-opens-a-connection-per-call",
+        "measured": false,
+        "ruled": "Part IIb D option 2 \u2014 record and run",
+        "what": "src/retrieval/aoss_client.py issues every request through urllib.request.urlopen, which opens a fresh TCP+TLS connection per call because nothing installs an opener holding a pool. The S3 Vectors path goes through botocore, which keeps a urllib3 pool per client (config.RETRIEVAL_POOL_SIZE).",
+        "why_not_measured": "the handshake cost is not observable offline and separating it from AOSS's own latency needs a pooled client to compare against, which is a structural change to a tier whose default outcome is removal"
+      },
+      {
+        "direction": "removed \u2014 noted because M04's 889.3 ms Tier B median, which ADR-0012 rests on, was taken WITH it",
+        "id": "aoss-per-call-credential-cost-was-fixed-not-controlled-for",
+        "measured": true,
+        "ruled": "fixed, and recorded so the two numbers are not compared as though the instrument had not changed",
+        "what": "the same client rebuilt a botocore Session per request: 6.430 ms median of GIL-bound CPU inside the measured interval, on the AOSS path only (milestones/M06/aoss_per_call_overhead.json). Memoised at M06, so THIS run does not carry it."
+      }
+    ],
+    "latency_disjunct": {
+      "aoss_p95_ms": 185.9,
+      "comparability_rule": "the p95 comparison is made only when the two error rates are within the clause's own 5-percentage-point materiality; otherwise the surviving samples are not the same population and the error-rate disjunct settles it. INTERPRETATION \u2014 named for the seat in Amendment v4.",
+      "holds": true,
+      "populations_comparable": true,
+      "s3vectors_p95_ms": 281.4
+    },
+    "n_dispositive": {
+      "aoss": 5996,
+      "s3vectors": 6000
+    },
+    "prior_failed_measurements_per_tier": {
+      "aoss": 0,
+      "s3vectors": 0
+    },
+    "tiers_present": [
+      "s3vectors",
+      "aoss"
+    ],
+    "vantage": {
+      "aoss": "lambda:regdelta-core-LoadDriverFn010600B4-ZySGQf7cEiLr:us-west-2:2048MB",
+      "s3vectors": "lambda:regdelta-core-LoadDriverFn010600B4-ZySGQf7cEiLr:us-west-2:2048MB"
+    },
+    "verdict": "keep",
+    "verdict_reason": "at 50 calls/s, AOSS p95 185.9 ms vs S3 Vectors 281.4 ms (n 5996 / 6000); error rate 0.000667 vs 0.0. Tier B keeps its place."
+  },
+  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+  "schedule": {
+    "calls_per_run": 15000,
+    "rates_per_second": [
+      10,
+      25,
+      50,
+      75,
+      90
+    ],
+    "runs_per_tier": 3,
+    "step_seconds": 60,
+    "warmup_runs_discarded": 1
+  },
+  "sha": "f651aea",
+  "spec": "SPEC/06 Tier B disposition, as amended by milestones/M06/spec06-disposition-amendment.md",
+  "tiers": {
+    "aoss": {
+      "attempts": [
+        {
+          "at": "2026-08-21T16:55:56+00:00",
+          "budget": {
+            "aoss_ocu_minutes": 35.0,
+            "aoss_ocu_usd": 0.1412,
+            "bedrock": {
+              "basis": "ESTIMATE from predicted token counts, not a measurement. Nothing books actuals during this run: the ceiling is held before it starts by this check, and during it by IAM \u2014 the load driver can invoke the embedding model and no other.",
+              "ceiling_usd": 19.7988,
+              "daily_cap_by_model": {
+                "amazon.titan-embed-text-v2:0": null
+              },
+              "estimated_usd": 0.0287,
+              "label": "tier-disposition",
+              "spent_today_supplied": false,
+              "tokens_by_model": {
+                "amazon.titan-embed-text-v2:0": 1440000
+              }
+            },
+            "ceiling_usd": 20.0,
+            "embed_tokens_basis": "UPPER BOUND: the longest default question at four characters per token. Not measured.",
+            "embed_tokens_per_call": 16,
+            "infra_usd": 0.2012,
+            "lambda_gb_seconds": 3600.0,
+            "lambda_usd": 0.06,
+            "retrieval_calls": 90000,
+            "titan_rpm_at_top_step": 5400,
+            "titan_rpm_cap": 6000,
+            "total_usd": 0.2298
+          },
+          "complete": true,
+          "config": {
+            "EMBED_MODEL": "amazon.titan-embed-text-v2:0",
+            "NAIVE_TOP_K": 8,
+            "RERANK": false,
+            "RETRIEVAL_LEXICAL_LANE": false
+          },
+          "corpus": {
+            "available": true,
+            "documents": 52,
+            "documents_sha": "35a293e17117",
+            "newest_pub_date": "2026-08-19",
+            "oldest_pub_date": "2024-12-27"
+          },
+          "dirty": false,
+          "runs": [
+            {
+              "run": 0,
+              "steps": [
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 10.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 600,
+                  "dispositive_eligible": true,
+                  "driven_rate": 10.0,
+                  "elapsed_s": 60.08,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "aoss",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 5.4,
+                  "inflight_peak": 54,
+                  "label": "aoss/run0/10ps",
+                  "latencies_ms": "<600 samples elided>",
+                  "max_ms": 5119.0,
+                  "min_ms": 130.0,
+                  "n": 600,
+                  "offered": 600,
+                  "p50_ms": 185.3,
+                  "p95_ms": 3376.0,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "aoss",
+                  "returned": 600,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 600
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "aoss"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 62.2
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 25.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 1500,
+                  "dispositive_eligible": true,
+                  "driven_rate": 25.0,
+                  "elapsed_s": 60.11,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "aoss",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 4.45,
+                  "inflight_peak": 11,
+                  "label": "aoss/run0/25ps",
+                  "latencies_ms": "<1500 samples elided>",
+                  "max_ms": 1462.2,
+                  "min_ms": 122.4,
+                  "n": 1500,
+                  "offered": 1500,
+                  "p50_ms": 168.9,
+                  "p95_ms": 252.9,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "aoss",
+                  "returned": 1500,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 1500
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "aoss"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 60.2
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 50.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 3000,
+                  "dispositive_eligible": true,
+                  "driven_rate": 50.0,
+                  "elapsed_s": 60.22,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "aoss",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 14.92,
+                  "inflight_peak": 56,
+                  "label": "aoss/run0/50ps",
+                  "latencies_ms": "<3000 samples elided>",
+                  "max_ms": 3687.4,
+                  "min_ms": 121.0,
+                  "n": 3000,
+                  "offered": 3000,
+                  "p50_ms": 212.0,
+                  "p95_ms": 743.8,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "aoss",
+                  "returned": 3000,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 3000
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "aoss"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 60.3
+                },
+                {
+                  "accounted_for_every_call": false,
+                  "achieved_rate": 75.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 956,
+                  "dispatched": 3544,
+                  "dispositive_eligible": false,
+                  "driven_rate": 75.0,
+                  "elapsed_s": 96.05,
+                  "error_rate": 0.010889,
+                  "error_sample": [],
+                  "errors": 49,
+                  "errors_raised": 0,
+                  "expected_tier": "aoss",
+                  "fallback_sample": [
+                    "AossError: {\"root_cause\": [{\"type\": \"circuit_breaking_exception\", \"reason\": \"rejected execution of primary operation [throttled]\", \"bytes_wanted\": 0, \"bytes_limit\": 0, \"durability\": \"TRANSIENT\"}], \"type\": \"circuit_breaking_exception\", \"reason\": \"rejected execution of primary operation [throttled]\", ",
+                    "AossError: POST chunks/_search -> 429: {\"error\":{\"root_cause\":[{\"type\":\"circuit_breaking_exception\",\"reason\":\"rejected execution of primary operation [throttled]\",\"bytes_wanted\":0,\"bytes_limit\":0,\"durability\":\"TRANSIENT\"}],\"type\":\"circuit_breaking_exception\",\"reason\":\"rejected execution of primary o",
+                    "AossError: {\"root_cause\": [{\"type\": \"circuit_breaking_exception\", \"reason\": \"rejected execution of primary operation [throttled]\", \"bytes_wanted\": 0, \"bytes_limit\": 0, \"durability\": \"TRANSIENT\"}], \"type\": \"circuit_breaking_exception\", \"reason\": \"rejected execution of primary operation [throttled]\", ",
+                    "AossError: {\"root_cause\": [{\"type\": \"circuit_breaking_exception\", \"reason\": \"rejected execution of primary operation [throttled]\", \"bytes_wanted\": 0, \"bytes_limit\": 0, \"durability\": \"TRANSIENT\"}], \"type\": \"circuit_breaking_exception\", \"reason\": \"rejected execution of primary operation [throttled]\", ",
+                    "AossError: {\"root_cause\": [{\"type\": \"circuit_breaking_exception\", \"reason\": \"rejected execution of primary operation [throttled]\", \"bytes_wanted\": 0, \"bytes_limit\": 0, \"durability\": \"TRANSIENT\"}], \"type\": \"circuit_breaking_exception\", \"reason\": \"rejected execution of primary operation [throttled]\", "
+                  ],
+                  "fallbacks": 49,
+                  "inflight_mean": 442.2,
+                  "inflight_peak": 512,
+                  "label": "aoss/run0/75ps",
+                  "latencies_ms": "<3495 samples elided>",
+                  "max_ms": 16399.0,
+                  "min_ms": 168.3,
+                  "n": 3495,
+                  "offered": 4500,
+                  "p50_ms": 8526.8,
+                  "p95_ms": 12710.4,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "aoss",
+                  "returned": 3544,
+                  "sample_completeness": 0.776667,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 3544
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "aoss"
+                  ],
+                  "unaccounted": 956,
+                  "wall_s": 96.2
+                },
+                {
+                  "accounted_for_every_call": false,
+                  "achieved_rate": 90.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 1395,
+                  "dispatched": 4005,
+                  "dispositive_eligible": false,
+                  "driven_rate": 90.0,
+                  "elapsed_s": 101.14,
+                  "error_rate": 0.005556,
+                  "error_sample": [],
+                  "errors": 30,
+                  "errors_raised": 0,
+                  "expected_tier": "aoss",
+                  "fallback_sample": [
+                    "AossError: POST _msearch -> 429: local_rate_limited",
+                    "AossError: POST chunks/_search -> 429: local_rate_limited",
+                    "AossError: POST chunks/_search -> 429: local_rate_limited",
+                    "AossError: POST _msearch -> 429: local_rate_limited",
+                    "AossError: POST _msearch -> 429: local_rate_limited"
+                  ],
+                  "fallbacks": 30,
+                  "inflight_mean": 180.38,
+                  "inflight_peak": 512,
+                  "label": "aoss/run0/90ps",
+                  "latencies_ms": "<3975 samples elided>",
+                  "max_ms": 23737.9,
+                  "min_ms": 122.1,
+                  "n": 3975,
+                  "offered": 5400,
+                  "p50_ms": 607.6,
+                  "p95_ms": 16061.3,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "aoss",
+                  "returned": 4005,
+                  "sample_completeness": 0.736111,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 4005
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "aoss"
+                  ],
+                  "unaccounted": 1395,
+                  "wall_s": 101.3
+                }
+              ],
+              "warmup": true
+            },
+            {
+              "run": 1,
+              "steps": [
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 10.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 600,
+                  "dispositive_eligible": true,
+                  "driven_rate": 10.0,
+                  "elapsed_s": 60.05,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "aoss",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 1.45,
+                  "inflight_peak": 3,
+                  "label": "aoss/run1/10ps",
+                  "latencies_ms": "<600 samples elided>",
+                  "max_ms": 289.6,
+                  "min_ms": 120.5,
+                  "n": 600,
+                  "offered": 600,
+                  "p50_ms": 138.1,
+                  "p95_ms": 179.3,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "aoss",
+                  "returned": 600,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 600
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "aoss"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 60.2
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 25.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 1500,
+                  "dispositive_eligible": true,
+                  "driven_rate": 25.0,
+                  "elapsed_s": 60.1,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "aoss",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 3.61,
+                  "inflight_peak": 6,
+                  "label": "aoss/run1/25ps",
+                  "latencies_ms": "<1500 samples elided>",
+                  "max_ms": 543.1,
+                  "min_ms": 118.4,
+                  "n": 1500,
+                  "offered": 1500,
+                  "p50_ms": 137.9,
+                  "p95_ms": 180.8,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "aoss",
+                  "returned": 1500,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 1500
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "aoss"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 60.2
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 50.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 3000,
+                  "dispositive_eligible": true,
+                  "driven_rate": 50.0,
+                  "elapsed_s": 60.12,
+                  "error_rate": 0.001333,
+                  "error_sample": [
+                    "ModelErrorException: An error occurred (ModelErrorException) when calling the InvokeModel operation: The system encountered an unexpected error during processing. Try your request again.",
+                    "ModelErrorException: An error occurred (ModelErrorException) when calling the InvokeModel operation: The system encountered an unexpected error during processing. Try your request again.",
+                    "ModelErrorException: An error occurred (ModelErrorException) when calling the InvokeModel operation: The system encountered an unexpected error during processing. Try your request again.",
+                    "ModelErrorException: An error occurred (ModelErrorException) when calling the InvokeModel operation: The system encountered an unexpected error during processing. Try your request again."
+                  ],
+                  "errors": 4,
+                  "errors_raised": 4,
+                  "expected_tier": "aoss",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 7.43,
+                  "inflight_peak": 15,
+                  "label": "aoss/run1/50ps",
+                  "latencies_ms": "<2996 samples elided>",
+                  "max_ms": 364.2,
+                  "min_ms": 116.3,
+                  "n": 2996,
+                  "offered": 3000,
+                  "p50_ms": 139.3,
+                  "p95_ms": 189.2,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "aoss",
+                  "returned": 3000,
+                  "sample_completeness": 0.998667,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 3000
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "aoss"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 60.2
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 74.12,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 4500,
+                  "dispositive_eligible": true,
+                  "driven_rate": 75.0,
+                  "elapsed_s": 60.95,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "aoss",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 18.07,
+                  "inflight_peak": 41,
+                  "label": "aoss/run1/75ps",
+                  "latencies_ms": "<4500 samples elided>",
+                  "max_ms": 687.0,
+                  "min_ms": 120.7,
+                  "n": 4500,
+                  "offered": 4500,
+                  "p50_ms": 212.6,
+                  "p95_ms": 368.2,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "aoss",
+                  "returned": 4500,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 4500
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "aoss"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 61.0
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 73.89,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 5400,
+                  "dispositive_eligible": false,
+                  "driven_rate": 90.0,
+                  "elapsed_s": 73.32,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "aoss",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 24.94,
+                  "inflight_peak": 46,
+                  "label": "aoss/run1/90ps",
+                  "latencies_ms": "<5400 samples elided>",
+                  "max_ms": 1241.5,
+                  "min_ms": 142.8,
+                  "n": 5400,
+                  "offered": 5400,
+                  "p50_ms": 294.6,
+                  "p95_ms": 421.0,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": false,
+                  "resolved_tier": "aoss",
+                  "returned": 5400,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 5400
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "aoss"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 73.4
+                }
+              ],
+              "warmup": false
+            },
+            {
+              "run": 2,
+              "steps": [
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 10.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 600,
+                  "dispositive_eligible": true,
+                  "driven_rate": 10.0,
+                  "elapsed_s": 60.04,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "aoss",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 1.39,
+                  "inflight_peak": 3,
+                  "label": "aoss/run2/10ps",
+                  "latencies_ms": "<600 samples elided>",
+                  "max_ms": 259.4,
+                  "min_ms": 117.0,
+                  "n": 600,
+                  "offered": 600,
+                  "p50_ms": 133.5,
+                  "p95_ms": 174.1,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "aoss",
+                  "returned": 600,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 600
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "aoss"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 60.1
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 25.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 1500,
+                  "dispositive_eligible": true,
+                  "driven_rate": 25.0,
+                  "elapsed_s": 60.09,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "aoss",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 3.52,
+                  "inflight_peak": 6,
+                  "label": "aoss/run2/25ps",
+                  "latencies_ms": "<1500 samples elided>",
+                  "max_ms": 271.8,
+                  "min_ms": 117.9,
+                  "n": 1500,
+                  "offered": 1500,
+                  "p50_ms": 134.7,
+                  "p95_ms": 175.6,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "aoss",
+                  "returned": 1500,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 1500
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "aoss"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 60.2
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 50.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 3000,
+                  "dispositive_eligible": true,
+                  "driven_rate": 50.0,
+                  "elapsed_s": 60.11,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "aoss",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 7.36,
+                  "inflight_peak": 12,
+                  "label": "aoss/run2/50ps",
+                  "latencies_ms": "<3000 samples elided>",
+                  "max_ms": 406.8,
+                  "min_ms": 113.7,
+                  "n": 3000,
+                  "offered": 3000,
+                  "p50_ms": 139.5,
+                  "p95_ms": 183.6,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "aoss",
+                  "returned": 3000,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 3000
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "aoss"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 60.2
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 72.03,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 4500,
+                  "dispositive_eligible": true,
+                  "driven_rate": 75.0,
+                  "elapsed_s": 62.68,
+                  "error_rate": 0.000222,
+                  "error_sample": [],
+                  "errors": 1,
+                  "errors_raised": 0,
+                  "expected_tier": "aoss",
+                  "fallback_sample": [
+                    "AossError: POST chunks/_search -> 429: local_rate_limited"
+                  ],
+                  "fallbacks": 1,
+                  "inflight_mean": 46.51,
+                  "inflight_peak": 281,
+                  "label": "aoss/run2/75ps",
+                  "latencies_ms": "<4499 samples elided>",
+                  "max_ms": 9539.7,
+                  "min_ms": 126.3,
+                  "n": 4499,
+                  "offered": 4500,
+                  "p50_ms": 303.4,
+                  "p95_ms": 3003.5,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "aoss",
+                  "returned": 4500,
+                  "sample_completeness": 0.999778,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 4500
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "aoss"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 62.8
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 74.09,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 5400,
+                  "dispositive_eligible": false,
+                  "driven_rate": 90.0,
+                  "elapsed_s": 73.13,
+                  "error_rate": 0.000185,
+                  "error_sample": [],
+                  "errors": 1,
+                  "errors_raised": 0,
+                  "expected_tier": "aoss",
+                  "fallback_sample": [
+                    "AossError: POST chunks/_search -> unreachable: RemoteDisconnected: Remote end closed connection without response"
+                  ],
+                  "fallbacks": 1,
+                  "inflight_mean": 24.59,
+                  "inflight_peak": 53,
+                  "label": "aoss/run2/90ps",
+                  "latencies_ms": "<5399 samples elided>",
+                  "max_ms": 1425.5,
+                  "min_ms": 149.1,
+                  "n": 5399,
+                  "offered": 5400,
+                  "p50_ms": 290.5,
+                  "p95_ms": 416.1,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": false,
+                  "resolved_tier": "aoss",
+                  "returned": 5400,
+                  "sample_completeness": 0.999815,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 5400
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "aoss"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 73.2
+                }
+              ],
+              "warmup": false
+            }
+          ],
+          "vantage": "lambda:regdelta-core-LoadDriverFn010600B4-ZySGQf7cEiLr:us-west-2:2048MB",
+          "verdict": "incomplete"
+        }
+      ]
+    },
+    "s3vectors": {
+      "attempts": [
+        {
+          "at": "2026-08-21T17:14:29+00:00",
+          "budget": {
+            "aoss_ocu_minutes": 35.0,
+            "aoss_ocu_usd": 0.1412,
+            "bedrock": {
+              "basis": "ESTIMATE from predicted token counts, not a measurement. Nothing books actuals during this run: the ceiling is held before it starts by this check, and during it by IAM \u2014 the load driver can invoke the embedding model and no other.",
+              "ceiling_usd": 19.7988,
+              "daily_cap_by_model": {
+                "amazon.titan-embed-text-v2:0": null
+              },
+              "estimated_usd": 0.0287,
+              "label": "tier-disposition",
+              "spent_today_supplied": false,
+              "tokens_by_model": {
+                "amazon.titan-embed-text-v2:0": 1440000
+              }
+            },
+            "ceiling_usd": 20.0,
+            "embed_tokens_basis": "UPPER BOUND: the longest default question at four characters per token. Not measured.",
+            "embed_tokens_per_call": 16,
+            "infra_usd": 0.2012,
+            "lambda_gb_seconds": 3600.0,
+            "lambda_usd": 0.06,
+            "retrieval_calls": 90000,
+            "titan_rpm_at_top_step": 5400,
+            "titan_rpm_cap": 6000,
+            "total_usd": 0.2298
+          },
+          "complete": true,
+          "config": {
+            "EMBED_MODEL": "amazon.titan-embed-text-v2:0",
+            "NAIVE_TOP_K": 8,
+            "RERANK": false,
+            "RETRIEVAL_LEXICAL_LANE": false
+          },
+          "corpus": {
+            "available": true,
+            "documents": 52,
+            "documents_sha": "35a293e17117",
+            "newest_pub_date": "2026-08-19",
+            "oldest_pub_date": "2024-12-27"
+          },
+          "dirty": false,
+          "runs": [
+            {
+              "run": 0,
+              "steps": [
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 10.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 600,
+                  "dispositive_eligible": true,
+                  "driven_rate": 10.0,
+                  "elapsed_s": 60.08,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "s3vectors",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 1.99,
+                  "inflight_peak": 4,
+                  "label": "s3vectors/run0/10ps",
+                  "latencies_ms": "<600 samples elided>",
+                  "max_ms": 348.7,
+                  "min_ms": 175.3,
+                  "n": 600,
+                  "offered": 600,
+                  "p50_ms": 189.5,
+                  "p95_ms": 266.1,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "s3vectors",
+                  "returned": 600,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 600
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "s3vectors"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 60.5
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 25.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 1500,
+                  "dispositive_eligible": true,
+                  "driven_rate": 25.0,
+                  "elapsed_s": 60.15,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "s3vectors",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 5.0,
+                  "inflight_peak": 9,
+                  "label": "s3vectors/run0/25ps",
+                  "latencies_ms": "<1500 samples elided>",
+                  "max_ms": 593.2,
+                  "min_ms": 173.8,
+                  "n": 1500,
+                  "offered": 1500,
+                  "p50_ms": 189.7,
+                  "p95_ms": 260.7,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "s3vectors",
+                  "returned": 1500,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 1500
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "s3vectors"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 60.3
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 50.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 3000,
+                  "dispositive_eligible": true,
+                  "driven_rate": 50.0,
+                  "elapsed_s": 60.17,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "s3vectors",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 10.53,
+                  "inflight_peak": 16,
+                  "label": "s3vectors/run0/50ps",
+                  "latencies_ms": "<3000 samples elided>",
+                  "max_ms": 475.7,
+                  "min_ms": 172.4,
+                  "n": 3000,
+                  "offered": 3000,
+                  "p50_ms": 196.7,
+                  "p95_ms": 273.0,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "s3vectors",
+                  "returned": 3000,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 3000
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "s3vectors"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 60.3
+                },
+                {
+                  "accounted_for_every_call": false,
+                  "achieved_rate": 74.99,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 255,
+                  "dispatched": 4245,
+                  "dispositive_eligible": false,
+                  "driven_rate": 75.0,
+                  "elapsed_s": 60.38,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "s3vectors",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 296.55,
+                  "inflight_peak": 512,
+                  "label": "s3vectors/run0/75ps",
+                  "latencies_ms": "<4245 samples elided>",
+                  "max_ms": 4274.5,
+                  "min_ms": 189.5,
+                  "n": 4245,
+                  "offered": 4500,
+                  "p50_ms": 302.4,
+                  "p95_ms": 429.8,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "s3vectors",
+                  "returned": 4245,
+                  "sample_completeness": 0.943333,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 4245
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "s3vectors"
+                  ],
+                  "unaccounted": 255,
+                  "wall_s": 60.5
+                },
+                {
+                  "accounted_for_every_call": false,
+                  "achieved_rate": 89.76,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 1160,
+                  "dispatched": 4240,
+                  "dispositive_eligible": false,
+                  "driven_rate": 90.0,
+                  "elapsed_s": 60.57,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "s3vectors",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 316.15,
+                  "inflight_peak": 512,
+                  "label": "s3vectors/run0/90ps",
+                  "latencies_ms": "<4240 samples elided>",
+                  "max_ms": 699.7,
+                  "min_ms": 193.9,
+                  "n": 4240,
+                  "offered": 5400,
+                  "p50_ms": 304.6,
+                  "p95_ms": 430.8,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "s3vectors",
+                  "returned": 4240,
+                  "sample_completeness": 0.785185,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 4240
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "s3vectors"
+                  ],
+                  "unaccounted": 1160,
+                  "wall_s": 60.7
+                }
+              ],
+              "warmup": true
+            },
+            {
+              "run": 1,
+              "steps": [
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 10.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 600,
+                  "dispositive_eligible": true,
+                  "driven_rate": 10.0,
+                  "elapsed_s": 60.09,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "s3vectors",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 1.96,
+                  "inflight_peak": 3,
+                  "label": "s3vectors/run1/10ps",
+                  "latencies_ms": "<600 samples elided>",
+                  "max_ms": 320.2,
+                  "min_ms": 172.3,
+                  "n": 600,
+                  "offered": 600,
+                  "p50_ms": 188.1,
+                  "p95_ms": 255.1,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "s3vectors",
+                  "returned": 600,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 600
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "s3vectors"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 60.2
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 25.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 1500,
+                  "dispositive_eligible": true,
+                  "driven_rate": 25.0,
+                  "elapsed_s": 60.15,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "s3vectors",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 4.97,
+                  "inflight_peak": 7,
+                  "label": "s3vectors/run1/25ps",
+                  "latencies_ms": "<1500 samples elided>",
+                  "max_ms": 349.8,
+                  "min_ms": 171.1,
+                  "n": 1500,
+                  "offered": 1500,
+                  "p50_ms": 189.0,
+                  "p95_ms": 260.9,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "s3vectors",
+                  "returned": 1500,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 1500
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "s3vectors"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 60.3
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 50.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 3000,
+                  "dispositive_eligible": true,
+                  "driven_rate": 50.0,
+                  "elapsed_s": 60.19,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "s3vectors",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 10.67,
+                  "inflight_peak": 20,
+                  "label": "s3vectors/run1/50ps",
+                  "latencies_ms": "<3000 samples elided>",
+                  "max_ms": 547.9,
+                  "min_ms": 175.2,
+                  "n": 3000,
+                  "offered": 3000,
+                  "p50_ms": 198.5,
+                  "p95_ms": 278.6,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "s3vectors",
+                  "returned": 3000,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 3000
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "s3vectors"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 60.3
+                },
+                {
+                  "accounted_for_every_call": false,
+                  "achieved_rate": 74.98,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 243,
+                  "dispatched": 4257,
+                  "dispositive_eligible": false,
+                  "driven_rate": 75.0,
+                  "elapsed_s": 60.42,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "s3vectors",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 203.84,
+                  "inflight_peak": 512,
+                  "label": "s3vectors/run1/75ps",
+                  "latencies_ms": "<4257 samples elided>",
+                  "max_ms": 725.6,
+                  "min_ms": 183.2,
+                  "n": 4257,
+                  "offered": 4500,
+                  "p50_ms": 304.5,
+                  "p95_ms": 435.3,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "s3vectors",
+                  "returned": 4257,
+                  "sample_completeness": 0.946,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 4257
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "s3vectors"
+                  ],
+                  "unaccounted": 243,
+                  "wall_s": 60.6
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 69.89,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 5400,
+                  "dispositive_eligible": false,
+                  "driven_rate": 90.0,
+                  "elapsed_s": 78.31,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "s3vectors",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 245.53,
+                  "inflight_peak": 487,
+                  "label": "s3vectors/run1/90ps",
+                  "latencies_ms": "<5400 samples elided>",
+                  "max_ms": 3802.5,
+                  "min_ms": 198.3,
+                  "n": 5400,
+                  "offered": 5400,
+                  "p50_ms": 308.7,
+                  "p95_ms": 1490.8,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": false,
+                  "resolved_tier": "s3vectors",
+                  "returned": 5400,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 5400
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "s3vectors"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 78.4
+                }
+              ],
+              "warmup": false
+            },
+            {
+              "run": 2,
+              "steps": [
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 10.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 600,
+                  "dispositive_eligible": true,
+                  "driven_rate": 10.0,
+                  "elapsed_s": 60.09,
+                  "error_rate": 0.001667,
+                  "error_sample": [
+                    "ModelErrorException: An error occurred (ModelErrorException) when calling the InvokeModel operation: The system encountered an unexpected error during processing. Try your request again."
+                  ],
+                  "errors": 1,
+                  "errors_raised": 1,
+                  "expected_tier": "s3vectors",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 2.47,
+                  "inflight_peak": 5,
+                  "label": "s3vectors/run2/10ps",
+                  "latencies_ms": "<599 samples elided>",
+                  "max_ms": 15841.1,
+                  "min_ms": 174.2,
+                  "n": 599,
+                  "offered": 600,
+                  "p50_ms": 188.5,
+                  "p95_ms": 261.4,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "s3vectors",
+                  "returned": 600,
+                  "sample_completeness": 0.998333,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 600
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "s3vectors"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 60.2
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 25.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 1500,
+                  "dispositive_eligible": true,
+                  "driven_rate": 25.0,
+                  "elapsed_s": 60.15,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "s3vectors",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 4.95,
+                  "inflight_peak": 8,
+                  "label": "s3vectors/run2/25ps",
+                  "latencies_ms": "<1500 samples elided>",
+                  "max_ms": 415.8,
+                  "min_ms": 170.4,
+                  "n": 1500,
+                  "offered": 1500,
+                  "p50_ms": 189.0,
+                  "p95_ms": 258.3,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "s3vectors",
+                  "returned": 1500,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 1500
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "s3vectors"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 60.2
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 50.0,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 3000,
+                  "dispositive_eligible": true,
+                  "driven_rate": 50.0,
+                  "elapsed_s": 60.18,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "s3vectors",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 10.88,
+                  "inflight_peak": 19,
+                  "label": "s3vectors/run2/50ps",
+                  "latencies_ms": "<3000 samples elided>",
+                  "max_ms": 463.6,
+                  "min_ms": 175.4,
+                  "n": 3000,
+                  "offered": 3000,
+                  "p50_ms": 201.4,
+                  "p95_ms": 284.9,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": true,
+                  "resolved_tier": "s3vectors",
+                  "returned": 3000,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 3000
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "s3vectors"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 60.3
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 67.79,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 4500,
+                  "dispositive_eligible": false,
+                  "driven_rate": 75.0,
+                  "elapsed_s": 68.31,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "s3vectors",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 66.58,
+                  "inflight_peak": 348,
+                  "label": "s3vectors/run2/75ps",
+                  "latencies_ms": "<4500 samples elided>",
+                  "max_ms": 6975.7,
+                  "min_ms": 200.1,
+                  "n": 4500,
+                  "offered": 4500,
+                  "p50_ms": 338.1,
+                  "p95_ms": 4248.2,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": false,
+                  "resolved_tier": "s3vectors",
+                  "returned": 4500,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 4500
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "s3vectors"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 68.4
+                },
+                {
+                  "accounted_for_every_call": true,
+                  "achieved_rate": 68.25,
+                  "bedrock_retries": {
+                    "by_error": {},
+                    "total": 0
+                  },
+                  "dispatch_refused": 0,
+                  "dispatched": 5400,
+                  "dispositive_eligible": false,
+                  "driven_rate": 90.0,
+                  "elapsed_s": 79.39,
+                  "error_rate": 0.0,
+                  "error_sample": [],
+                  "errors": 0,
+                  "errors_raised": 0,
+                  "expected_tier": "s3vectors",
+                  "fallback_sample": [],
+                  "fallbacks": 0,
+                  "inflight_mean": 40.07,
+                  "inflight_peak": 167,
+                  "label": "s3vectors/run2/90ps",
+                  "latencies_ms": "<5400 samples elided>",
+                  "max_ms": 826.2,
+                  "min_ms": 199.9,
+                  "n": 5400,
+                  "offered": 5400,
+                  "p50_ms": 317.2,
+                  "p95_ms": 459.3,
+                  "percentile_method": "nearest-rank, as milestones/M04/answer-parity-3966b47.json",
+                  "questions": 9,
+                  "rate_within_5pct": false,
+                  "resolved_tier": "s3vectors",
+                  "returned": 5400,
+                  "sample_completeness": 1.0,
+                  "seconds": 60.0,
+                  "span_status": {
+                    "sent": 5400
+                  },
+                  "threads_abandoned": 0,
+                  "tier_as_asked": true,
+                  "tiers_observed": [
+                    "s3vectors"
+                  ],
+                  "unaccounted": 0,
+                  "wall_s": 79.5
+                }
+              ],
+              "warmup": false
+            }
+          ],
+          "vantage": "lambda:regdelta-core-LoadDriverFn010600B4-ZySGQf7cEiLr:us-west-2:2048MB",
+          "verdict": "keep"
+        }
+      ]
+    }
+  }
+}

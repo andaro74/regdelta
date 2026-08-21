@@ -72,6 +72,35 @@ def _metric(name: str, *, statistic: str = "Sum",
         label=label)
 
 
+#: The dimension SET that EMF publishes `Queries` and `QueryLatency` under.
+#: One set, both dimensions — so `Queries` identified by `cache` alone, or by
+#: nothing, is a metric that does not exist. See the ratio panels below.
+_QUERY_SCHEMA = f"{{{NAMESPACE},cache,status}}"
+
+
+def _q_search(filter_: str = "") -> str:
+    """`SUM(SEARCH(...))` over `Queries`, optionally filtered to one dimension.
+
+    SEARCH matches on the dimensions it is given and aggregates across the ones
+    it is not, which is exactly what a ratio over a two-dimension metric needs.
+    The period is pinned to 300 s to match the panels' own.
+    """
+    where = f" {filter_}" if filter_ else ""
+    return (f"SUM(SEARCH('{_QUERY_SCHEMA} MetricName=\"Queries\"{where}', "
+            f"'Sum', 300))")
+
+
+def _ocu_search(metric: str) -> str:
+    """`SUM(SEARCH(...))` over an AOSS capacity gauge.
+
+    OCU metrics are published per `ClientId`, not bare. `'Average'` is the
+    right statistic for a gauge — SUM across the search results collapses the
+    one series per client, it does not add up capacity over time.
+    """
+    return (f"SUM(SEARCH('{{AWS/AOSS,ClientId}} MetricName=\"{metric}\"', "
+            f"'Average', 300))")
+
+
 def enable_xray(fn: _lambda.Function) -> None:
     """Turn on ACTIVE tracing and grant exactly the two daemon write actions.
 
@@ -304,15 +333,46 @@ def add_observability(scope: Construct, *, query_fn: _lambda.Function,
                         label="Tier B — AOSS"),
             ], width=12, height=6),
 
+        # THE THREE RATIO PANELS, AND THE TWO SEPARATE REASONS THEY SHOWED
+        # NOTHING. Both were found on 2026-08-21 by
+        # `milestones/M06/dashboard_snapshot.py`, and the order matters: the
+        # first defect HID the second.
+        #
+        # 1. INVALID EXPRESSION. All three carried `MAX([<series>, 1])` as a
+        #    divide-by-zero guard. CloudWatch metric math rejects it —
+        #    "Unsupported operand type(s) for MAX: [Array[TimeSeries, Scalar]]"
+        #    — so all three rendered an error rather than a panel. 6 of 9
+        #    captured on the first run; these were the 3.
+        #
+        # 2. THE METRICS THEY NAMED DO NOT EXIST. With the expression fixed the
+        #    panels rendered — EMPTY, which is why "it renders" is not the test.
+        #    EMF publishes `Queries` under ONE dimension set, the PAIR
+        #    `(cache, status)`. A metric identified by `cache=hit` alone, or by
+        #    no dimensions at all, matches nothing; `BedrockCostUsd` likewise
+        #    exists only per `model`. Every one of these panels asked for a
+        #    dimension combination that is never published.
+        #
+        # SEARCH is the fix for 2, because it matches on the dimension it is
+        # given and aggregates across the ones it is not. `SUM(SEARCH(...))`
+        # then collapses the per-model / per-status series into the one number
+        # the ratio wants.
+        #
+        # And the divide-by-zero guard stays DELETED, which is the better
+        # panel: `MAX([x, 1])` makes an idle period read 0% and $0.00 — a
+        # measured zero where nothing was measured. A gap is what "no traffic"
+        # honestly looks like. `FILL(..., 0)` on the NUMERATOR is kept and does
+        # the job that actually mattered: an interval with misses and no hits
+        # is 0%, not a hole.
+        #
+        # Verified against the live account before deploying: hit rate returned
+        # 50.0 and 0.0, cost/query $0.0297 and $0.0601 — the 50% being the
+        # miss-then-hit pair and the halved cost being a hit that cost nothing.
         cw.GraphWidget(
             title="Cache hit rate",
             left=[cw.MathExpression(
-                expression="100 * hits / MAX([hits + misses, 1])",
-                using_metrics={
-                    "hits": _metric("Queries", dimensions={"cache": "hit"}),
-                    "misses": _metric("Queries", dimensions={"cache": "miss"}),
-                },
-                label="hit %", period=Duration.minutes(5))],
+                expression=f"100 * FILL({_q_search('cache="hit"')}, 0) "
+                           f"/ {_q_search()}",
+                using_metrics={}, label="hit %", period=Duration.minutes(5))],
             left_y_axis=cw.YAxisProps(min=0, max=100), width=8, height=6),
 
         cw.GraphWidget(
@@ -322,24 +382,26 @@ def add_observability(scope: Construct, *, query_fn: _lambda.Function,
                 # a cache hit costs nothing and is a query, so averaging the
                 # cost metric alone would divide by the wrong denominator and
                 # report the cost of a MISS as the cost of a query.
-                expression="FILL(spend, 0) / MAX([queries, 1])",
-                using_metrics={
-                    "spend": _metric("BedrockCostUsd"),
-                    "queries": _metric("Queries"),
-                },
-                label="$/query", period=Duration.minutes(5))],
+                expression=f"FILL(SUM(SEARCH('{{{NAMESPACE},model}} "
+                           f"MetricName=\"BedrockCostUsd\"', 'Sum', 300)), 0) "
+                           f"/ {_q_search()}",
+                using_metrics={}, label="$/query", period=Duration.minutes(5))],
             width=8, height=6),
 
         cw.GraphWidget(
+            # A GAP HERE MEANS "no run was sent to review in this interval",
+            # not "the panel is broken". The numerator searches two statuses
+            # that a healthy corpus rarely produces, and a SEARCH matching no
+            # metric is empty rather than zero — FILL cannot invent a series
+            # that does not exist. Writing it as `(all - ok) / all` would fill
+            # the gap and would also count `degraded` as a review, which is a
+            # different measurement wearing this one's label.
             title="HITL rate (% of answered queries sent to review)",
             left=[cw.MathExpression(
-                expression="100 * (FILL(pend, 0) + FILL(need, 0)) / MAX([all, 1])",
-                using_metrics={
-                    "pend": _metric("Queries", dimensions={"status": "pending_review"}),
-                    "need": _metric("Queries", dimensions={"status": "needs_input"}),
-                    "all": _metric("Queries"),
-                },
-                label="HITL %", period=Duration.minutes(5))],
+                expression=f"100 * (FILL({_q_search('status="pending_review"')}, 0) "
+                           f"+ FILL({_q_search('status="needs_input"')}, 0)) "
+                           f"/ {_q_search()}",
+                using_metrics={}, label="HITL %", period=Duration.minutes(5))],
             left_y_axis=cw.YAxisProps(min=0, max=100), width=8, height=6),
 
         cw.GraphWidget(
@@ -347,18 +409,19 @@ def add_observability(scope: Construct, *, query_fn: _lambda.Function,
             left=[cw.MathExpression(
                 # AWS/AOSS reports OCU as a gauge; averaged over the period and
                 # scaled to hours gives OCU-hours for that period.
-                expression=f"(FILL(search, 0) + FILL(index, 0)) * "
-                           f"{OCU_USD_PER_HOUR} * PERIOD(search) / 3600",
-                using_metrics={
-                    "search": cw.Metric(namespace="AWS/AOSS",
-                                        metric_name="SearchOCU",
-                                        statistic="Average",
-                                        period=Duration.minutes(5)),
-                    "index": cw.Metric(namespace="AWS/AOSS",
-                                       metric_name="IndexingOCU",
-                                       statistic="Average",
-                                       period=Duration.minutes(5)),
-                },
+                #
+                # SEARCH, for the same reason as the ratio panels above and
+                # found the same way: `SearchOCU` and `IndexingOCU` are
+                # published under `ClientId`, so naming them with NO dimensions
+                # identified a metric that does not exist and this panel was
+                # empty from the day it was written. The data check in
+                # `dashboard_snapshot.py` is what caught it — the panel had
+                # been rendering perfectly and saying nothing.
+                expression=f"(FILL({_ocu_search('SearchOCU')}, 0) "
+                           f"+ FILL({_ocu_search('IndexingOCU')}, 0)) * "
+                           f"{OCU_USD_PER_HOUR} * "
+                           f"PERIOD({_ocu_search('SearchOCU')}) / 3600",
+                using_metrics={},
                 label="USD in period", period=Duration.minutes(5))],
             width=8, height=6),
 

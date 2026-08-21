@@ -53,6 +53,43 @@ DASHBOARD = "regdelta"
 LOOKBACK_S = 3 * 3600
 
 
+def _datapoints(cw, props: dict) -> dict:
+    """How many datapoints this panel's math expressions actually return.
+
+    RENDERING IS NOT DATA, and conflating them cost this milestone a round
+    trip. Three ratio panels here carried an expression CloudWatch could not
+    evaluate; fixing it made them render, and they rendered EMPTY, because the
+    metrics they named — `Queries` identified by `cache` alone, `BedrockCostUsd`
+    by nothing — are dimension combinations EMF never publishes. The first
+    defect hid the second, and a capture script that only asked "did it render"
+    would have filed the empty panels as evidence.
+
+    Only expression panels are checked. A plain metric panel is its own claim:
+    it names a metric and either the metric has data or the system was idle.
+    """
+    exprs = [row[0]["expression"] for row in props.get("metrics") or []
+             if isinstance(row, list) and row and isinstance(row[0], dict)
+             and "expression" in row[0]]
+    if not exprs:
+        return {"expressions": 0}
+    end = dt.datetime.now(dt.timezone.utc)
+    start = end - dt.timedelta(seconds=LOOKBACK_S)
+    total = 0
+    for n, expr in enumerate(exprs):
+        try:
+            r = cw.get_metric_data(
+                MetricDataQueries=[{"Id": f"probe{n}", "Expression": expr,
+                                    "Period": 300, "ReturnData": True}],
+                StartTime=start, EndTime=end)
+            total += sum(len(res["Values"]) for res in r["MetricDataResults"])
+        except Exception:                          # noqa: BLE001
+            # The render call reports the error with better wording; this is
+            # only the data question, and a failure here is not a second
+            # finding.
+            pass
+    return {"expressions": len(exprs), "datapoints": total}
+
+
 def main() -> int:
     import boto3
 
@@ -71,6 +108,7 @@ def main() -> int:
     for i, widget in enumerate(widgets):
         props = dict(widget.get("properties") or {})
         title = str(props.get("title") or f"widget-{i}")
+        datapoints = _datapoints(cw, props)
         # The widget's own definition, rendered with an explicit window. Left
         # to itself `GetMetricWidgetImage` uses whatever `start`/`end` the
         # dashboard carries, which is a relative window a reader cannot pin.
@@ -88,8 +126,14 @@ def main() -> int:
             continue
         path = HERE / f"dashboard-{slug}.png"
         path.write_bytes(png)
-        captured.append({"title": title, "file": path.name, "bytes": len(png)})
-        print(f"  ✓ {title} -> {path.name} ({len(png):,} bytes)")
+        captured.append({"title": title, "file": path.name, "bytes": len(png),
+                         **datapoints})
+        note = ""
+        if datapoints.get("expressions"):
+            n = datapoints["datapoints"]
+            note = f"  [{n} datapoint{'' if n == 1 else 's'}]" if n \
+                else "  [RENDERS BUT EMPTY]"
+        print(f"  ✓ {title} -> {path.name} ({len(png):,} bytes){note}")
 
     index = {
         "at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
@@ -101,9 +145,15 @@ def main() -> int:
         "widgets_total": len(definition.get("widgets") or []),
         "captured": captured,
         "failed": failed,
+        "empty_expression_panels": [c["title"] for c in captured
+                                    if c.get("expressions")
+                                    and not c.get("datapoints")],
         "note": "PNGs are the panels WITH DATA at the moment of capture. The "
                 "definition JSON beside them proves which metrics each panel "
-                "reads. Neither replaces a console screenshot; together they "
+                "reads. `datapoints` is the separate question of whether an "
+                "expression panel is wired to a metric that exists — a panel "
+                "can render perfectly and be empty, and at M06 three of them "
+                "were. Neither replaces a console screenshot; together they "
                 "replace the CLAIM that one was taken and looked right.",
     }
     (HERE / "dashboard-snapshot.json").write_text(

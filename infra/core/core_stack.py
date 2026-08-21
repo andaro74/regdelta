@@ -424,19 +424,41 @@ class RegDeltaCoreStack(cdk.Stack):
         # REVIEW#-writes split, a single-prefix BatchWriteItem is ALLOWED
         # (the control, ruling out "BatchWriteItem simply is not granted") and
         # the mixed one is DENIED. The argument holds.
+        #
+        # CACHE#* IS THE THIRD PREFIX, AND IT WAS MISSING UNTIL M06.
+        # The enumeration above is right about THREAD# and REVIEW# and was
+        # incomplete: `api/response_cache.py` keys on `CACHE#<sha256>` in this
+        # same table, so from M05's scoping until now every `/query` produced
+        #
+        #   cache read failed, treating as miss: AccessDeniedException
+        #   cache write failed, answer still served: AccessDeniedException
+        #
+        # — both swallowed by design (`response_cache.get`/`put` treat any
+        # failure as a miss, so a broken cache cannot break a request), and the
+        # response still said `cache: "miss"`, which is exactly what a working
+        # cache says the first time. The SPEC/04 cache has therefore never
+        # served an answer in deployment: every request paid full model price
+        # and reported the status a healthy cache reports.
+        #
+        # Found live 2026-08-21 by `milestones/M06/dashboard_traffic.py`, which
+        # asks one question twice and REFUSES if the second is not a hit. Two
+        # misses, exit 3, and the CloudWatch WARNINGs above.
+        #
+        # Reading CACHE#* does NOT weaken the review-queue split, which is what
+        # the read statement exists for: REVIEW#* stays unreadable.
         state_table_arn = self.state_table.table_arn
         query_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["dynamodb:GetItem", "dynamodb:BatchGetItem",
                      "dynamodb:Query", "dynamodb:ConditionCheckItem"],
             resources=[state_table_arn],
             conditions={"ForAllValues:StringLike": {
-                "dynamodb:LeadingKeys": ["THREAD#*"]}}))
+                "dynamodb:LeadingKeys": ["THREAD#*", "CACHE#*"]}}))
         query_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["dynamodb:PutItem", "dynamodb:UpdateItem",
                      "dynamodb:DeleteItem", "dynamodb:BatchWriteItem"],
             resources=[state_table_arn],
             conditions={"ForAllValues:StringLike": {
-                "dynamodb:LeadingKeys": ["THREAD#*", "REVIEW#*"]}}))
+                "dynamodb:LeadingKeys": ["THREAD#*", "REVIEW#*", "CACHE#*"]}}))
         # Metadata, not data. `DescribeTable` does not accept a LeadingKeys
         # condition — it has no keys — and it returns the schema and item COUNT,
         # never an item. Granted separately and named here so that its absence

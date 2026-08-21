@@ -18,6 +18,7 @@ publish metrics can forge the numbers the dashboard is trusted for, which is a
 different and quieter failure than deleting something.
 """
 import contextlib
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -100,6 +101,59 @@ def test_the_dashboard_exists_and_is_named_so_a_link_can_be_written(template):
     assert len(dashboards) == 1
     assert next(iter(dashboards.values()))["Properties"]["DashboardName"] == "regdelta"
     assert "DashboardUrl" in template["Outputs"]
+
+
+def _dashboard_expressions(template):
+    """Every metric-math expression on the dashboard, with its panel title."""
+    import json
+
+    body = next(iter(_of_type(template, "AWS::CloudWatch::Dashboard").values())
+                )["Properties"]["DashboardBody"]
+    # The body is a Fn::Join of literals and refs; the expressions are in the
+    # literal parts, so a string join is enough and avoids resolving refs.
+    if isinstance(body, dict):
+        body = "".join(p for p in body["Fn::Join"][1] if isinstance(p, str))
+    out = []
+    for widget in json.loads(body).get("widgets") or []:
+        props = widget.get("properties") or {}
+        for row in props.get("metrics") or []:
+            if isinstance(row, list) and row and isinstance(row[0], dict) \
+                    and "expression" in row[0]:
+                out.append((props.get("title"), row[0]["expression"]))
+    return out
+
+
+def test_no_dashboard_expression_uses_the_array_with_scalar_form(template):
+    """THE FINDING, pinned.
+
+    Three ratio panels carried `MAX([<series>, 1])` as a divide-by-zero guard.
+    CloudWatch metric math rejects it — "Unsupported operand type(s) for MAX:
+    [Array[TimeSeries, Scalar]]" — so all three rendered an error instead of a
+    panel, from the day they were written until `dashboard_snapshot.py`
+    rendered them.
+
+    THIS TEST IS THE CHEAP HALF AND NOT THE REAL ONE. It pins one known-bad
+    construct; it cannot tell you an expression is *correct*. The real
+    validator is `milestones/M06/dashboard_snapshot.py`, which sends every
+    panel through `GetMetricWidgetImage` — server-side validation, free — and
+    exits non-zero if any fails to render. Run it when the dashboard changes.
+    """
+    offenders = [(title, expr) for title, expr in _dashboard_expressions(template)
+                 if re.search(r"\b(MAX|MIN)\s*\(\s*\[[^]]*,\s*-?\d", expr)]
+    assert offenders == [], (
+        f"CloudWatch cannot evaluate an array of [TimeSeries, Scalar]: "
+        f"{offenders}")
+
+
+def test_the_dashboard_has_the_ratio_panels_at_all(template):
+    """The test above passes trivially if the panels are deleted.
+
+    A guard on an expression that no longer exists is a guard on nothing, and
+    "no offenders" is what an empty dashboard reports.
+    """
+    titles = {title for title, _ in _dashboard_expressions(template)}
+    for expected in ("Cache hit rate", "Bedrock cost per query (USD)"):
+        assert expected in titles, f"{expected!r} is gone; found {sorted(titles)}"
 
 
 def test_the_query_function_has_active_tracing(template):

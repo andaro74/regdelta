@@ -1,0 +1,312 @@
+{
+  "start": "-P7D",
+  "widgets": [
+    {
+      "height": 3,
+      "properties": {
+        "markdown": "# RegDelta\n`/query` latency, cache, spend and tier health. **Retrieval latency by tier is the SPEC/06 Tier B disposition number** \u2014 reported here, decided by `loadtest/reports/tier-disposition-<sha>.json`, never by this widget.\n\n*A blank panel means no traffic in the window, not a healthy zero.*"
+      },
+      "type": "text",
+      "width": 24,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [
+            "RegDelta",
+            "QueryLatency",
+            {
+              "label": "p50",
+              "stat": "p50"
+            }
+          ],
+          [
+            "RegDelta",
+            "QueryLatency",
+            {
+              "label": "p95",
+              "stat": "p95"
+            }
+          ]
+        ],
+        "region": "us-west-2",
+        "title": "/query latency (p50 / p95, ms)",
+        "view": "timeSeries",
+        "yAxis": {}
+      },
+      "type": "metric",
+      "width": 12,
+      "x": 0,
+      "y": 3
+    },
+    {
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [
+            "RegDelta",
+            "RetrievalLatency",
+            "retrieval_tier",
+            "s3vectors",
+            {
+              "label": "Tier A \u2014 S3 Vectors",
+              "stat": "p95"
+            }
+          ],
+          [
+            "RegDelta",
+            "RetrievalLatency",
+            "retrieval_tier",
+            "aoss",
+            {
+              "label": "Tier B \u2014 AOSS",
+              "stat": "p95"
+            }
+          ]
+        ],
+        "region": "us-west-2",
+        "title": "Retrieval latency by tier (p95, ms)",
+        "view": "timeSeries",
+        "yAxis": {}
+      },
+      "type": "metric",
+      "width": 12,
+      "x": 12,
+      "y": 3
+    },
+    {
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [
+            {
+              "expression": "100 * FILL(SUM(SEARCH('{RegDelta,cache,status} MetricName=\"Queries\" cache=\"hit\"', 'Sum', 300)), 0) / SUM(SEARCH('{RegDelta,cache,status} MetricName=\"Queries\"', 'Sum', 300))",
+              "label": "hit %"
+            }
+          ]
+        ],
+        "region": "us-west-2",
+        "title": "Cache hit rate",
+        "view": "timeSeries",
+        "yAxis": {
+          "left": {
+            "max": 100,
+            "min": 0
+          }
+        }
+      },
+      "type": "metric",
+      "width": 8,
+      "x": 0,
+      "y": 9
+    },
+    {
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [
+            {
+              "expression": "FILL(SUM(SEARCH('{RegDelta,model} MetricName=\"BedrockCostUsd\"', 'Sum', 300)), 0) / SUM(SEARCH('{RegDelta,cache,status} MetricName=\"Queries\"', 'Sum', 300))",
+              "label": "$/query"
+            }
+          ]
+        ],
+        "region": "us-west-2",
+        "title": "Bedrock cost per query (USD)",
+        "view": "timeSeries",
+        "yAxis": {}
+      },
+      "type": "metric",
+      "width": 8,
+      "x": 8,
+      "y": 9
+    },
+    {
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [
+            {
+              "expression": "100 * (FILL(SUM(SEARCH('{RegDelta,cache,status} MetricName=\"Queries\" status=\"pending_review\"', 'Sum', 300)), 0) + FILL(SUM(SEARCH('{RegDelta,cache,status} MetricName=\"Queries\" status=\"needs_input\"', 'Sum', 300)), 0)) / SUM(SEARCH('{RegDelta,cache,status} MetricName=\"Queries\"', 'Sum', 300))",
+              "label": "HITL %"
+            }
+          ]
+        ],
+        "region": "us-west-2",
+        "title": "HITL rate (% of answered queries sent to review)",
+        "view": "timeSeries",
+        "yAxis": {
+          "left": {
+            "max": 100,
+            "min": 0
+          }
+        }
+      },
+      "type": "metric",
+      "width": 8,
+      "x": 16,
+      "y": 9
+    },
+    {
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [
+            {
+              "expression": "(FILL(SUM(SEARCH('{AWS/AOSS,ClientId} MetricName=\"SearchOCU\"', 'Average', 300)), 0) + FILL(SUM(SEARCH('{AWS/AOSS,ClientId} MetricName=\"IndexingOCU\"', 'Average', 300)), 0)) * 0.242 * PERIOD(SUM(SEARCH('{AWS/AOSS,ClientId} MetricName=\"SearchOCU\"', 'Average', 300))) / 3600",
+              "label": "USD in period"
+            }
+          ]
+        ],
+        "region": "us-west-2",
+        "title": "Search-session cost (OCU-hours x $0.242/hr)",
+        "view": "timeSeries",
+        "yAxis": {}
+      },
+      "type": "metric",
+      "width": 8,
+      "x": 0,
+      "y": 15
+    },
+    {
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [
+            "AWS/Lambda",
+            "Invocations",
+            "FunctionName",
+            "regdelta-core-QueryFnB2E9AD3D-hjcFpUj3WSqT",
+            {
+              "stat": "Sum"
+            }
+          ],
+          [
+            "AWS/Lambda",
+            "Errors",
+            "FunctionName",
+            "regdelta-core-QueryFnB2E9AD3D-hjcFpUj3WSqT",
+            {
+              "stat": "Sum"
+            }
+          ],
+          [
+            "AWS/Lambda",
+            "Throttles",
+            "FunctionName",
+            "regdelta-core-QueryFnB2E9AD3D-hjcFpUj3WSqT",
+            {
+              "stat": "Sum"
+            }
+          ]
+        ],
+        "region": "us-west-2",
+        "title": "Lambda concurrency and throttles (query path)",
+        "view": "timeSeries",
+        "yAxis": {}
+      },
+      "type": "metric",
+      "width": 8,
+      "x": 8,
+      "y": 15
+    },
+    {
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [
+            "RegDelta",
+            "HotTierUp",
+            "check",
+            "nightly",
+            {
+              "label": "hot tier up at 02:00",
+              "period": 86400,
+              "stat": "Maximum"
+            }
+          ],
+          [
+            "RegDelta",
+            "JanitorCouldNotAct",
+            {
+              "label": "janitor could not act",
+              "period": 86400,
+              "stat": "Sum"
+            }
+          ],
+          [
+            "RegDelta",
+            "JanitorDeleteRequested",
+            {
+              "label": "janitor requested a delete",
+              "period": 86400,
+              "stat": "Sum"
+            }
+          ]
+        ],
+        "region": "us-west-2",
+        "title": "Lifecycle: hot tier up / janitor",
+        "view": "timeSeries",
+        "yAxis": {}
+      },
+      "type": "metric",
+      "width": 8,
+      "x": 16,
+      "y": 15
+    },
+    {
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [
+            "RegDelta",
+            "EvalPassRate",
+            {
+              "label": "pass rate",
+              "period": 604800,
+              "stat": "Maximum"
+            }
+          ],
+          [
+            "RegDelta",
+            "EvalStalenessHours",
+            "check",
+            "nightly",
+            {
+              "label": "hours since",
+              "period": 86400,
+              "stat": "Maximum"
+            }
+          ]
+        ],
+        "region": "us-west-2",
+        "title": "Golden set \u2014 last recorded run",
+        "view": "singleValue"
+      },
+      "type": "metric",
+      "width": 8,
+      "x": 0,
+      "y": 21
+    },
+    {
+      "height": 3,
+      "properties": {
+        "alarms": [
+          "arn:aws:cloudwatch:us-west-2:581208540944:alarm:regdelta-core-NightlyCheckFailedAlarm312CBAE7-sKGm9F7Xfcce",
+          "arn:aws:cloudwatch:us-west-2:581208540944:alarm:regdelta-core-JanitorCouldNotActAlarmCA2BB001-R3A6I6YVVMGc",
+          "arn:aws:cloudwatch:us-west-2:581208540944:alarm:regdelta-core-HotTierLeftUpAlarm515C7CA5-3b81mh3232eB",
+          "arn:aws:cloudwatch:us-west-2:581208540944:alarm:regdelta-core-EvalRegressionAlarmB8D305A4-WnzA6Zi9KRSg",
+          "arn:aws:cloudwatch:us-west-2:581208540944:alarm:regdelta-core-EvalStalenessAlarm7EA3D974-01uRBrSe2rGu"
+        ],
+        "title": "Alarms"
+      },
+      "type": "alarm",
+      "width": 24,
+      "x": 0,
+      "y": 27
+    }
+  ]
+}
