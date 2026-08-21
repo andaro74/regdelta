@@ -42,7 +42,8 @@ RESOLVE_ENV = eval "$$(python evals/local_env.py)";
 RESOLVE_ENV_STRICT = env=$$(python evals/local_env.py) || { echo "cannot resolve the deployed environment; refusing to record or gate on an unconfigured run" >&2; exit 1; }; eval "$$env";
 
 .PHONY: help bootstrap layer core up down status smoke evals agent-evals discrimination replay-history lint test demo ingest-backfill synth diff \
-        retrieval-evals retrieval-parity preflight rebuild-vectors demo-parity fault-drop
+        retrieval-evals retrieval-parity preflight rebuild-vectors demo-parity fault-drop \
+        tier-disposition tier-disposition-price
 
 help:
 	@echo "make layer           - build the Lambda dependency layer (needed by core)"
@@ -61,6 +62,9 @@ help:
 	@echo "                       (ARGS=\"--rerank 1\" gates the RERANK=1 pair)"
 	@echo "make demo-parity     - answer-level cross-tier gate + Tier B latency"
 	@echo "                       (SPEC/04; run once per tier, then it judges)"
+	@echo "make tier-disposition- SPEC/06: dispose of Tier B. Run once per tier"
+	@echo "                       across ONE up/down cycle at one sha"
+	@echo "make tier-disposition-price - what that would cost. Invokes nothing"
 	@echo "make preflight       - date-attribution check alone (cheap)"
 	@echo "make rebuild-vectors - rebuild S3 Vectors from the corpus (no re-embed)"
 	@echo "make lint            - ruff (same scope as the eval gate)"
@@ -424,6 +428,64 @@ demo: up
 	@echo "Demo UI: $$(aws cloudformation describe-stacks --stack-name $(STACK_CORE) \
 	  --region $(REGION) \
 	  --query \"Stacks[0].Outputs[?OutputKey=='DemoUrl'].OutputValue\" --output text)"
+
+
+# ------------------------------------------------------------------ SPEC/06
+# TIER B'S DISPOSITION. Owed by ADR-0001, homed here by ADR-0012, and amended
+# by milestones/M06/spec06-disposition-amendment.md — which is a DRAFT awaiting
+# the seat's ruling, and this target implements it rather than deciding it.
+#
+# CROSS-RUN, exactly as demo-parity is and for the same reason: the tier is
+# whatever /regdelta/search/endpoint names, and it only changes across a
+# `make up` / `make down`. Run it with the hot tier DOWN, then UP, on the same
+# commit; each run merges its half into the one report and re-judges.
+#
+#   make tier-disposition-price     # free; what the whole thing costs
+#   make tier-disposition           # hot tier DOWN -> the s3vectors half
+#   make up
+#   make tier-disposition           # hot tier UP   -> the aoss half
+#   make down
+#
+# THE TIER IS DERIVED AND THEN ASSERTED, never chosen by the caller — copied
+# from retrieval-evals and demo-parity including MSYS_NO_PATHCONV, because Git
+# Bash rewrites `--name /regdelta/...` into a Windows path and the lookup
+# returns ParameterNotFound, which reads as "hot tier down" while it is up.
+# That silently recorded one tier's numbers under the other's label once
+# already. An unexpected error FAILS rather than defaulting to s3vectors, which
+# is what made the mangled path invisible.
+#
+# The tier the parameter names is only half of it. The driver ALSO asserts, per
+# call, that the tier which actually answered is the one the step was pointed
+# at: the router falls back to S3 Vectors silently and by design, so a
+# data-access-policy propagation delay after `make up` would otherwise record
+# Tier A's latencies as Tier B's — and the clause's default outcome is
+# retirement. See src/ops/retrieval_load.py.
+#
+# RESOLVE_ENV_STRICT because this run PRODUCES EVIDENCE and gates on it. Without
+# REGISTRY_TABLE the corpus fingerprint records {"available": false}, the two
+# halves cannot be shown to have answered from the same corpus, and the gate
+# that says so silently stops gating.
+#
+# EXIT CODES ARE PROPAGATED, and there are six of them — 0 disposed, 1 a gate
+# refused, 2 only one half recorded, 3 the harness crashed, 4 a failed
+# measurement (re-run once), 5 a second failed measurement (disposed by the
+# default outcome). The module docstring is the reference.
+tier-disposition:
+	@out=$$(MSYS_NO_PATHCONV=1 aws ssm get-parameter --name $(SSM_ENDPOINT) \
+	    --region $(REGION) --query Parameter.Value --output text 2>&1); \
+	  if echo "$$out" | grep -q '^https://'; then tier=aoss; \
+	  elif echo "$$out" | grep -q 'ParameterNotFound'; then tier=s3vectors; \
+	  else echo "cannot determine the search tier: $$out" >&2; exit 1; fi; \
+	  echo "→ hot tier $$tier (RERANK=$(RERANK) LEXICAL_LANE=$(LEXICAL_LANE))"; \
+	  $(RESOLVE_ENV_STRICT) \
+	  RERANK=$(RERANK) RETRIEVAL_LEXICAL_LANE=$(LEXICAL_LANE) \
+	  python loadtest/retrieval_load.py --tier $$tier $(ARGS)
+
+# Free, offline, and the thing to run BEFORE asking anyone to approve a window.
+# It prices all three components — Bedrock, Lambda and OCU — against the seat's
+# ceiling, and refuses here rather than after the money is gone.
+tier-disposition-price:
+	python loadtest/retrieval_load.py --dry-run
 
 synth:
 	$(CDK) synth
