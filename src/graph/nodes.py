@@ -102,7 +102,7 @@ def _converse(model: str, system: str, prompt: str, *, max_tokens: int) -> str:
                 modelId=model,
                 system=[{"text": system}, {"cachePoint": {"type": "default"}}],
                 **body))
-            return _text_of(resp)
+            return _text_of(resp, model)
         except Exception as e:   # narrowed immediately below, then re-raised
             if "cachePoint" not in str(e) and "ValidationException" not in type(e).__name__:
                 raise
@@ -111,7 +111,7 @@ def _converse(model: str, system: str, prompt: str, *, max_tokens: int) -> str:
 
     resp = retry(lambda: _client().converse(
         modelId=model, system=[{"text": system}], **body))
-    return _text_of(resp)
+    return _text_of(resp, model)
 
 
 _cache_state: dict = {"supported": True, "reason": None}
@@ -137,17 +137,62 @@ _cache_state: dict = {"supported": True, "reason": None}
 # run with an injected `invoke` reports None — NOT OBSERVED — instead of
 # inheriting a stale reading from some earlier real call.
 #
-# The applicability call site does not reset, and does not need to: verdict
-# runs after it and resets immediately before its own call, so nothing that
-# site leaves behind can be read as the verdict's. An earlier version of this
-# comment said "each call site", which was not true of the code.
+# THE OTHER CALL SITE IS `supervisor`, NOT `applicability`. Two earlier
+# versions of this comment named a call site that does not exist: `applicability`
+# is deterministic and invokes no model — it reads the profile and returns a
+# dict. The first version said "each call site", which was not true of the code;
+# the correction that replaced it named the wrong node. Recorded rather than
+# quietly fixed, because a comment about which sites reset that misnames a site
+# is the same defect class as the instrument bugs this file's other comments
+# catalogue.
+#
+# `supervisor` did not reset and did not need to for the stop reason — verdict
+# runs after it and resets immediately before its own call, so nothing
+# supervisor leaves behind can be read as the verdict's. THAT CHANGED AT M06:
+# `reset_usage()` is now called at BOTH sites, because each node reads its own
+# token usage for its own span, so supervisor reading a stale reading from a
+# previous request's verdict call is now a reachable mis-attribution rather
+# than a hypothetical one.
+#
 # PRECONDITION, stated rather than assumed: one request at a time per
 # process. Lambda serves one request per execution environment and
 # evals/serve_local.py is a single-threaded HTTPServer, so nothing today can
 # mis-attribute one request's stop reason to another. Under any threaded
 # server this needs to become contextvars — `_cache_state` above has the same
 # property and the same precondition.
+#
+# M06 BUILDS THE FIRST THING THAT BREAKS IT. `loadtest/retrieval_load.py`
+# drives many `retrieval_agent` calls concurrently in one process — which is
+# safe only because that node touches neither of these dicts. A load driver
+# that drove the WHOLE graph in-process would mis-attribute stop reasons,
+# cache state and now token counts across requests, and would do it silently.
+# That is why the disposition driver calls one node rather than the graph.
 _last_stop: dict = {"reason": None}
+
+# WHAT THE LAST CONVERSE CALL COST, from the same response object.
+#
+# SPEC/06 asks the per-node span to carry "tokens" and the dashboard to show
+# "Bedrock cost/query". Neither is derivable from anything this process already
+# had: `converse` returns a `usage` block and nothing read it, so the only
+# token counts anywhere in this project came from CloudWatch's own
+# `AWS/Bedrock` metrics — an account-wide aggregate that cannot be sliced by
+# node, by tier, or by question.
+#
+# The same module-level shape as `_last_stop` above, for the same two reasons:
+# both call sites are written `(invoke or _converse)(...)`, and widening the
+# return to a tuple would break every injected fake in the suite. And the same
+# discipline: `reset_usage()` is called at the CALL SITE, immediately before
+# the call, so a run with an injected `invoke` reports None — NOT OBSERVED —
+# rather than inheriting a stale reading from an earlier real call. A token
+# count attributed to a node that never called the model is the ADR-0013
+# failure mode with an invoice attached.
+#
+# `cache_read` and `cache_write` are recorded because `config.PROMPT_CACHE` is
+# ON by default and the two are billed at different rates from ordinary input.
+# A cost figure computed from `input` alone would be wrong in the direction
+# that flatters us.
+_last_usage: dict = {"model": None, "input": None, "output": None,
+                     "cache_read": None, "cache_write": None}
 
 
 def reset_stop_reason() -> None:
@@ -158,8 +203,31 @@ def last_stop_reason() -> str | None:
     return _last_stop["reason"]
 
 
-def _text_of(resp: dict) -> str:
+def reset_usage() -> None:
+    for key in _last_usage:
+        _last_usage[key] = None
+
+
+def last_usage() -> dict:
+    """Tokens from the last real Converse call, or all-None if there was none.
+
+    A copy, so a caller cannot reach in and edit the reading it just took.
+    """
+    return dict(_last_usage)
+
+
+def _text_of(resp: dict, model: str | None = None) -> str:
     _last_stop["reason"] = resp.get("stopReason")
+    usage = resp.get("usage") or {}
+    _last_usage.update({
+        "model": model,
+        "input": usage.get("inputTokens"),
+        "output": usage.get("outputTokens"),
+        # Bedrock spells these two differently from the Anthropic API and only
+        # sends them when the model actually supported the cachePoint block.
+        "cache_read": usage.get("cacheReadInputTokens"),
+        "cache_write": usage.get("cacheWriteInputTokens"),
+    })
     blocks = resp["output"]["message"]["content"]
     return next((b["text"] for b in blocks if "text" in b), "")
 
@@ -228,6 +296,7 @@ def supervisor(state: RegDeltaState, invoke=None) -> dict:
     query = state.get("query", "")
     given = dict(state.get("company_profile") or {})
 
+    reset_usage()
     raw = (invoke or _converse)(
         config.MODEL_FAST, _SUPERVISOR_SYSTEM,
         _SUPERVISOR_PROMPT.format(query=query), max_tokens=400)
@@ -577,6 +646,7 @@ def verdict(state: RegDeltaState, invoke=None) -> dict:
     context = list(rows_in) + list(state.get("crossref_chunks") or [])
     passages = _passages([(c.chunk_id, c.text) for c in context]) or "(none)"
     reset_stop_reason()
+    reset_usage()
     raw = (invoke or _converse)(
         config.MODEL_VERDICT, _VERDICT_SYSTEM,
         _VERDICT_PROMPT.format(

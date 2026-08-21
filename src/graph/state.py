@@ -69,6 +69,33 @@ class RegDeltaState(TypedDict, total=False):
     #: rather than discarded silently: a model reaching for uncited authority
     #: is a finding about the answer, and q03 is the reason it is worth seeing.
     dropped_citations: list[str]
+    #: Why the verdict model stopped, verbatim from Converse's `stopReason`,
+    #: and whether that means the answer was cut off. `None` is NOT OBSERVED —
+    #: an injected `invoke` never reaches a real call — and is deliberately
+    #: distinct from "observed and fine".
+    #:
+    #: THESE TWO LINES ARE THE WHOLE OF M05's stop_reason FIX, and M05 shipped
+    #: without them. `nodes.verdict` returned both fields and `api._shape` and
+    #: `serve_local._shape` were both taught to read them; the M05 pack records
+    #: the allowlist defect in `_shape` as the cause and calls it fixed. It was
+    #: one of two causes. **LangGraph drops a returned key that the state
+    #: schema does not declare** — silently, with no error and no warning — so
+    #: the field never reached `_shape` to be read. M05 open thread 9 ("No
+    #: recorded run yet shows a non-null stop_reason") recorded the symptom and
+    #: attributed it to timing; the cause is here, and it was found by
+    #: compiling a two-node graph over this TypedDict rather than by spending a
+    #: `make smoke` on it.
+    #:
+    #: `tests/test_graph_state_declares_node_outputs.py` is the general form of
+    #: this fix and is what keeps the next field from being lost the same way.
+    stop_reason: str | None
+    truncated: bool | None
+    #: What the last Converse call in this run cost, from `nodes.last_usage()`
+    #: — model id and token counts, including the prompt-cache read and write
+    #: counts, which are billed at different rates from ordinary input tokens
+    #: (SPEC/06, "Bedrock cost/query"). Declared here for the reason directly
+    #: above: a key this schema does not name does not survive the graph.
+    verdict_usage: dict
 
     # --- gate
     #: ok | pending_review | needs_input | rejected | resumed | degraded.
