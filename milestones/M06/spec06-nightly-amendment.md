@@ -97,18 +97,32 @@ from a second place. No Bedrock, no S3 Vectors query, no AOSS query.
 **Rounds to zero, and it is designed to.** A nightly job that costs money is a
 nightly job someone eventually turns off.
 
-## The evidence, and what is owed
+## The evidence
 
-`pm-spec-reviewer` blocker B8: the disposition amendment's only load-bearing
-claim citing neither a file nor a command was this change's verification —
-*"verified live, 2026-08-20, for $0: 52 documents, 3/3 dated, no Bedrock call"*
-— a remembered result in a document where every other measurement names an
+`pm-spec-reviewer` blocker B8: the claim behind this change was *"verified
+live, 2026-08-20, for $0: 52 documents, 3/3 dated, no Bedrock call"* — a
+remembered result, in a document where every other measurement names an
 artifact a reader can check.
 
-**Owed before this is acted on:** one invocation of the deployed
-`NightlyCheckFn`, its returned JSON recorded as
-`milestones/M06/nightly-verification.json`, and the invocation named beside it.
-It is free and read-only.
+**Closed.** `milestones/M06/verify_nightly.py` runs the check and records
+`milestones/M06/nightly-verification.json`, with the command in the artifact:
+
+    eval "$(python evals/local_env.py)" && python milestones/M06/verify_nightly.py
+
+Recorded 2026-08-21 against the live account: **52 documents**, fingerprint
+`35a293e17117`, pub dates 2024-12-27 to 2026-08-19, **3 of 3 documents dated,
+0 undated, 0 errors**, tier `s3vectors`, status `ok`.
+
+**IN-PROCESS, and the artifact says so.** `NightlyCheckFn` is not deployed —
+nothing in this milestone is — so this exercises the same code and the same
+AWS reads, but not the Lambda's IAM role, its EventBridge schedule, or EMF
+reaching CloudWatch. That is what "verified live" meant last session and what
+the record should have said. Those three remain unexercised until the deploy.
+
+**The cost claim is now a measurement.** The script reads the account's Opus
+token counter before and after and records the difference: **0**. If the
+nightly ever grows a model call, that stops being zero and the script exits
+non-zero rather than filing a verification that says "free".
 
 ## The hole this change also closed, recorded because it was found late
 
@@ -121,3 +135,11 @@ a comment.
 Both halves are fixed and both are in the proposed clause above, because a
 staleness watch that can go silent is not a watch and the spec should say what
 it requires: a sentinel on every run, and missing-data-breaches on the alarm.
+
+**And the fix is demonstrated rather than argued.** The verification run above
+landed in exactly the state the hole was about — `eval_staleness` reports
+`{"hours": null, "reason": "no EvalPassRate ever published"}` — and emitted
+`EvalStalenessHours: 8760.0` anyway. Before the fix that run published no
+datapoint at all, and the alarm would have sat in INSUFFICIENT_DATA, which was
+NOT_BREACHING. The one state the watch exists for was the one state it could
+not see, and the artifact now shows it seeing it.
