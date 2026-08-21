@@ -72,6 +72,41 @@ def _metric(name: str, *, statistic: str = "Sum",
         label=label)
 
 
+def enable_xray(fn: _lambda.Function) -> None:
+    """Turn on ACTIVE tracing and grant exactly the two daemon write actions.
+
+    SPEC/06's "span per graph node". `shared/observability.py` writes the
+    subsegments to the daemon socket; the daemon only exists when tracing is
+    ACTIVE, and without this the module's own `emission_report()` — and the
+    load driver's per-call span status — report "off" forever, honestly and
+    uselessly.
+
+    NOT `_lambda.Tracing.ACTIVE`, and the difference is the reason this is a
+    function rather than a property. CDK's own switch attaches
+    `AWSXRayDaemonWriteAccess`, which grants FOUR actions
+    (`GetSamplingRules` and `GetSamplingTargets` besides these two). The
+    wildcard exemption `tests/test_query_fn_iam.py` pins is two actions wide
+    and has to be argued for to grow; picking up two more as a side effect of
+    a convenience flag is exactly the one-action-at-a-time widening that test
+    exists to stop.
+
+    X-Ray's write actions do not accept a resource ARN — unlike the `aoss:*`
+    control-plane grant M05 had to correct, this one really is resource-less,
+    and the AWS-managed policy is written the same way. Stated because "these
+    actions do not take a resource" was an untrue claim once already in this
+    repo, and recorded as documented-not-measured in that test.
+
+    A FUNCTION SO THE SECOND CALLER CANNOT DRIFT. `LoadDriverFn` needs the
+    identical pair: SPEC/06's disposition is defined on the span, so a driver
+    whose spans never leave measures the right interval and can prove nothing
+    about it.
+    """
+    fn.node.default_child.add_property_override("TracingConfig.Mode", "Active")
+    fn.add_to_role_policy(iam.PolicyStatement(
+        actions=["xray:PutTraceSegments", "xray:PutTelemetryRecords"],
+        resources=["*"]))
+
+
 def add_observability(scope: Construct, *, query_fn: _lambda.Function,
                       janitor_fn: _lambda.Function,
                       nightly_fn: _lambda.Function,
@@ -86,20 +121,7 @@ def add_observability(scope: Construct, *, query_fn: _lambda.Function,
     evidence pack needs. The topic exists so subscribing is one line later.
     """
     # ------------------------------------------------------------------ X-Ray
-    # SPEC/06's "span per graph node". `shared/observability.py` writes the
-    # subsegments to the daemon socket; the daemon only exists when tracing is
-    # ACTIVE, and without this the module's own `emission_report()` reports
-    # "off" forever — honestly, but uselessly.
-    query_fn.node.default_child.add_property_override(
-        "TracingConfig.Mode", "Active")
-    query_fn.add_to_role_policy(iam.PolicyStatement(
-        actions=["xray:PutTraceSegments", "xray:PutTelemetryRecords"],
-        # X-Ray's write actions do not accept a resource ARN — unlike the
-        # `aoss:*` control-plane grant M05 had to correct, this one really is
-        # resource-less, and the AWS-managed AWSXRayDaemonWriteAccess policy is
-        # written the same way. Stated because "these actions do not take a
-        # resource" was an untrue claim once already in this repo.
-        resources=["*"]))
+    enable_xray(query_fn)
 
     # ------------------------------------------------- janitor metric filters
     could_not_act = logs.MetricFilter(

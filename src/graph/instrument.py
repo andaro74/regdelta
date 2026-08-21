@@ -159,7 +159,7 @@ def _tokens_and_cost(usage: dict) -> tuple[dict, dict]:
     return metrics, {"cost_model": model}
 
 
-def observed(name: str, fn):
+def observed(name: str, fn, on_span=None):
     """Wrap a graph node so that running it emits its span.
 
     The wrapper reads the node's RETURN VALUE rather than the merged state,
@@ -167,12 +167,52 @@ def observed(name: str, fn):
     undeclared one — so a span cannot silently lose a field the way
     `stop_reason` did — and it attributes each fact to the node that produced
     it rather than to whichever node happened to run last.
+
+    `on_span` is an OPTIONAL sink for `Span.span_result` — the
+    `(status, detail)` pair `shared.observability.send_subsegment` returns,
+    one of `sent | unsampled | off | failed`. It exists for one caller:
+    SPEC/06's amended disposition clause requires the report to record the
+    span emission status, and an artifact that claims a span it did not emit
+    is ADR-0013's defect exactly.
+
+    IT IS NOT `observability.emission_report()`, and the difference is the
+    load driver. That function reads a MODULE-LEVEL dict whose stated
+    precondition is one request at a time per process (see its own comment);
+    the driver runs many retrievals concurrently in one process and is the
+    first thing in this repo to break it. A per-call sink attributes each
+    status to the call that produced it. Graph nodes pass nothing and are
+    unaffected.
+
+    The graph is registered with no sink, so the request path pays one `if
+    ... is not None` per node and nothing else.
     """
     def run(state, *args, **kwargs):
-        with observability.node_span(name) as span:
-            result = fn(state, *args, **kwargs)
-            _carry(span, result if isinstance(result, dict) else {})
-            return result
+        # `return` MOVED OUT of the `with`, and the sink runs in a `finally`.
+        #
+        # Out of the `with`, because `span.span_result` is assigned in
+        # `node_span`'s own `finally`, i.e. as the context manager exits: a
+        # return from inside the block reads the initial `("off", None)` every
+        # time — a sink reporting "off" while the datagram went out. The
+        # emitted span is identical either way; __exit__ runs before the value
+        # is returned in both forms.
+        #
+        # In a `finally`, because `node_span` emits for a node that RAISES
+        # (that is its own docstring's argument — a failed node is the one you
+        # most want a span for). A sink on the success path only would report
+        # every errored call as having emitted nothing, which is the same
+        # false claim in the other direction.
+        span = None
+        try:
+            with observability.node_span(name) as span:
+                result = fn(state, *args, **kwargs)
+                _carry(span, result if isinstance(result, dict) else {})
+        finally:
+            # `span is not None` guards the window before `node_span` yields.
+            # Nothing there can raise today; a NameError in a `finally` would
+            # replace the node's real exception with a lie about this shim.
+            if on_span is not None and span is not None:
+                on_span(span.span_result)
+        return result
 
     # THE SIGNATURE IS PART OF THE CONTRACT, not decoration. LangGraph inspects
     # each node's signature and passes `config=` only to nodes that accept it —

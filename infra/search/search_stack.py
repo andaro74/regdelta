@@ -82,6 +82,7 @@ _DEV_PRINCIPAL_RE = re.compile(
 class RegDeltaSearchStack(cdk.Stack):
     def __init__(self, scope: Construct, construct_id: str, *,
                  corpus_bucket: s3.IBucket, query_lambda_role_arn: str,
+                 load_driver_role_arn: str,
                  **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
@@ -219,6 +220,27 @@ class RegDeltaSearchStack(cdk.Stack):
         query_role.add_to_principal_policy(iam.PolicyStatement(
             actions=["aoss:APIAccessAll"], resources=[collection.attr_arn]))
 
+        # SPEC/06's load driver, on exactly the same terms and for exactly the
+        # same reason: the permission must exist while the collection does and
+        # not a day longer. The driver lives in the PERSISTENT stack — it has
+        # to, because the Tier A half of the disposition is taken with this
+        # stack destroyed — so if its AOSS grant were written there it would
+        # be the standing account-wide reach this file's comment above
+        # describes, held by a function whose whole purpose is to issue
+        # thousands of requests a minute.
+        #
+        # A REQUIRED KEYWORD, not an optional one. Omitted, the driver reaches
+        # AOSS and gets a bare 403 on every call of the Tier B half — which
+        # the report would record as a 100% retrieval error rate for Tier B
+        # and read as a measurement. The disposition's default outcome is
+        # retirement, so the failure mode of forgetting this argument is
+        # "Tier B is retired on an IAM mistake". Making the caller name it is
+        # the cheapest defence available.
+        driver_role = iam.Role.from_role_arn(
+            self, "LoadDriverRole", load_driver_role_arn, mutable=True)
+        driver_role.add_to_principal_policy(iam.PolicyStatement(
+            actions=["aoss:APIAccessAll"], resources=[collection.attr_arn]))
+
         # AOSS data access is governed ONLY by this policy — an IAM principal
         # with aoss:APIAccessAll still gets 403 unless it is named here.
         #
@@ -261,7 +283,12 @@ class RegDeltaSearchStack(cdk.Stack):
         # src/retrieval/aoss_tier.py issues `_search` and `_msearch`, both
         # index-level reads, and nothing else — the same two permissions the
         # operator's read-only statement has been running the probe harness on.
-        index_readers = [query_lambda_role_arn]
+        # The load driver reads the index and nothing more. It calls
+        # `router.retrieve_traced`, which reaches `aoss_tier`, which issues
+        # `_search` and `_msearch` — the same two index-level reads the query
+        # role has. It never creates, writes or deletes, and it is not in
+        # `index_writers`.
+        index_readers = [query_lambda_role_arn, load_driver_role_arn]
         dev_principal = (self.node.try_get_context("devPrincipalArn")
                          or os.environ.get("REGDELTA_DEV_PRINCIPAL_ARN"))
         if dev_principal:

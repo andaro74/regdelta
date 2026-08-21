@@ -41,7 +41,7 @@ from aws_cdk import (
 )
 from constructs import Construct
 
-from core.observability import add_observability
+from core.observability import add_observability, enable_xray
 from shared import config
 
 # Resolved from this file, not the process CWD — same reason as
@@ -869,6 +869,110 @@ class RegDeltaCoreStack(cdk.Stack):
         nightly.add_to_role_policy(iam.PolicyStatement(
             actions=["cloudwatch:GetMetricStatistics"], resources=["*"]))
 
+        # ------------------------------------------------------------------
+        # SPEC/06 Tier B disposition: the load driver, IN REGION.
+        #
+        # One invocation is ONE STEP of the pre-registered schedule
+        # (`src/ops/retrieval_load.py`); `make tier-disposition` walks the
+        # schedule and writes the report. It has no event source, no function
+        # URL and no API route: nothing invokes it but a person with
+        # `lambda:InvokeFunction` and a reason.
+        #
+        # WHY IT LIVES IN THE PERSISTENT STACK. It has to exist before
+        # `make up` and outlive `make down`, because the disposition takes one
+        # half of the comparison against each tier and the S3 Vectors half is
+        # taken with `regdelta-search` destroyed. Putting it in the ephemeral
+        # stack would make the Tier A half unrunnable. Its AOSS reach is the
+        # part that must not outlive the collection, and that grant is in
+        # `search_stack.py` with the rest of them.
+        #
+        # WHY IN-REGION AT ALL. `ADR-0012:107-110` records Lambda-to-AOSS
+        # in-region as unmeasured and able to move the ratio; the amendment's
+        # Change 5 names the vantage move and asks the seat to accept it, with
+        # the direction stated as unknown. Internal validity is preserved
+        # because both halves share this one vantage.
+        #
+        # 2048 MB and a 5-minute timeout are the figures the amendment's cost
+        # table is derived from: 6 runs x 300 s at 2048 MB = $0.06 of Lambda.
+        # A step is 60 s of dispatch plus straggler joins; five minutes is
+        # room for the joins and not room for a runaway.
+        load_driver = _lambda.Function(
+            self, "LoadDriverFn",
+            # The pinned boto3 — `s3vectors` is not in the runtime's bundled
+            # SDK, which is the same reason QueryFn carries this layer.
+            layers=[deps_layer],
+            runtime=_lambda.Runtime.PYTHON_3_14,
+            handler="ops.retrieval_load.handler",
+            code=asset_policy.python_source(),
+            timeout=Duration.minutes(5),
+            memory_size=2048,
+            environment={**common_env,
+                         "SEARCH_ENDPOINT_PARAM": SSM_ENDPOINT_PARAM,
+                         # PINNED for the same reason QueryFn pins its model
+                         # ids: the IAM statement below resolves this in the
+                         # SYNTH process and the function resolved it again
+                         # from its own environment, which set nothing. An
+                         # exported EMBED_MODEL would grant one model and
+                         # invoke another.
+                         "EMBED_MODEL": config.EMBED_MODEL},
+        )
+        # The registry table: `retrieval/expansion.py` reads it on the
+        # retrieval path (`documents_in_play`, `query_citation_ids`), so a
+        # driver without it measures a retrieval that half-failed.
+        self.registry_table.grant_read_data(load_driver)
+        load_driver.add_to_role_policy(iam.PolicyStatement(
+            actions=["ssm:GetParameter"],
+            resources=[self.format_arn(
+                service="ssm", resource="parameter",
+                resource_name=SSM_ENDPOINT_PARAM.lstrip("/"))]))
+        load_driver.add_to_role_policy(iam.PolicyStatement(
+            actions=["s3vectors:QueryVectors", "s3vectors:GetVectors"],
+            resources=[
+                self._vector_bucket_arn(),
+                f"{self._vector_bucket_arn()}/index/{VECTOR_INDEX_NAME}",
+            ]))
+        # THE EMBEDDING MODEL AND NOTHING ELSE, and this is a spend control
+        # rather than tidiness. The seat's ceiling for M06 is $20; one minute
+        # of Opus at this account's non-adjustable per-minute quota is $23.63
+        # (milestones/M06/spec06-disposition-amendment.md, the chaos-test
+        # note), and a driver that dispatches 90 calls a second is the one
+        # thing in this account that could reach that by accident. It cannot:
+        # `_bedrock_model_arns()` is deliberately NOT reused here, so the
+        # driver holds no grant on Opus or Sonnet at all and a mistake fails
+        # with AccessDenied instead of a bill.
+        load_driver.add_to_role_policy(iam.PolicyStatement(
+            actions=["bedrock:InvokeModel"],
+            resources=[self._embed_model_arn()]))
+        # The span is the measurement. Same two actions as QueryFn, through
+        # the same helper, for the reason its docstring gives.
+        enable_xray(load_driver)
+        #: Crosses to `regdelta-search`, which adds it to the collection's
+        #: data-access policy as a READER and grants it `aoss:APIAccessAll` on
+        #: the collection ARN. Without both the driver gets a bare 403 on the
+        #: Tier B half and the disposition records an error rate that is about
+        #: IAM rather than about AOSS.
+        self.load_driver_role_arn = load_driver.role.role_arn
+        cdk.CfnOutput(self, "LoadDriverFnName", value=load_driver.function_name)
+        # THE SECOND FOREIGN ROLE regdelta-search TOUCHES, and the janitor's
+        # deletion role has to be able to detach from it for the same reason
+        # it does from the query role — the long comment above
+        # `search_deleter`'s query-role statement is the whole argument, and
+        # it applies verbatim: `search_stack` attaches this role's
+        # `aoss:APIAccessAll` grant as an `AWS::IAM::Policy` it owns, so
+        # deleting the ephemeral stack calls `iam:DeleteRolePolicy` here.
+        # Without it the 01:00 janitor takes AccessDenied, the stack lands in
+        # DELETE_FAILED, and a collection bills all night.
+        #
+        # Stated twice in this file because the statement cannot be written
+        # before the role exists. What keeps the two in step is not this
+        # comment: `test_the_deletion_role_reaches_every_foreign_role_search_
+        # writes_to` enumerates every cross-stack role attachment in the
+        # synthesised search template and fails on any that this role cannot
+        # detach. It failed on this one before the statement was added.
+        search_deleter.add_to_policy(iam.PolicyStatement(
+            actions=["iam:DeleteRolePolicy", "iam:GetRolePolicy"],
+            resources=[load_driver.role.role_arn]))
+
         # No subscription, deliberately — see add_observability's docstring.
         # An alarm with no action still changes state and still answers "was it
         # firing last Tuesday", which is what the evidence pack needs. A
@@ -940,7 +1044,16 @@ class RegDeltaCoreStack(cdk.Stack):
                                      account="", resource="foundation-model",
                                      resource_name=base)
                      for region in INFERENCE_PROFILE_REGIONS]
-        arns.append(self.format_arn(service="bedrock", account="",
-                                    resource="foundation-model",
-                                    resource_name=config.EMBED_MODEL))
+        arns.append(self._embed_model_arn())
         return arns
+
+    def _embed_model_arn(self) -> str:
+        """Titan Text Embeddings V2, alone.
+
+        Split out of `_bedrock_model_arns` because `LoadDriverFn` needs this
+        one and must not have the others: it is the only grant standing
+        between a 90-call-per-second driver and an Opus bill.
+        """
+        return self.format_arn(service="bedrock", account="",
+                               resource="foundation-model",
+                               resource_name=config.EMBED_MODEL)

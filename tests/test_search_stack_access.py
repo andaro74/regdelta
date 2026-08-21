@@ -14,6 +14,7 @@ aws_cdk = pytest.importorskip("aws_cdk", reason="CDK not installed")
 
 DEV_ARN = "arn:aws:iam::111122223333:user/someone"
 QUERY_ROLE = "arn:aws:iam::111122223333:role/QueryFn"
+DRIVER_ROLE = "arn:aws:iam::111122223333:role/LoadDriverFn"
 
 
 def synth(context: dict | None = None) -> dict:
@@ -31,7 +32,7 @@ def synth(context: dict | None = None) -> dict:
     bucket = s3.Bucket(host, "Corpus")
     RegDeltaSearchStack(
         app, "regdelta-search", corpus_bucket=bucket,
-        query_lambda_role_arn=QUERY_ROLE,
+        query_lambda_role_arn=QUERY_ROLE, load_driver_role_arn=DRIVER_ROLE,
         env=cdk.Environment(account="111122223333", region="us-west-2"))
     return app.synth().get_stack_by_name("regdelta-search").template
 
@@ -102,7 +103,12 @@ def test_it_grants_exactly_the_one_principal_asked_for(monkeypatch):
     write access to the index."""
     monkeypatch.delenv("REGDELTA_DEV_PRINCIPAL_ARN", raising=False)
     principals = access_principals(synth({"devPrincipalArn": DEV_ARN}))
-    assert len(principals) == 3
+    # Four: the reindex role (a CFN token), the query role, SPEC/06's load
+    # driver, and the operator. Pinned as an exact count and an exact set,
+    # because "no wildcard" is satisfied by a list that has quietly grown a
+    # principal nobody argued for.
+    assert set(principals) == {"<cfn-token>", QUERY_ROLE, DRIVER_ROLE, DEV_ARN}
+    assert len(principals) == 4
     assert "*" not in principals
     assert not any(p.endswith(":root") for p in principals)
 
@@ -222,7 +228,7 @@ def staged_asset_files(monkeypatch=None) -> list[str]:
     bucket = s3.Bucket(host, "Corpus")
     RegDeltaSearchStack(
         app, "regdelta-search", corpus_bucket=bucket,
-        query_lambda_role_arn=QUERY_ROLE,
+        query_lambda_role_arn=QUERY_ROLE, load_driver_role_arn=DRIVER_ROLE,
         env=cdk.Environment(account="111122223333", region="us-west-2"))
     assembly = app.synth()
 
@@ -497,3 +503,48 @@ def test_the_query_role_gets_no_write_permission_from_iam_either():
         actions = actions if isinstance(actions, list) else [actions]
         assert actions == ["aoss:APIAccessAll"], \
             f"the query role's IAM grant carries more than API access: {actions}"
+
+
+# ------------------------------------------------ SPEC/06's load driver (M06)
+# The driver issues thousands of retrievals a minute against whichever tier is
+# up. Its AOSS reach is therefore the widest-blast-radius grant added at M06,
+# and the two things worth failing a build over are that it can READ the index
+# (or the Tier B half of the disposition records IAM 403s as AOSS's error rate
+# and retires Tier B on a mistake) and that it can do NOTHING ELSE.
+
+
+def test_the_load_driver_is_an_index_reader(monkeypatch):
+    monkeypatch.delenv("REGDELTA_DEV_PRINCIPAL_ARN", raising=False)
+    assert permissions_for(synth(), DRIVER_ROLE) == {
+        "aoss:DescribeIndex", "aoss:ReadDocument"}
+
+
+def test_the_load_driver_has_no_collection_level_access(monkeypatch):
+    """Same trap as the query role's: a collection-level rule carries
+    CreateCollectionItems and DeleteCollectionItems."""
+    monkeypatch.delenv("REGDELTA_DEV_PRINCIPAL_ARN", raising=False)
+    for stmt in access_statements(synth()):
+        if DRIVER_ROLE not in stmt["Principal"]:
+            continue
+        for rule in stmt["Rules"]:
+            assert rule["ResourceType"] == "index", \
+                f"load driver granted {rule['ResourceType']}-level access: {rule}"
+
+
+def test_the_load_driver_is_not_an_index_writer(monkeypatch):
+    """It never creates, writes or deletes a document — `router.retrieve_traced`
+    reaches `aoss_tier`, which issues `_search` and `_msearch`.
+
+    Asserted against the `aoss:*` statement by principal rather than by reading
+    the permission set again, because the failure being guarded against is the
+    driver's ARN being appended to `index_writers` instead of `index_readers` —
+    a one-word edit whose whole effect is invisible in `permissions_for` unless
+    you notice `aoss:*` swallowing the reads.
+    """
+    monkeypatch.delenv("REGDELTA_DEV_PRINCIPAL_ARN", raising=False)
+    for stmt in access_statements(synth()):
+        perms = {p for rule in stmt["Rules"] for p in rule["Permission"]}
+        if "aoss:*" in perms:
+            assert DRIVER_ROLE not in stmt["Principal"], (
+                "the load driver is in the writers' statement; it would hold "
+                "DeleteIndex and WriteDocument on the corpus index")
