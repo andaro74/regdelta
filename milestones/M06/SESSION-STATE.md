@@ -217,10 +217,27 @@ A 90/s load test scales the thing it is testing; price it that way next time.
 
 1. ~~Both amendments are still DRAFTS.~~ **ADOPTED 2026-08-21 (evening)**, both,
    as rulings with sources. No longer the blocker.
-2. **`eng-code-reviewer` on the whole branch** before the PR, and
-   `security-reviewer` on the commits made AFTER its review of the IAM diff
-   (that review's own two MEDIUMs are taken and in `971123f`). **This is now
-   the blocker.**
+2. ~~`eng-code-reviewer` and `security-reviewer`~~ **BOTH DONE.** Every finding
+   from both is taken; see `58b6af0` and `5feed4b`.
+
+   **BLOCKER, and it must be settled BEFORE this branch is pushed:**
+   `971123f` committed the live API host into `dashboard-traffic.json`. It is
+   redacted from the tree now, but it is still in that commit, and the repo is
+   PUBLIC. The branch is unpushed (`git branch -r --contains HEAD` is empty),
+   so it is fixable without a published rewrite. **The seat's call**, because
+   both options cost something:
+
+   - **Squash-merge the PR** — history never reaches `main`, no rebase, the
+     evidence pack's `971123f` reference stays valid. Cheapest, and the default
+     for PRs anyway.
+   - **Rebase and drop the value** — clean branch history, but every sha from
+     `971123f` forward changes, and SESSION-STATE and both amendments cite
+     shas. They would need updating in the same pass.
+
+   **Do not push before deciding.** And redaction is obscurity, not a fix — the
+   endpoint is unauthenticated, spends model money per call, and is bounded
+   only by a 20 rps throttle. That is a SPEC/04 scope question, not an M06 one,
+   and it is now on the record.
 3. **Rebase onto `main` once PR #12 lands.** Not before.
 4. **The OCU constant**, above — settle from Cost Explorer once the day posts.
 5. **M07: raise `LoadDriverFn` to 10240 MB and re-run the disposition.** At
