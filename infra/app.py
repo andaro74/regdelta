@@ -25,6 +25,11 @@ search = RegDeltaSearchStack(
     app, "regdelta-search", env=env,
     corpus_bucket=core.corpus_bucket,
     query_lambda_role_arn=core.query_lambda_role_arn,
+    # SPEC/06's disposition driver. Named here rather than defaulted in the
+    # search stack: the grant it carries is what lets the Tier B half of the
+    # measurement happen at all, and a silently-absent reader would record
+    # 403s as Tier B's error rate.
+    load_driver_role_arn=core.load_driver_role_arn,
 )
 search.add_dependency(core)
 app.synth()

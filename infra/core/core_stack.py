@@ -36,10 +36,12 @@ from aws_cdk import (
     aws_lambda as _lambda,
     aws_s3 as s3,
     aws_s3_deployment as s3deploy,
+    aws_sns as sns,
     aws_sqs as sqs,
 )
 from constructs import Construct
 
+from core.observability import add_observability, enable_xray
 from shared import config
 
 # Resolved from this file, not the process CWD — same reason as
@@ -422,19 +424,41 @@ class RegDeltaCoreStack(cdk.Stack):
         # REVIEW#-writes split, a single-prefix BatchWriteItem is ALLOWED
         # (the control, ruling out "BatchWriteItem simply is not granted") and
         # the mixed one is DENIED. The argument holds.
+        #
+        # CACHE#* IS THE THIRD PREFIX, AND IT WAS MISSING UNTIL M06.
+        # The enumeration above is right about THREAD# and REVIEW# and was
+        # incomplete: `api/response_cache.py` keys on `CACHE#<sha256>` in this
+        # same table, so from M05's scoping until now every `/query` produced
+        #
+        #   cache read failed, treating as miss: AccessDeniedException
+        #   cache write failed, answer still served: AccessDeniedException
+        #
+        # — both swallowed by design (`response_cache.get`/`put` treat any
+        # failure as a miss, so a broken cache cannot break a request), and the
+        # response still said `cache: "miss"`, which is exactly what a working
+        # cache says the first time. The SPEC/04 cache has therefore never
+        # served an answer in deployment: every request paid full model price
+        # and reported the status a healthy cache reports.
+        #
+        # Found live 2026-08-21 by `milestones/M06/dashboard_traffic.py`, which
+        # asks one question twice and REFUSES if the second is not a hit. Two
+        # misses, exit 3, and the CloudWatch WARNINGs above.
+        #
+        # Reading CACHE#* does NOT weaken the review-queue split, which is what
+        # the read statement exists for: REVIEW#* stays unreadable.
         state_table_arn = self.state_table.table_arn
         query_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["dynamodb:GetItem", "dynamodb:BatchGetItem",
                      "dynamodb:Query", "dynamodb:ConditionCheckItem"],
             resources=[state_table_arn],
             conditions={"ForAllValues:StringLike": {
-                "dynamodb:LeadingKeys": ["THREAD#*"]}}))
+                "dynamodb:LeadingKeys": ["THREAD#*", "CACHE#*"]}}))
         query_fn.add_to_role_policy(iam.PolicyStatement(
             actions=["dynamodb:PutItem", "dynamodb:UpdateItem",
                      "dynamodb:DeleteItem", "dynamodb:BatchWriteItem"],
             resources=[state_table_arn],
             conditions={"ForAllValues:StringLike": {
-                "dynamodb:LeadingKeys": ["THREAD#*", "REVIEW#*"]}}))
+                "dynamodb:LeadingKeys": ["THREAD#*", "REVIEW#*", "CACHE#*"]}}))
         # Metadata, not data. `DescribeTable` does not accept a LeadingKeys
         # condition — it has no keys — and it returns the schema and item COUNT,
         # never an item. Granted separately and named here so that its absence
@@ -658,7 +682,6 @@ class RegDeltaCoreStack(cdk.Stack):
                       description="Demo UI; /api/* proxies to the same API")
 
         # TODO SPEC/04: SES identity for HITL notifications.
-        # TODO SPEC/06: nightly eval Lambda + regression alarm + dashboard.
 
         # ------------------------------------------------------------------
         # THE SEARCH STACK'S DELETION ROLE. SPEC/05, closing the TODO that
@@ -830,6 +853,158 @@ class RegDeltaCoreStack(cdk.Stack):
             targets=[targets.LambdaFunction(janitor)],
         )
 
+        # ------------------------------------------------------------------
+        # SPEC/06 Observability: the nightly check, the dashboard and the
+        # alarms. Everything is in core/observability.py; the three functions
+        # it needs are passed rather than looked up, so the wiring is visible
+        # here and the reasoning lives there.
+        #
+        # THE NIGHTLY CHECK SHIPS src/ AND RUNS NO GOLDEN QUESTION. It reads
+        # the registry through graph.amendment_graph — the deterministic half
+        # of the graph, per CLAUDE.md's rule that dates come from the amendment
+        # graph and not from vector similarity — so it needs the same code the
+        # query function runs and none of the eval harness. src/ops/nightly.py
+        # states at length why the full set nightly is neither affordable nor
+        # possible: 4.5% of a NON-ADJUSTABLE daily Opus cap, every night,
+        # before anyone does any work.
+        # ------------------------------------------------------------------
+        nightly = _lambda.Function(
+            self, "NightlyCheckFn",
+            runtime=_lambda.Runtime.PYTHON_3_14,
+            handler="ops.nightly.handler",
+            code=asset_policy.python_source(),
+            timeout=Duration.minutes(5),
+            environment={**common_env,
+                         "SEARCH_ENDPOINT_PARAM": SSM_ENDPOINT_PARAM},
+        )
+        self.registry_table.grant_read_data(nightly)
+        nightly.add_to_role_policy(iam.PolicyStatement(
+            actions=["ssm:GetParameter"],
+            resources=[self.format_arn(
+                service="ssm", resource="parameter",
+                resource_name=SSM_ENDPOINT_PARAM.lstrip("/"))]))
+        # READ ONLY. The nightly check reads EvalPassRate to compute staleness
+        # and emits everything else through EMF on stdout, so it never needs
+        # PutMetricData. Granting write here would put a metric-publishing
+        # capability on an unattended role for no reason — and would make the
+        # numbers on the dashboard forgeable from a second place.
+        nightly.add_to_role_policy(iam.PolicyStatement(
+            actions=["cloudwatch:GetMetricStatistics"], resources=["*"]))
+
+        # ------------------------------------------------------------------
+        # SPEC/06 Tier B disposition: the load driver, IN REGION.
+        #
+        # One invocation is ONE STEP of the pre-registered schedule
+        # (`src/ops/retrieval_load.py`); `make tier-disposition` walks the
+        # schedule and writes the report. It has no event source, no function
+        # URL and no API route: nothing invokes it but a person with
+        # `lambda:InvokeFunction` and a reason.
+        #
+        # WHY IT LIVES IN THE PERSISTENT STACK. It has to exist before
+        # `make up` and outlive `make down`, because the disposition takes one
+        # half of the comparison against each tier and the S3 Vectors half is
+        # taken with `regdelta-search` destroyed. Putting it in the ephemeral
+        # stack would make the Tier A half unrunnable. Its AOSS reach is the
+        # part that must not outlive the collection, and that grant is in
+        # `search_stack.py` with the rest of them.
+        #
+        # WHY IN-REGION AT ALL. `ADR-0012:107-110` records Lambda-to-AOSS
+        # in-region as unmeasured and able to move the ratio; the amendment's
+        # Change 5 names the vantage move and asks the seat to accept it, with
+        # the direction stated as unknown. Internal validity is preserved
+        # because both halves share this one vantage.
+        #
+        # 2048 MB and a 5-minute timeout are the figures the amendment's cost
+        # table is derived from: 6 runs x 300 s at 2048 MB = $0.06 of Lambda.
+        # A step is 60 s of dispatch plus straggler joins; five minutes is
+        # room for the joins and not room for a runaway.
+        load_driver = _lambda.Function(
+            self, "LoadDriverFn",
+            # The pinned boto3 — `s3vectors` is not in the runtime's bundled
+            # SDK, which is the same reason QueryFn carries this layer.
+            layers=[deps_layer],
+            runtime=_lambda.Runtime.PYTHON_3_14,
+            handler="ops.retrieval_load.handler",
+            code=asset_policy.python_source(),
+            timeout=Duration.minutes(5),
+            memory_size=2048,
+            environment={**common_env,
+                         "SEARCH_ENDPOINT_PARAM": SSM_ENDPOINT_PARAM,
+                         # PINNED for the same reason QueryFn pins its model
+                         # ids: the IAM statement below resolves this in the
+                         # SYNTH process and the function resolved it again
+                         # from its own environment, which set nothing. An
+                         # exported EMBED_MODEL would grant one model and
+                         # invoke another.
+                         "EMBED_MODEL": config.EMBED_MODEL},
+        )
+        # The registry table: `retrieval/expansion.py` reads it on the
+        # retrieval path (`documents_in_play`, `query_citation_ids`), so a
+        # driver without it measures a retrieval that half-failed.
+        self.registry_table.grant_read_data(load_driver)
+        load_driver.add_to_role_policy(iam.PolicyStatement(
+            actions=["ssm:GetParameter"],
+            resources=[self.format_arn(
+                service="ssm", resource="parameter",
+                resource_name=SSM_ENDPOINT_PARAM.lstrip("/"))]))
+        load_driver.add_to_role_policy(iam.PolicyStatement(
+            actions=["s3vectors:QueryVectors", "s3vectors:GetVectors"],
+            resources=[
+                self._vector_bucket_arn(),
+                f"{self._vector_bucket_arn()}/index/{VECTOR_INDEX_NAME}",
+            ]))
+        # THE EMBEDDING MODEL AND NOTHING ELSE, and this is a spend control
+        # rather than tidiness. The seat's ceiling for M06 is $20; one minute
+        # of Opus at this account's non-adjustable per-minute quota is $23.63
+        # (milestones/M06/spec06-disposition-amendment.md, the chaos-test
+        # note), and a driver that dispatches 90 calls a second is the one
+        # thing in this account that could reach that by accident. It cannot:
+        # `_bedrock_model_arns()` is deliberately NOT reused here, so the
+        # driver holds no grant on Opus or Sonnet at all and a mistake fails
+        # with AccessDenied instead of a bill.
+        load_driver.add_to_role_policy(iam.PolicyStatement(
+            actions=["bedrock:InvokeModel"],
+            resources=[self._embed_model_arn()]))
+        # The span is the measurement. Same two actions as QueryFn, through
+        # the same helper, for the reason its docstring gives.
+        enable_xray(load_driver)
+        #: Crosses to `regdelta-search`, which adds it to the collection's
+        #: data-access policy as a READER and grants it `aoss:APIAccessAll` on
+        #: the collection ARN. Without both the driver gets a bare 403 on the
+        #: Tier B half and the disposition records an error rate that is about
+        #: IAM rather than about AOSS.
+        self.load_driver_role_arn = load_driver.role.role_arn
+        cdk.CfnOutput(self, "LoadDriverFnName", value=load_driver.function_name)
+        # THE SECOND FOREIGN ROLE regdelta-search TOUCHES, and the janitor's
+        # deletion role has to be able to detach from it for the same reason
+        # it does from the query role — the long comment above
+        # `search_deleter`'s query-role statement is the whole argument, and
+        # it applies verbatim: `search_stack` attaches this role's
+        # `aoss:APIAccessAll` grant as an `AWS::IAM::Policy` it owns, so
+        # deleting the ephemeral stack calls `iam:DeleteRolePolicy` here.
+        # Without it the 01:00 janitor takes AccessDenied, the stack lands in
+        # DELETE_FAILED, and a collection bills all night.
+        #
+        # Stated twice in this file because the statement cannot be written
+        # before the role exists. What keeps the two in step is not this
+        # comment: `test_the_deletion_role_reaches_every_foreign_role_search_
+        # writes_to` enumerates every cross-stack role attachment in the
+        # synthesised search template and fails on any that this role cannot
+        # detach. It failed on this one before the statement was added.
+        search_deleter.add_to_policy(iam.PolicyStatement(
+            actions=["iam:DeleteRolePolicy", "iam:GetRolePolicy"],
+            resources=[load_driver.role.role_arn]))
+
+        # No subscription, deliberately — see add_observability's docstring.
+        # An alarm with no action still changes state and still answers "was it
+        # firing last Tuesday", which is what the evidence pack needs. A
+        # fabricated email destination would be a delivery promise nobody has
+        # tested.
+        self.alarm_topic = sns.Topic(self, "AlarmTopic",
+                                     display_name="RegDelta alarms")
+        add_observability(self, query_fn=query_fn, janitor_fn=janitor,
+                          nightly_fn=nightly, alarm_topic=self.alarm_topic)
+
         cdk.CfnOutput(self, "CorpusBucketName", value=self.corpus_bucket.bucket_name)
         cdk.CfnOutput(self, "PollerFnName", value=poller.function_name)
         cdk.CfnOutput(self, "VectorBucketName",
@@ -891,7 +1066,16 @@ class RegDeltaCoreStack(cdk.Stack):
                                      account="", resource="foundation-model",
                                      resource_name=base)
                      for region in INFERENCE_PROFILE_REGIONS]
-        arns.append(self.format_arn(service="bedrock", account="",
-                                    resource="foundation-model",
-                                    resource_name=config.EMBED_MODEL))
+        arns.append(self._embed_model_arn())
         return arns
+
+    def _embed_model_arn(self) -> str:
+        """Titan Text Embeddings V2, alone.
+
+        Split out of `_bedrock_model_arns` because `LoadDriverFn` needs this
+        one and must not have the others: it is the only grant standing
+        between a 90-call-per-second driver and an Opus bill.
+        """
+        return self.format_arn(service="bedrock", account="",
+                               resource="foundation-model",
+                               resource_name=config.EMBED_MODEL)

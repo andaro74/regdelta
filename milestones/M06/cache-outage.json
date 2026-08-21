@@ -1,0 +1,38 @@
+{
+  "at": "2026-08-21T17:30:42+00:00",
+  "blast_radius": "repeat /query callers inside the 1h TTL \u2014 the demo and UI path. NOT the golden set: evals/run_evals.py sends no_cache=True and x-regdelta-no-cache on every question by design (SPEC/04 parity control 1), so `make evals` never consulted the cache and its costs are unaffected.",
+  "command": "eval \"$(python evals/local_env.py)\" && python milestones/M06/capture_cache_outage.py",
+  "event_count": 4,
+  "events": [
+    {
+      "at": "2026-08-21T17:15:20+00:00",
+      "message": "[WARNING]\t2026-08-21T17:15:20.906Z\tcf6fab5a-d055-4d03-80d6-923183cdad22\tcache read failed, treating as miss: An error occurred (AccessDeniedException) when calling the GetItem operation: User: arn:aws:sts::581208540944:assumed-role/regdelta-core-QueryFnServiceRoleF1C814DC-PWdBgdKNeEEV/regdelta-core-QueryFnB2E9AD3D-hjcFpUj3WSqT is not authorized to perform: dynamodb:GetItem on resource: arn:aws:dynamodb:us-west-2:581208540944:table/regdelta-core-StateTable9728C7E5-1B6G4PP9QG4EG because no identity-based policy allows the dynamodb:GetItem action",
+      "pattern": "cache read failed"
+    },
+    {
+      "at": "2026-08-21T17:15:37+00:00",
+      "message": "[WARNING]\t2026-08-21T17:15:37.972Z\tcf6fab5a-d055-4d03-80d6-923183cdad22\tcache write failed, answer still served: An error occurred (AccessDeniedException) when calling the PutItem operation: User: arn:aws:sts::581208540944:assumed-role/regdelta-core-QueryFnServiceRoleF1C814DC-PWdBgdKNeEEV/regdelta-core-QueryFnB2E9AD3D-hjcFpUj3WSqT is not authorized to perform: dynamodb:PutItem on resource: arn:aws:dynamodb:us-west-2:581208540944:table/regdelta-core-StateTable9728C7E5-1B6G4PP9QG4EG because no identity-based policy allows the dynamodb:PutItem action",
+      "pattern": "cache write failed"
+    },
+    {
+      "at": "2026-08-21T17:15:38+00:00",
+      "message": "[WARNING]\t2026-08-21T17:15:38.169Z\t9b5a1062-8f22-43ed-8bc5-41601745974d\tcache read failed, treating as miss: An error occurred (AccessDeniedException) when calling the GetItem operation: User: arn:aws:sts::581208540944:assumed-role/regdelta-core-QueryFnServiceRoleF1C814DC-PWdBgdKNeEEV/regdelta-core-QueryFnB2E9AD3D-hjcFpUj3WSqT is not authorized to perform: dynamodb:GetItem on resource: arn:aws:dynamodb:us-west-2:581208540944:table/regdelta-core-StateTable9728C7E5-1B6G4PP9QG4EG because no identity-based policy allows the dynamodb:GetItem action",
+      "pattern": "cache read failed"
+    },
+    {
+      "at": "2026-08-21T17:15:53+00:00",
+      "message": "[WARNING]\t2026-08-21T17:15:53.365Z\t9b5a1062-8f22-43ed-8bc5-41601745974d\tcache write failed, answer still served: An error occurred (AccessDeniedException) when calling the PutItem operation: User: arn:aws:sts::581208540944:assumed-role/regdelta-core-QueryFnServiceRoleF1C814DC-PWdBgdKNeEEV/regdelta-core-QueryFnB2E9AD3D-hjcFpUj3WSqT is not authorized to perform: dynamodb:PutItem on resource: arn:aws:dynamodb:us-west-2:581208540944:table/regdelta-core-StateTable9728C7E5-1B6G4PP9QG4EG because no identity-based policy allows the dynamodb:PutItem action",
+      "pattern": "cache write failed"
+    }
+  ],
+  "fix": "CACHE#* added to both state-table statements in infra/core/core_stack.py; tests/test_query_fn_iam.py gains test_every_state_table_prefix_in_src_is_granted, which derives the prefix list from src/ instead of restating it.",
+  "how_it_was_found": "milestones/M06/dashboard_traffic.py asks one question TWICE and exits 3 if the second is not a hit. Two misses, exit 3, 2026-08-21.",
+  "log_group": "/aws/lambda/regdelta-core-QueryFnB2E9AD3D-hjcFpUj3WSqT",
+  "region": "us-west-2",
+  "what": "the SPEC/04 response cache was AccessDenied on both read and write from M05's IAM scoping until M06. QueryFn's state-table grants were conditioned on dynamodb:LeadingKeys THREAD#* and REVIEW#*; response_cache keys on CACHE#<sha256> in the same table, and CACHE# was not in the enumeration.",
+  "why_it_was_silent": "response_cache.get and .put treat ANY failure as a miss so a broken cache cannot break a request. The response therefore said cache: 'miss', which is what a working cache says on a first ask. Nothing on the outside distinguished the two.",
+  "window": {
+    "from": "2026-08-21T14:30:42+00:00",
+    "to": "2026-08-21T17:30:42+00:00"
+  }
+}

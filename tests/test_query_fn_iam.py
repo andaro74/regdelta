@@ -21,8 +21,11 @@ it is SCOPED, which is checkable. A wildcard is a statement that nobody decided,
 and that is the thing worth failing a build over.
 """
 import contextlib
+import fnmatch
+import re
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 import pytest
@@ -98,6 +101,42 @@ def _resources(stmt):
 
 
 # ------------------------------------------------------------------- the rule
+#: The ONLY actions permitted a wildcard resource on the roles that carry it,
+#: and why.
+#:
+#: TWO ROLES NOW, not one. `QueryFn` and SPEC/06's `LoadDriverFn`, which is not
+#: internet-facing and which reaches this exemption through the same
+#: `infra/core/observability.py:enable_xray` helper. `tests/
+#: test_load_driver_iam.py` IMPORTS this object rather than restating it, so
+#: there is still exactly one place to widen and one place to argue about it.
+#: The paragraphs below were written in the singular when the exemption served
+#: one role; they are about the ACTIONS, and they transfer unchanged.
+#:
+#: X-Ray's two daemon write actions are documented by AWS as not supporting
+#: resource-level permissions, and the AWS-managed `AWSXRayDaemonWriteAccess`
+#: policy is written the same way. They arrive with SPEC/06's per-node span:
+#: without ACTIVE tracing there is no daemon, and every subsegment
+#: `shared/observability.py` builds goes nowhere.
+#:
+#: NOT `_lambda.Tracing.ACTIVE`, which attaches that managed policy and its
+#: FOUR actions. `enable_xray` sets the property override and grants these two
+#: by hand, so the convenience flag cannot widen the exemption as a side
+#: effect. `milestones/M06/load_driver_guard_mutations.py` M7 is that mutation,
+#: and it is killed.
+#:
+#: THIS EXEMPTION IS DOCUMENTED, NOT MEASURED, AND SAYS SO. "These actions do
+#: not accept resource ARNs at all" was asserted in this repo once before, about
+#: `aoss:DeleteCollection`, and it was false — M05's open thread 5 records the
+#: correction. The difference here is that the claim is bounded by an action
+#: allowlist a test pins, so if it is wrong again the blast radius is two write
+#: actions against this account's own trace store rather than every collection
+#: in the account. Verifying it properly needs a denied `PutTraceSegments`
+#: against a resource-scoped policy, which costs a live trace and a role; it is
+#: worth doing and it is not done. ONE such probe settles it for BOTH
+#: principals at the same cost, since the claim is about the actions.
+WILDCARD_EXEMPT = frozenset({"xray:PutTraceSegments", "xray:PutTelemetryRecords"})
+
+
 def test_no_inline_grant_on_the_internet_facing_role_uses_a_bare_wildcard(template):
     """THE FINDING, as one assertion. Anything reachable by a stranger's HTTP
     request should not be able to name every resource in the account.
@@ -107,8 +146,25 @@ def test_no_inline_grant_on_the_internet_facing_role_uses_a_bare_wildcard(templa
     quietly included in a claim about "the role".
     """
     offenders = [(_actions(s), _resources(s)) for s in query_statements(template)
-                 if s.get("Effect") == "Allow" and "*" in _resources(s)]
+                 if s.get("Effect") == "Allow" and "*" in _resources(s)
+                 and not set(_actions(s)) <= WILDCARD_EXEMPT]
     assert offenders == [], f"wildcard resources on QueryFn: {offenders}"
+
+
+def test_the_wildcard_exemption_has_not_grown(template):
+    """An allowlist nobody pins is a hole that widens one action at a time.
+
+    Written as an equality on the SET rather than a membership check, so adding
+    a third action fails here and has to be argued for, and so REMOVING X-Ray
+    fails here too — a stale exemption is a standing permission to widen.
+    """
+    assert {"xray:PutTraceSegments", "xray:PutTelemetryRecords"} == WILDCARD_EXEMPT
+
+    exempted = [s for s in query_statements(template)
+                if s.get("Effect") == "Allow" and "*" in _resources(s)]
+    assert len(exempted) == 1, (
+        f"expected exactly one wildcard statement (X-Ray), got {exempted}")
+    assert set(_actions(exempted[0])) == WILDCARD_EXEMPT
 
 
 def test_the_role_attaches_only_the_managed_policies_we_expect(template):
@@ -320,11 +376,23 @@ def test_no_dynamodb_data_grant_is_unconditioned(template):
     assert offenders == [], f"unconditioned state-table grants: {offenders}"
 
 
+#: What the anonymous-driven role may READ on the state table. An ALLOWLIST,
+#: not a pinned equality: a fourth prefix still fails this test on the commit
+#: that adds it, but widening it is a one-line edit made in the open rather
+#: than a silent change to a pattern string.
+_READABLE_PREFIXES = {"THREAD#*", "CACHE#*"}
+
+#: And what it may WRITE. `REVIEW#*` is here and deliberately absent from the
+#: readable set: the review queue is write-only for this role.
+_WRITABLE_PREFIXES = {"THREAD#*", "REVIEW#*", "CACHE#*"}
+
+
 def test_the_review_queue_is_never_readable(template):
     """The spec sentence, read off the policy.
 
-    Every statement carrying a READ action must be conditioned on `THREAD#*`
-    alone. A read statement that also named `REVIEW#*` would be the defect.
+    Every statement carrying a READ action is conditioned, reaches only the
+    allowlisted prefixes, and matches no `REVIEW#` key. Reading the review
+    queue from this role would be the defect.
     """
     for stmt in _state_table_statements(template):
         actions = _actions(stmt)
@@ -332,9 +400,30 @@ def test_the_review_queue_is_never_readable(template):
             continue
         lk = _leading_keys(stmt)
         assert lk is not None, f"unconditioned read: {actions}"
-        _operator, keys = lk
-        assert keys == ["THREAD#*"], \
-            f"read actions {actions} reach {keys}, not THREAD#* alone"
+        operator, keys = lk
+        # THE OPERATOR IS HALF THE ARGUMENT AND WAS ASSERTED NOWHERE.
+        # `ForAnyValue:StringLike` here would let a BatchGetItem carrying one
+        # THREAD# key and one REVIEW# key succeed — the review queue readable
+        # by the anonymous-driven role — with the key LIST unchanged, so every
+        # assertion below would still pass. security-reviewer, M06.
+        assert operator == "ForAllValues:StringLike", \
+            f"read statement uses {operator}; ForAnyValue admits a mixed batch"
+        # An allowlist, because the property alone is not enough. A pattern
+        # like `REVIEW#*-*` or `REVIEW#????????-*` is not the literal
+        # "REVIEW#*" and does not match a one-character probe, yet it grants
+        # read on every real `REVIEW#<uuid4>` item. Measured by
+        # security-reviewer at M06.
+        assert set(keys) <= _READABLE_PREFIXES, \
+            f"read actions {actions} reach {sorted(set(keys) - _READABLE_PREFIXES)}"
+        # `fnmatchcase`, not `fnmatch`: the latter normalises case through
+        # `os.path.normcase`, so it is case-insensitive on Windows and
+        # case-sensitive in Linux CI while IAM `StringLike` is always
+        # case-sensitive. The probe is a REAL key shape — a uuid4 carries
+        # hyphens that a single character does not.
+        for pattern in keys:
+            for probe in ("REVIEW#x", f"REVIEW#{uuid.uuid4()}"):
+                assert not fnmatch.fnmatchcase(probe, pattern), \
+                    f"read pattern {pattern!r} matches {probe!r}"
 
 
 def test_the_review_queue_is_writable(template):
@@ -362,8 +451,126 @@ def test_writes_to_both_prefixes_live_in_one_statement(template):
                    if any(a in _WRITE_ACTIONS for a in _actions(s))]
     assert len(write_stmts) == 1, \
         f"{len(write_stmts)} write statements; a mixed batch satisfies neither"
-    _operator, keys = _leading_keys(write_stmts[0])
-    assert sorted(keys) == ["REVIEW#*", "THREAD#*"], keys
+    operator, keys = _leading_keys(write_stmts[0])
+    assert operator == "ForAllValues:StringLike", operator
+    assert "THREAD#*" in keys and "REVIEW#*" in keys, keys
+    # AND BOUNDED, mirroring the read side. When `CACHE#*` was added this
+    # assertion was relaxed from an equality to a membership test, and NOTHING
+    # else in this file constrains which patterns the write statement carries:
+    # `["THREAD#*", "REVIEW#*", "*"]` — unconditioned PutItem/UpdateItem/
+    # DeleteItem/BatchWriteItem over every key in the state table, from the
+    # anonymous-driven role, able to overwrite any caller's THREAD# checkpoint
+    # or CACHE# entry — passed the whole file green.
+    #
+    # That is the same "the test restated the list it was checking" failure
+    # that `test_every_state_table_prefix_in_src_is_granted` exists to end,
+    # reintroduced on the other statement. An allowlist keeps the forcing
+    # function: a fourth prefix fails here, and widening is a one-line edit
+    # made in the open. security-reviewer, M06.
+    assert set(keys) <= _WRITABLE_PREFIXES, \
+        f"write actions reach {sorted(set(keys) - _WRITABLE_PREFIXES)}"
+
+
+# --------------------------------------------------- prefix coverage, derived
+#
+# THE TEST THAT WOULD HAVE CAUGHT THE M05→M06 CACHE OUTAGE.
+#
+# The two statements above were scoped from an enumeration of the prefixes on
+# this table, and the enumeration was short by one: `CACHE#`. The tests written
+# beside them restated the SAME list, so they agreed with the policy and both
+# were wrong together — a specimen written by a rule's own author cannot
+# validate that rule. Nothing failed. What failed, silently and in production,
+# was every cache read and write, swallowed by `response_cache`'s
+# any-failure-is-a-miss contract.
+#
+# So this one does not restate anything. It reads the prefixes out of the
+# modules that bind to STATE_TABLE and requires the policy to cover what it
+# finds. A fourth prefix added in six months fails this test on the commit that
+# adds it, whatever anyone remembers about the table.
+#: DERIVED, not listed. A hand-maintained module list is the same construct
+#: whose incompleteness caused the outage, moved one level up: a future
+#: `src/api/feedback.py` writing `FEEDBACK#` would reproduce M05→M06 exactly
+#: with this test green. So the modules are the ones that NAME the table.
+#: security-reviewer, M06.
+def _state_table_modules():
+    return sorted(p for p in (ROOT / "src").rglob("*.py")
+                  if "config.STATE_TABLE" in p.read_text(encoding="utf-8"))
+
+#: SORT-key prefixes, which `dynamodb:LeadingKeys` does not constrain and must
+#: not be demanded of it. Declared rather than inferred: telling a partition
+#: prefix from a sort prefix by regex means parsing `Key={"pk": pk, "sk": ...}`,
+#: and a parser that guesses wrong fails OPEN. This list fails CLOSED — a new
+#: sort prefix breaks the test until someone writes it here and says why.
+_SORT_KEY_PREFIXES = {"CKPT#", "WRITE#"}
+
+#: Either quote, and any plausible identifier. Both halves of this were
+#: fail-open and only one was fixed the first time:
+#:
+#:   * `f'CACHE#{k}'` is invisible to a double-quote-only pattern.
+#:   * `"CACHE_V2#"`, `"THREAD2#"` and `"Feedback#"` were invisible to
+#:     `[A-Z][A-Z_]*#`.
+#:
+#: An invisible prefix produces no entry, so the test that exists to catch an
+#: ungranted prefix stays GREEN while the prefix goes ungranted — a repeat of
+#: the M05→M06 outage with its own guard watching. This file's stated standard,
+#: twelve lines up, is that the extraction fails CLOSED.
+#: security-reviewer, M06.
+_PREFIX_LITERAL = re.compile(r'''["']([A-Za-z][A-Za-z0-9_]*#)''')
+
+
+def _partition_prefixes_in_src():
+    found = {}
+    for path in _state_table_modules():
+        rel = path.relative_to(ROOT).as_posix()
+        for prefix in set(_PREFIX_LITERAL.findall(path.read_text(encoding="utf-8"))):
+            if prefix not in _SORT_KEY_PREFIXES:
+                found.setdefault(prefix, []).append(rel)
+    return found
+
+
+def _covered(prefix, patterns):
+    """Does any granted LeadingKeys pattern match a key under this prefix?
+
+    `fnmatchcase`, for the reason spelled out in
+    `test_the_review_queue_is_never_readable`: plain `fnmatch` normalises case
+    through `os.path.normcase`, so it is case-insensitive on Windows and
+    case-sensitive in Linux CI while IAM `StringLike` is always case-sensitive.
+    This file used both and argued against itself. eng-code-reviewer, M06.
+    """
+    probe = prefix + "x"
+    return any(fnmatch.fnmatchcase(probe, p) for p in patterns)
+
+
+def test_every_state_table_prefix_in_src_is_granted(template):
+    """Derived from `src/`, not from the policy or from memory."""
+    prefixes = _partition_prefixes_in_src()
+    assert prefixes, \
+        f"found no key prefixes in {_state_table_modules()} — the regex is broken"
+
+    granted = [p for s in _state_table_statements(template)
+               if (lk := _leading_keys(s)) for p in lk[1]]
+    ungranted = {k: v for k, v in prefixes.items() if not _covered(k, granted)}
+    assert ungranted == {}, (
+        f"these prefixes are written by src/ and reach no granted statement: "
+        f"{ungranted}. Granted patterns: {sorted(set(granted))}")
+
+
+def test_the_response_cache_can_both_read_and_write(template):
+    """The regression, named, because half a grant is worse than none.
+
+    A cache that may write and not read stores an answer it can never serve:
+    every request pays full model price, every response says `cache: "miss"`,
+    and that is the status a healthy cache reports on a first ask. It is the
+    exact shape of the M06 outage and it is invisible from the outside — which
+    is why `milestones/M06/dashboard_traffic.py` asks the same question twice
+    and refuses if the second is not a hit.
+    """
+    for actions, label in ((_READ_ACTIONS, "read"), (_WRITE_ACTIONS, "write")):
+        patterns = [p for s in _state_table_statements(template)
+                    if any(a in actions for a in _actions(s))
+                    if (lk := _leading_keys(s)) for p in lk[1]]
+        assert _covered("CACHE#", patterns), \
+            f"nothing may {label} CACHE#: {sorted(set(patterns))}"
 
 
 def test_scan_is_not_granted(template):

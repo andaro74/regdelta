@@ -1,0 +1,73 @@
+{
+  "at": "2026-08-21T18:11:16+00:00",
+  "captured": [
+    {
+      "bytes": 14575,
+      "expressions": 0,
+      "file": "dashboard-query-latency-p50-p95-ms.png",
+      "title": "/query latency (p50 / p95, ms)"
+    },
+    {
+      "bytes": 21329,
+      "expressions": 0,
+      "file": "dashboard-retrieval-latency-by-tier-p95-ms.png",
+      "title": "Retrieval latency by tier (p95, ms)"
+    },
+    {
+      "bytes": 14127,
+      "datapoints": 2,
+      "expressions": 1,
+      "file": "dashboard-cache-hit-rate.png",
+      "title": "Cache hit rate"
+    },
+    {
+      "bytes": 18103,
+      "datapoints": 2,
+      "expressions": 1,
+      "file": "dashboard-bedrock-cost-per-query-usd.png",
+      "title": "Bedrock cost per query (USD)"
+    },
+    {
+      "bytes": 16023,
+      "datapoints": 0,
+      "expressions": 1,
+      "file": "dashboard-hitl-rate-of-answered-queries-sent-to-review.png",
+      "title": "HITL rate (% of answered queries sent to review)"
+    },
+    {
+      "bytes": 20415,
+      "datapoints": 36,
+      "expressions": 1,
+      "file": "dashboard-search-session-cost-ocu-hours-x-0-242-hr.png",
+      "title": "Search-session cost (OCU-hours x $0.242/hr)"
+    },
+    {
+      "bytes": 17233,
+      "expressions": 0,
+      "file": "dashboard-lambda-concurrency-and-throttles-query-path.png",
+      "title": "Lambda concurrency and throttles (query path)"
+    },
+    {
+      "bytes": 17635,
+      "expressions": 0,
+      "file": "dashboard-lifecycle-hot-tier-up-janitor.png",
+      "title": "Lifecycle: hot tier up / janitor"
+    },
+    {
+      "bytes": 15498,
+      "expressions": 0,
+      "file": "dashboard-golden-set-last-recorded-run.png",
+      "title": "Golden set \u2014 last recorded run"
+    }
+  ],
+  "console_url": "https://us-west-2.console.aws.amazon.com/cloudwatch/home?region=us-west-2#dashboards:name=regdelta",
+  "dashboard": "regdelta",
+  "empty_expression_panels": [
+    "HITL rate (% of answered queries sent to review)"
+  ],
+  "failed": [],
+  "lookback_hours": 3,
+  "note": "PNGs are the panels WITH DATA at the moment of capture. The definition JSON beside them proves which metrics each panel reads. `datapoints` is the separate question of whether an expression panel is wired to a metric that exists \u2014 a panel can render perfectly and be empty, and at M06 three of them were. Neither replaces a console screenshot; together they replace the CLAIM that one was taken and looked right.",
+  "region": "us-west-2",
+  "widgets_total": 11
+}

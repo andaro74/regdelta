@@ -1,0 +1,247 @@
+{
+  "guards": [
+    "tests/test_instrument_span_sink.py",
+    "tests/test_janitor.py",
+    "tests/test_load_driver_iam.py",
+    "tests/test_retrieval_load_driver.py",
+    "tests/test_search_stack_access.py"
+  ],
+  "baseline_green": true,
+  "tree_restored_and_green": true,
+  "mutations": 29,
+  "survivors": 0,
+  "results": [
+    {
+      "id": "M1-driver-gets-every-model",
+      "guard": "tests/test_load_driver_iam.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "THE obvious edit: the helper every other Lambda uses is right there and returns five ARNs including Opus 4.6. One minute of Opus at this account's per-minute quota is $23.63 and exceeds a NON-ADJUSTABLE daily cap, and the driver dispatches 90 calls a second",
+      "tail": null
+    },
+    {
+      "id": "M2-driver-loses-tracing",
+      "guard": "tests/test_load_driver_iam.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "SPEC/06 defines the measured interval as the one carried on the per-node span; with no daemon every span reads `off` and the report measures nothing the clause names",
+      "tail": null
+    },
+    {
+      "id": "M3-driver-becomes-an-index-writer",
+      "guard": "tests/test_search_stack_access.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "one word. The driver would hold aoss:* \u2014 DeleteIndex and WriteDocument on the corpus index the cited deadlines are drawn from",
+      "tail": null
+    },
+    {
+      "id": "M4-janitor-cannot-detach-the-driver",
+      "guard": "tests/test_janitor.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the M05 defect, one role along: regdelta-search attaches a policy to this core-owned role, so DeleteStack under the janitor's role takes AccessDenied, lands in DELETE_FAILED, and a collection bills all night. Invisible in dev \u2014 `make down` runs as the bootstrap admin role",
+      "tail": null
+    },
+    {
+      "id": "M5-span-sink-only-fires-on-success",
+      "guard": "tests/test_instrument_span_sink.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "an errored retrieval still emits its span \u2014 that is node_span's own argument \u2014 so a success-only sink reports every failed call as having emitted nothing, which is a false claim in the report the clause asks for",
+      "tail": null
+    },
+    {
+      "id": "M6-span-sink-reads-a-stale-result",
+      "guard": "tests/test_instrument_span_sink.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "`span_result` is assigned in node_span's own `finally`; a sink called from INSIDE the with-block reads the initial ('off', None) every time \u2014 a report saying the spans never left while the datagrams went out",
+      "tail": null
+    },
+    {
+      "id": "M7-xray-exemption-grows",
+      "guard": "tests/test_load_driver_iam.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the four actions CDK's own Tracing.ACTIVE would attach. The wildcard exemption is pinned at two and has to be argued for to grow; picking up two more as a side effect is the widening the pin exists to stop",
+      "tail": null
+    },
+    {
+      "id": "R1-driver-loses-its-aoss-iam-grant",
+      "guard": "tests/test_search_stack_access.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "SECURITY-REVIEWER'S M8, and the reason this family exists: deleting these four lines left the ENTIRE SUITE green. The data-access policy is the sufficient half and IAM is the necessary half; without it every AOSS call is denied, the router falls back silently, and Tier B is retired on Tier A's numbers",
+      "tail": null
+    },
+    {
+      "id": "R2-query-role-loses-its-aoss-iam-grant",
+      "guard": "tests/test_search_stack_access.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the same absence on the role that has carried the grant since SPEC/05 \u2014 the parameterised family must cover both roles, not just the new one",
+      "tail": null
+    },
+    {
+      "id": "R3-driver-drops-out-of-index-readers",
+      "guard": "tests/test_search_stack_access.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the other necessary half. An IAM grant with no data-access entry is the same bare 403 by the other route",
+      "tail": null
+    },
+    {
+      "id": "R4-driver-loses-the-embedding-grant",
+      "guard": "tests/test_load_driver_iam.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "every retrieval embeds; without this every call fails identically on BOTH tiers, which is the one failure mode that would read as a tie \u2014 and ties retire",
+      "tail": null
+    },
+    {
+      "id": "R5-driver-loses-the-ssm-grant",
+      "guard": "tests/test_load_driver_iam.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the router reads the endpoint parameter to pick a tier; denied, it resolves to S3 Vectors and both halves measure Tier A",
+      "tail": null
+    },
+    {
+      "id": "R6-driver-loses-a-vector-index-action",
+      "guard": "tests/test_load_driver_iam.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the Tier A half's own backend, removed one action at a time \u2014 the shape a subset bound cannot see",
+      "tail": null
+    },
+    {
+      "id": "R7-driver-loses-the-registry-read",
+      "guard": "tests/test_load_driver_iam.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "`retrieval/expansion.py` reads the registry on the retrieval path, so a driver without it measures a retrieval that half-failed \u2014 on both tiers, equally, which again reads as a tie",
+      "tail": null
+    },
+    {
+      "id": "R8-driver-picks-up-a-managed-policy",
+      "guard": "tests/test_load_driver_iam.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the M04 finding on QueryFn, which this role did not inherit until now: every inline-policy assertion in the file reads identically with AdministratorAccess attached",
+      "tail": null
+    },
+    {
+      "id": "S7-the-thread-ceiling-blocks-instead-of-refusing",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "waiting for a slot CLOSES THE LOOP: the offered load becomes a function of the tier's own latency, which is the single property this driver exists to avoid, and the achieved-rate check would report the reduced rate as though it were the schedule",
+      "tail": null
+    },
+    {
+      "id": "S8-the-achieved-rate-is-over-dispatched-not-offered",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "a driver that refused half its dispatches would report the reduced rate as the schedule \u2014 coordinated omission by another route, and `rate_within_5pct` would call it well behaved",
+      "tail": null
+    },
+    {
+      "id": "T1-eligibility-ignores-the-tier",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the state the code was in when security-reviewer measured it: tiers_observed ['s3vectors'], errors 0, dispositive_eligible true, on a step pointed at aoss",
+      "tail": null
+    },
+    {
+      "id": "T2-tier-check-becomes-a-membership-test",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "a partial propagation delay makes SOME calls fall back; a membership test accepts a p95 computed over a mixture of both tiers and labelled as one of them",
+      "tail": null
+    },
+    {
+      "id": "T3-a-fallback-stops-counting-as-an-error",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "Part IIb E, in the direction the ruling did NOT take. A fallback is the search backend failing to answer \u2014 SPEC/06's numerator is exactly 'AOSS or S3 Vectors 5xx' \u2014 so dropping it from the error rate hides Tier B's most likely failure mode from the one disjunct that could still keep it",
+      "tail": null
+    },
+    {
+      "id": "T3b-a-fallen-back-call-contributes-its-latency",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the other half of the same ruling: a fallen-back call was timed by the tier that RESCUED it, so folding its latency into this tier's p95 measures the wrong backend under this one's name",
+      "tail": null
+    },
+    {
+      "id": "T4-the-handler-guesses-the-expected-tier",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "defaulting to active_tier() compares the SSM parameter against itself and passes for any fallback at all \u2014 the assertion becomes a tautology",
+      "tail": null
+    },
+    {
+      "id": "S1-stragglers-are-abandoned",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "SECURITY-REVIEWER'S OWN, kept verbatim: deleting the driver's entire wait-for-stragglers behaviour left the whole driver test file green, because every assertion in it was relative to `returned` and nothing compared `returned` to `dispatched`",
+      "tail": null
+    },
+    {
+      "id": "S2-only-a-tenth-of-the-calls-are-waited-for",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the same defect as a subset rather than as a wholesale drop: a p95 over whichever tenth happened to be waited for",
+      "tail": null
+    },
+    {
+      "id": "S3-eligibility-stops-requiring-a-complete-account",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the clause the S family exists to protect. Measured before it existed: 2 of 20 calls returned, error_rate 0.0, dispositive_eligible true",
+      "tail": null
+    },
+    {
+      "id": "S4-a-step-with-no-successful-call-is-eligible",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "every call raised: a complete account, a real fact about the tier, and no latency measurement at all",
+      "tail": null
+    },
+    {
+      "id": "S5-the-throttle-exclusion-goes-away",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the amended clause's other completion condition, and the module docstring calls it load-bearing: `shared.util.retry` absorbs a Titan throttle into 2/4/8 seconds of sleep INSIDE the measured interval",
+      "tail": null
+    },
+    {
+      "id": "S6-coordinated-omission-stops-disqualifying",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "'a driver that could not keep up must be distinguishable from a tier that was fast' \u2014 the third conjunct, unmutated until now",
+      "tail": null
+    },
+    {
+      "id": "T5-the-fallback-list-is-uncapped-again",
+      "guard": "tests/test_retrieval_load_driver.py",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "5,400 reasons of up to 300 characters on ONE CloudWatch log event, which caps at 256 KiB: the record is truncated and span_status, error_rate and dispositive_eligible are what get lost",
+      "tail": null
+    }
+  ]
+}

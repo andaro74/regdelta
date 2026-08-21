@@ -1,0 +1,37 @@
+{
+  "api": "https://<api-id>.execute-api.<region>.amazonaws.com/api",
+  "api_redacted": "the host is removed deliberately; see `redact` in milestones/M06/dashboard_traffic.py. /query is unauthenticated and this file is public.",
+  "at": "2026-08-21T17:46:50+00:00",
+  "calls": [
+    {
+      "cache": "miss",
+      "citations": 4,
+      "confidence": 0.93,
+      "error": null,
+      "http_status": 200,
+      "retrieval_ms": 331.5,
+      "retrieval_tier": null,
+      "status": "ok",
+      "wall_ms": 20138.5
+    },
+    {
+      "cache": "hit",
+      "citations": 4,
+      "confidence": 0.93,
+      "error": null,
+      "http_status": 200,
+      "retrieval_ms": 331.5,
+      "retrieval_tier": null,
+      "status": "ok",
+      "wall_ms": 193.8
+    }
+  ],
+  "opus_cap_adjustable": false,
+  "opus_daily_cap": 2592000,
+  "opus_tokens_after": 15735,
+  "opus_tokens_before": 15735,
+  "opus_tokens_spent": 0,
+  "purpose": "populate the /query dashboard panels at the smallest honest cost; NOT a correctness check and no scorecard is written",
+  "question": "What are the two main criteria a food must meet to use the 'healthy' claim?",
+  "ruled": "the human seat chose this over `make smoke` at the M06 window: 2 Claude calls instead of 10"
+}

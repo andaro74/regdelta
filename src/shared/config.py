@@ -113,6 +113,86 @@ QUEUE_URL = os.environ.get("QUEUE_URL", "")
 SEMANTIC_CACHE = os.environ.get("SEMANTIC_CACHE", "0") == "1"
 RERANK = os.environ.get("RERANK", "0") == "1"
 
+# ------------------------------------------------------- spend (SPEC/06)
+# WHAT A TOKEN COSTS IN THIS ACCOUNT, in dollars per million. SPEC/06's
+# dashboard shows "Bedrock cost/query" and `loadtest/budget.py` refuses a run
+# that would exceed its ceiling; both need a price, and a price hardcoded at
+# either call site is a number nobody can trace.
+#
+# MEASURED, NOT QUOTED FROM A PRICE LIST. Cost Explorer, `UnblendedCost` divided
+# by `UsageQuantity` per usage type, for the services "Claude <model> (Amazon
+# Bedrock Edition)" and "Amazon Bedrock", on 2026-08-19 and 2026-08-20 — two
+# days that agree to the cent. That matters because Bedrock's marketplace rate
+# is NOT the first-party API list price: Opus 4.6 lists at $5.00/$25.00 and
+# bills here at $5.50/$27.50, 10% higher. A budget guard built on the list price
+# would under-count by 10% and quietly overshoot its ceiling.
+#
+# Keys are the model ids above, so a model swap cannot leave a stale rate
+# behind: `budget.py` raises on a model it has no rate for rather than costing
+# it at zero, which is the failure mode that matters — an unpriced model is
+# free in every arithmetic that does not check.
+#
+# Re-derive with:
+#   aws ce get-cost-and-usage --time-period Start=<d> End=<d+1> --granularity DAILY \
+#     --metrics UnblendedCost UsageQuantity --region us-east-1 \
+#     --filter '{"Dimensions":{"Key":"SERVICE","Values":["Claude Opus 4.6 (Amazon Bedrock Edition)"]}}' \
+#     --group-by Type=DIMENSION,Key=USAGE_TYPE
+BEDROCK_RATES_USD_PER_MTOK = {
+    "us.anthropic.claude-opus-4-6-v1": {"input": 5.50, "output": 27.50},
+    "us.anthropic.claude-sonnet-4-6": {"input": 3.30, "output": 16.50},
+    "us.anthropic.claude-haiku-4-5": {"input": 1.10, "output": 5.50},
+    "amazon.titan-embed-text-v2:0": {"input": 0.0199, "output": 0.0},
+}
+
+# THE ACCOUNT'S NON-ADJUSTABLE DAILY TOKEN CEILINGS, per model id.
+#
+# `aws service-quotas list-service-quotas --service-code bedrock`, quota
+# `L-ED2BADF9` and its per-model siblings, every one reporting
+# `Adjustable: false`. These are not budget preferences — AWS will not raise
+# them on request — and they are the reason SPEC/06's 500-concurrent-user
+# profile cannot run here: at 5,881.8 Opus tokens per uncached /query, 2,592,000
+# is 440 queries for the whole day, and the profile spends that in 13.6 seconds.
+# See milestones/M06/spec06-disposition-amendment.md.
+#
+# Carried in code rather than in prose so `loadtest/budget.py` can refuse a plan
+# that exceeds them, which is a different refusal from exceeding the dollar
+# ceiling: a run can be well inside its budget and still be impossible.
+BEDROCK_DAILY_TOKEN_CAP = {
+    "us.anthropic.claude-opus-4-6-v1": 2_592_000,
+    "us.anthropic.claude-sonnet-4-6": 10_800_000,
+    "us.anthropic.claude-haiku-4-5": 27_000_000,
+}
+
+# On-demand requests per minute for Titan Text Embeddings V2, also
+# `Adjustable: false`. Every retrieval embeds, so this is the hard ceiling on
+# any retrieval-concurrency profile: 100 calls per second, whatever drives them.
+TITAN_EMBED_RPM_CAP = 6_000
+
+# HTTP connections the retrieval path may hold open per client, and it is a
+# measurement-validity number rather than a performance one. botocore defaults
+# to 10; SPEC/06's disposition drives 90 retrieval calls per second, which is
+# ~32 in flight on Tier A and ~80 on Tier B. Above the pool size the excess
+# calls BLOCK in urllib3 — inside `router.retrieve()`, which is the interval
+# the disposition's p95 is defined over — so the comparison would have been
+# between two queues in this process rather than between two search backends.
+# 128 covers the top step on the slower tier with room to spare; connections
+# are created lazily, so a query Lambda serving one request still opens one.
+RETRIEVAL_POOL_SIZE = int(os.environ.get("RETRIEVAL_POOL_SIZE", "128"))
+
+# The dollar ceiling a load run may not cross. Approved by the human seat at
+# M06 open. `loadtest/budget.py` refuses BEFORE spending anything if the plan
+# exceeds it.
+#
+# It does NOT abort mid-run. This comment used to say it did — "the second is
+# the one that matters" — and `loadtest.budget.Meter`, the thing that would
+# have done it, has no caller outside its own tests. Corrected rather than
+# implemented, because for THIS run a per-call meter is the wrong instrument:
+# the disposition's Bedrock cost is three cents of a twenty-three-cent run, the
+# rest is Lambda-seconds and OCU-hours that a token meter cannot express, and
+# the control that actually bounds a runaway is the load driver's IAM grant —
+# Titan embeddings and no other model. eng-code-reviewer, M06.
+LOADTEST_BUDGET_USD = float(os.environ.get("LOADTEST_BUDGET_USD", "20.00"))
+
 # ------------------------------------------------------------- graph (03)
 # LangSmith tracing is FORCED OFF, and this is a data-egress control rather
 # than a preference. `langgraph` pulls `langsmith` transitively (M03), and

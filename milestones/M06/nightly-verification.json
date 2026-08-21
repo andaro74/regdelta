@@ -1,0 +1,81 @@
+{
+  "at": "2026-08-21T20:50:22+00:00",
+  "command": "eval \"$(python evals/local_env.py)\" && python milestones/M06/verify_nightly.py",
+  "cost_claim": "the nightly makes no Bedrock call; `opus_tokens_spent` is the measurement of that, not a restatement of it",
+  "deployed": {
+    "emf_lines": [
+      "{\"CorpusDocuments\": 52.0, \"EvalStalenessHours\": 8760.0, \"GraphLogicChecked\": 3.0, \"GraphLogicErrors\": 0.0, \"GraphLogicUndated\": 0.0, \"HotTierUp\": 0.0, \"NightlyCheckFailed\": 0.0, \"_aws\": {\"CloudWatchMetrics\": [{\"Dimensions\": [[\"check\"]], \"Metrics\": [{\"Name\": \"CorpusDocuments\", \"Unit\": \"Count\"}, {\"Name\": \"EvalStalenessHours\", \"Unit\": \"None\"}, {\"Name\": \"GraphLogicChecked\", \"Unit\": \"Count\"}, {\"Name\": \"GraphLogicErrors\", \"Unit\": \"Count\"}, {\"Name\": \"GraphLogicUndated\", \"Unit\": \"Count\"}, {\"Name\": \"HotTierUp\", \"Unit\": \"Count\"}, {\"Name\": \"NightlyCheckFailed\", \"Unit\": \"Count\"}], \"Namespace\": \"RegDelta\"}], \"Timestamp\": 1787345423063}, \"check\": \"nightly\", \"corpus_sha\": \"35a293e17117\", \"eval_staleness\": {\"hours\": null, \"reason\": \"no EvalPassRate ever published\"}, \"graph_logic\": {\"checked\": [\"2024-29957\", \"2025-03118\", \"2025-00830\"], \"errors\": [], \"ok\": true, \"undated\": []}, \"tier\": \"s3vectors\"}"
+    ],
+    "function": "regdelta-core-NightlyCheckFnF2F17D58-xWCuDSltnMb3",
+    "function_error": null,
+    "log_summary": [
+      "START RequestId: 2fc878c0-c0a5-4740-a4d9-510913c94cc5 Version: $LATEST",
+      "END RequestId: 2fc878c0-c0a5-4740-a4d9-510913c94cc5",
+      "REPORT RequestId: 2fc878c0-c0a5-4740-a4d9-510913c94cc5\tDuration: 5273.44 ms\tBilled Duration: 5636 ms\tMemory Size: 128 MB\tMax Memory Used: 99 MB\tInit Duration: 361.65 ms"
+    ],
+    "payload": {
+      "checked": "graph logic and infrastructure only; no golden questions, no model call, no retrieval query",
+      "corpus": {
+        "available": true,
+        "documents": 52,
+        "documents_sha": "35a293e17117",
+        "newest_pub_date": "2026-08-19",
+        "oldest_pub_date": "2024-12-27"
+      },
+      "eval_staleness": {
+        "hours": null,
+        "reason": "no EvalPassRate ever published"
+      },
+      "graph_logic": {
+        "checked": [
+          "2024-29957",
+          "2025-03118",
+          "2025-00830"
+        ],
+        "errors": [],
+        "ok": true,
+        "undated": []
+      },
+      "staleness_alarm_hours": 168.0,
+      "status": "ok",
+      "tier": "s3vectors"
+    },
+    "status_code": 200
+  },
+  "deployed_lookup_error": null,
+  "deployed_note": "NightlyCheckFn was NOT deployed when this artifact was first written on 2026-08-21; the M06 window deployed it later the same day. The earlier record said so and this one supersedes it.",
+  "how": "TWO RUNS, and the distinction is the point. `in_process` is `ops.nightly.handler` called here against the deployed environment \u2014 same code, same AWS reads, but NOT the Lambda's own IAM role or EMF. `deployed` is an invocation of the real NightlyCheckFn, which exercises both. NEITHER proves the EventBridge schedule fires on its own; that is still owed and a manual invoke cannot supply it.",
+  "opus_tokens_after": 23578,
+  "opus_tokens_before": 23578,
+  "opus_tokens_spent": 0,
+  "region": "us-west-2",
+  "registry_table": "regdelta-core-RegistryTableF2430F90-2FKHSM738R7Y",
+  "result": {
+    "checked": "graph logic and infrastructure only; no golden questions, no model call, no retrieval query",
+    "corpus": {
+      "available": true,
+      "documents": 52,
+      "documents_sha": "35a293e17117",
+      "newest_pub_date": "2026-08-19",
+      "oldest_pub_date": "2024-12-27"
+    },
+    "eval_staleness": {
+      "hours": null,
+      "reason": "no EvalPassRate ever published"
+    },
+    "graph_logic": {
+      "checked": [
+        "2024-29957",
+        "2025-03118",
+        "2025-00830"
+      ],
+      "errors": [],
+      "ok": true,
+      "undated": []
+    },
+    "staleness_alarm_hours": 168.0,
+    "status": "ok",
+    "tier": "s3vectors"
+  },
+  "sha": "58b6af0"
+}

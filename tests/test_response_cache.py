@@ -86,6 +86,40 @@ def test_cacheability_is_judged_from_the_body_not_promised_by_the_caller():
     assert not rc.cacheable({"status": "ok", "resume_token": "leaked"})
 
 
+@pytest.mark.parametrize("body,why", [
+    ({"status": "ok", "answer": "", "citations": [], "truncated": True},
+     "the max_tokens cut-off: empty answer, no citations, status ok"),
+    ({"status": "ok", "answer": "", "citations": ["90 FR 4628"]},
+     "no answer, however well cited"),
+    ({"status": "ok", "answer": "…", "citations": []},
+     "an answer with no citations is a bug, not a style issue (CLAUDE.md)"),
+    ({"status": "ok", "answer": "…", "citations": ["90 FR 4628"],
+      "truncated": True},
+     "truncated even though something was salvaged from it"),
+])
+def test_a_failed_answer_wearing_status_ok_is_not_cacheable(body, why):
+    """`status: ok` is hardcoded by `nodes.verdict` and does not mean answered.
+
+    A `max_tokens` cut-off mid-object leaves `_json_object` returning `{}`, so
+    the body is an EMPTY answer with no citations and `status: "ok"`. Storing
+    one pins it for the whole TTL and every caller in that hour is served a
+    stored failure that looks exactly like a fresh success.
+    """
+    assert not rc.cacheable(body), why
+
+
+def test_not_having_looked_at_truncation_does_not_refuse_a_good_answer():
+    """`truncated` is None — not False — when no stop reason was observed.
+
+    "We did not look" and "we looked and it was fine" are different claims
+    (`graph/nodes.py:678`). Only the second should reassure a reader, but
+    neither should throw away a complete, cited answer: the emptiness checks
+    catch the bad case on evidence rather than on the absence of it.
+    """
+    assert rc.cacheable({"status": "ok", "answer": "…",
+                         "citations": ["90 FR 4628"], "truncated": None})
+
+
 # ------------------------------------------------------------- failure modes
 def test_a_read_failure_is_a_miss_not_an_error(monkeypatch):
     """A cache that can break a request converts an optimisation into an

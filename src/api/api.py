@@ -20,6 +20,7 @@ retrieved for them — and those are not alike.
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 
 from fastapi import APIRouter, FastAPI, Request
@@ -128,6 +129,7 @@ def query(payload: dict, request: Request) -> dict:
 
     profile = payload.get("company_profile") or {}
     bypass = cache.bypass_requested(payload, request.headers)
+    t0 = time.perf_counter()
 
     # THE CACHE IS CONSULTED BEFORE ANY MODEL CALL, and its status is on every
     # response whether it hit, missed, was bypassed or is switched off.
@@ -141,6 +143,7 @@ def query(payload: dict, request: Request) -> dict:
         if hit is not None:
             hit["cache"] = cache.HIT
             hit["trace_id"] = trace_id
+            _request_metrics(t0, cache.HIT, hit)
             return hit
 
     thread_id = str(uuid.uuid4())
@@ -185,6 +188,7 @@ def query(payload: dict, request: Request) -> dict:
         # worse than the IDOR the /resume amendment closed: it needs no guessing.
         if not bypass:
             cache.put(question, profile, body)
+    _request_metrics(t0, body["cache"], body)
     return body
 
 
@@ -221,6 +225,44 @@ app.include_router(router)
 
 
 # --------------------------------------------------------------------- glue
+def _request_metrics(t0: float, cache_status: str, body: dict) -> None:
+    """The three dashboard numbers that are NOT properties of any one node.
+
+    SPEC/06's dashboard asks for p50/p95, cache hit rate and HITL rate.
+    None of the three can be emitted from `graph/instrument.py`:
+
+    - **Cache hit rate.** A hit never enters the graph at all — `/query`
+      returns the stored body before `_app().invoke`, so no node runs and no
+      span exists. A hit-rate computed from spans would be structurally unable
+      to see its own numerator.
+    - **End-to-end latency.** The graph does not know it is being served over
+      HTTP, and the sum of node latencies is not the request: it omits the
+      cache lookup, the token mint and the checkpoint write.
+    - **HITL rate** needs a per-REQUEST denominator, which is here.
+
+    Wrapped in a bare except for the reason `response_cache.get` is: an
+    instrument that can fail a request has converted observability into an
+    availability dependency. The failure is logged rather than swallowed.
+    """
+    try:
+        from shared import observability
+
+        elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
+        status = str(body.get("status") or "unknown")
+        observability.emit(
+            {"QueryLatency": (elapsed_ms, "Milliseconds"),
+             "Queries": (1.0, "Count")},
+            {"cache": str(cache_status), "status": status},
+            # trace_id is a PROPERTY and never a dimension: one CloudWatch
+            # metric per request is the EMF cost incident that is invisible
+            # until the bill arrives.
+            {"trace_id": body.get("trace_id"),
+             "tier": body.get("tier"),
+             "span_emission": observability.emission_report()})
+    except Exception as e:                       # noqa: BLE001 — see docstring
+        log.warning("request metrics not emitted: %s", e)
+
+
 def _trace_id(request: Request) -> str:
     """Correlates the response a caller sees with the reason in the log."""
     return request.headers.get("x-amzn-trace-id") or str(uuid.uuid4())

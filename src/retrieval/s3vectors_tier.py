@@ -10,6 +10,7 @@ Never re-embeds corpus chunks — only the query. The stored vectors are the
 ones written at ingest (architecture rule).
 """
 import json
+import threading
 
 from retrieval import expansion, fusion
 from shared import config, models
@@ -17,6 +18,13 @@ from shared.models import Chunk, Filters
 from shared.util import retry
 
 _clients: dict = {}
+#: Guards `_clients`. Check-then-set is a race, and this module's first
+#: concurrent caller is the SPEC/06 load driver: every thread of a cold step
+#: hits `_client()` at once, `botocore.Session.create_client` is not documented
+#: as thread-safe, and the losers of the race get ORPHANED clients each holding
+#: their own `max_pool_connections` pool — which defeats the pooling fix in
+#: exactly the window it was added for. eng-code-reviewer, M06.
+_clients_lock = threading.Lock()
 
 
 def _client(name):
@@ -24,10 +32,33 @@ def _client(name):
     # handle is built by expansion._registry(), and nothing ever called
     # _client("registry"). Removed with the config.REGISTRY_TABLE reference it
     # was the only user of in this module.
-    if name not in _clients:
+    # DOUBLE-CHECKED: the fast path stays lock-free once the client exists,
+    # which is every call after the first few of a step.
+    if name in _clients:
+        return _clients[name]
+    with _clients_lock:
+        if name in _clients:
+            return _clients[name]
         import boto3
-        _clients[name] = boto3.client(name, region_name=config.REGION)
-    return _clients[name]
+        from botocore.config import Config
+
+        # MAX_POOL_CONNECTIONS, AND IT IS A MEASUREMENT-VALIDITY SETTING RATHER
+        # THAN A TUNING ONE. botocore's default is 10. SPEC/06's disposition
+        # drives this path at 90 retrieval calls per second, which is
+        # `rate x service time` ~ 32 in flight on Tier A and ~80 on Tier B —
+        # three to eight times the pool. The excess calls do not fail; they
+        # BLOCK in urllib3 waiting for a connection, and that wait lands inside
+        # `router.retrieve()`, which is the interval the clause defines the p95
+        # over. The disposition would have compared queueing delay in this
+        # process against queueing delay in this process and called it a tier
+        # difference. security-reviewer, M06, second pass.
+        #
+        # Harmless on the request path: connections are created lazily, so a
+        # query Lambda serving one request at a time still opens one.
+        _clients[name] = boto3.client(
+            name, region_name=config.REGION,
+            config=Config(max_pool_connections=config.RETRIEVAL_POOL_SIZE))
+        return _clients[name]
 
 
 def embed_query(query: str) -> list[float]:
