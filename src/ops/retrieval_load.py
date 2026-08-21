@@ -434,7 +434,8 @@ def run_step(*, rate: float, seconds: float, questions: list[str],
     # that never returned is in no sample at all, so it is invisible in both
     # `n` and the error rate, and the p95 becomes a survivor statistic.
     # `errors` cannot see it and `rate_within_5pct` cannot see it.
-    complete = True
+    complete = (returned == dispatched == offered and offered > 0
+                and not abandoned)
     # AND AT LEAST ONE SUCCESSFUL CALL. A step in which everything raised has
     # a complete account and no latency; it is a real fact about the tier and
     # it is not a latency measurement, so it is reported and is not
