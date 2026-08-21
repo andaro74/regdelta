@@ -90,11 +90,23 @@ class RegDeltaState(TypedDict, total=False):
     #: this fix and is what keeps the next field from being lost the same way.
     stop_reason: str | None
     truncated: bool | None
-    #: What the last Converse call in this run cost, from `nodes.last_usage()`
-    #: — model id and token counts, including the prompt-cache read and write
-    #: counts, which are billed at different rates from ordinary input tokens
-    #: (SPEC/06, "Bedrock cost/query"). Declared here for the reason directly
-    #: above: a key this schema does not name does not survive the graph.
+    #: What each model-calling node's Converse call cost, from
+    #: `nodes.last_usage()` — model id and token counts, including the
+    #: prompt-cache read and write counts, which are billed at different rates
+    #: from ordinary input tokens (SPEC/06, "Bedrock cost/query"). Declared
+    #: here for the reason directly above: a key this schema does not name does
+    #: not survive the graph.
+    #:
+    #: TWO KEYS, ONE PER CALLING NODE, and not one shared key. `supervisor` and
+    #: `verdict` call different models at different prices, so a single key
+    #: would be overwritten by whichever ran last and the cost of the other
+    #: would silently vanish. Reading `nodes.last_usage()` from the span
+    #: wrapper instead was the other candidate and is worse: `reset_usage()` is
+    #: called at the CALL SITE, so a node that invokes no model — every node
+    #: but these two — would read the previous node's tokens and the span
+    #: would attribute them to the wrong node. That is ADR-0013's defect with
+    #: an invoice attached.
+    supervisor_usage: dict
     verdict_usage: dict
 
     # --- gate

@@ -314,6 +314,10 @@ def supervisor(state: RegDeltaState, invoke=None) -> dict:
         "company_profile": profile,
         "intent": str(parsed.get("intent") or "other"),
         "profile_sufficient": sufficient,
+        # Carried out rather than logged, for the same reason `Resolution`
+        # carries the tier: a number that leaves the graph can be asserted
+        # against, and one that is printed cannot.
+        "supervisor_usage": last_usage(),
     }
 
 
@@ -667,6 +671,7 @@ def verdict(state: RegDeltaState, invoke=None) -> dict:
         "answer": answer,
         "verdict_rows": _rows(parsed.get("rows"), supported),
         "citations": kept,
+        "verdict_usage": last_usage(),
         "confidence": _confidence(parsed),
         "dropped_citations": [c for c in claimed if c not in supported],
         "status": "ok",
