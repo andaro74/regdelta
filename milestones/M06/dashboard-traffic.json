@@ -1,5 +1,6 @@
 {
-  "api": "https://7o8mote0q6.execute-api.us-west-2.amazonaws.com/api",
+  "api": "https://<api-id>.execute-api.<region>.amazonaws.com/api",
+  "api_redacted": "the host is removed deliberately; see `redact` in milestones/M06/dashboard_traffic.py. /query is unauthenticated and this file is public.",
   "at": "2026-08-21T17:46:50+00:00",
   "calls": [
     {

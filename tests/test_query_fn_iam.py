@@ -382,6 +382,10 @@ def test_no_dynamodb_data_grant_is_unconditioned(template):
 #: than a silent change to a pattern string.
 _READABLE_PREFIXES = {"THREAD#*", "CACHE#*"}
 
+#: And what it may WRITE. `REVIEW#*` is here and deliberately absent from the
+#: readable set: the review queue is write-only for this role.
+_WRITABLE_PREFIXES = {"THREAD#*", "REVIEW#*", "CACHE#*"}
+
 
 def test_the_review_queue_is_never_readable(template):
     """The spec sentence, read off the policy.
@@ -447,8 +451,24 @@ def test_writes_to_both_prefixes_live_in_one_statement(template):
                    if any(a in _WRITE_ACTIONS for a in _actions(s))]
     assert len(write_stmts) == 1, \
         f"{len(write_stmts)} write statements; a mixed batch satisfies neither"
-    _operator, keys = _leading_keys(write_stmts[0])
+    operator, keys = _leading_keys(write_stmts[0])
+    assert operator == "ForAllValues:StringLike", operator
     assert "THREAD#*" in keys and "REVIEW#*" in keys, keys
+    # AND BOUNDED, mirroring the read side. When `CACHE#*` was added this
+    # assertion was relaxed from an equality to a membership test, and NOTHING
+    # else in this file constrains which patterns the write statement carries:
+    # `["THREAD#*", "REVIEW#*", "*"]` — unconditioned PutItem/UpdateItem/
+    # DeleteItem/BatchWriteItem over every key in the state table, from the
+    # anonymous-driven role, able to overwrite any caller's THREAD# checkpoint
+    # or CACHE# entry — passed the whole file green.
+    #
+    # That is the same "the test restated the list it was checking" failure
+    # that `test_every_state_table_prefix_in_src_is_granted` exists to end,
+    # reintroduced on the other statement. An allowlist keeps the forcing
+    # function: a fourth prefix fails here, and widening is a one-line edit
+    # made in the open. security-reviewer, M06.
+    assert set(keys) <= _WRITABLE_PREFIXES, \
+        f"write actions reach {sorted(set(keys) - _WRITABLE_PREFIXES)}"
 
 
 # --------------------------------------------------- prefix coverage, derived
@@ -483,11 +503,19 @@ def _state_table_modules():
 #: sort prefix breaks the test until someone writes it here and says why.
 _SORT_KEY_PREFIXES = {"CKPT#", "WRITE#"}
 
-#: Either quote. `f'CACHE#{k}'` is invisible to a double-quote-only pattern,
-#: and this file's own standard two paragraphs up is that the extraction fails
-#: CLOSED — a regex that cannot see a prefix reports no prefix, which is the
-#: fail-open shape. security-reviewer, M06.
-_PREFIX_LITERAL = re.compile(r'''["']([A-Z][A-Z_]*#)''')
+#: Either quote, and any plausible identifier. Both halves of this were
+#: fail-open and only one was fixed the first time:
+#:
+#:   * `f'CACHE#{k}'` is invisible to a double-quote-only pattern.
+#:   * `"CACHE_V2#"`, `"THREAD2#"` and `"Feedback#"` were invisible to
+#:     `[A-Z][A-Z_]*#`.
+#:
+#: An invisible prefix produces no entry, so the test that exists to catch an
+#: ungranted prefix stays GREEN while the prefix goes ungranted — a repeat of
+#: the M05→M06 outage with its own guard watching. This file's stated standard,
+#: twelve lines up, is that the extraction fails CLOSED.
+#: security-reviewer, M06.
+_PREFIX_LITERAL = re.compile(r'''["']([A-Za-z][A-Za-z0-9_]*#)''')
 
 
 def _partition_prefixes_in_src():

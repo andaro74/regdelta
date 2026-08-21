@@ -184,13 +184,24 @@ LAMBDA_MEMORY_GB = 2.0
 #: Imported lazily inside a try: `infra/` needs the CDK, which the orchestrator
 #: does not otherwise require and CI does not always install. The fallback is
 #: the same number and says where the authority lives.
+#: APPENDED, not inserted at 0, and popped in a `finally`. Inserting `infra/`
+#: at the front put it ahead of `src` and `evals` for the life of the process —
+#: including down the `except` branch, where it bought nothing. There is no
+#: collision today, but `infra/search/` against a future `src/search/` is a live
+#: one in a project whose whole subject is search tiers, and `import app` would
+#: run the CDK entrypoint rather than a module. That failure would be silent and
+#: would present as a load-test result. security-reviewer, M06.
 try:
-    sys.path.insert(0, str(ROOT / "infra"))
+    sys.path.append(str(ROOT / "infra"))
     from core.observability import OCU_USD_PER_HOUR
 except Exception:                                    # noqa: BLE001
     #: `infra/core/observability.py:OCU_USD_PER_HOUR` is the authority; this
     #: mirror exists only so pricing works without the CDK installed.
     OCU_USD_PER_HOUR = 0.242
+finally:
+    _infra_path = str(ROOT / "infra")
+    if _infra_path in sys.path:
+        sys.path.remove(_infra_path)
 #: The window a disposition needs the hot tier up for: the ~20-minute reindex
 #: hydration ADR-0012 records, plus the three AOSS runs.
 OCU_HYDRATION_MINUTES = 20

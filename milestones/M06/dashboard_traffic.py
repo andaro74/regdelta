@@ -80,6 +80,33 @@ QUESTION = ("What are the two main criteria a food must meet to use the "
 TIMEOUT_S = 150
 
 
+#: The API id, replaced before anything is written to disk.
+#:
+#: THIS ARTIFACT IS COMMITTED TO A PUBLIC REPOSITORY and `/query` is
+#: unauthenticated by design (SPEC/04 declares auth out of scope;
+#: `core_stack.py:529`). Its only bounds are an API Gateway throttle of 20 rps
+#: / 40 burst — commented in that file as "a demo's shape … not a capacity
+#: plan" — and the fact that nobody knows the host. Publishing the host removes
+#: the second one.
+#:
+#: The arithmetic is this run's own: at the $0.0601 per cache miss measured
+#: here, 20 rps is ~$1.20/s, and it does not stop at the money. The Opus daily
+#: cap is `Adjustable: false`, so an exhausted cap is a day with no golden set
+#: and no demo. The response cache does not help — `key()` hashes the question,
+#: so varying it misses every time.
+#:
+#: Nothing in this artifact's claims depends on the id: it records cache
+#: hit/miss, latency and token spend. security-reviewer, M06.
+REDACTED_HOST = "https://<api-id>.execute-api.<region>.amazonaws.com"
+
+
+def redact(url: str) -> str:
+    """The API's public address, reduced to its shape."""
+    import re
+    return re.sub(r"https://[a-z0-9]+\.execute-api\.[a-z0-9-]+\.amazonaws\.com",
+                  REDACTED_HOST, url or "")
+
+
 def api_url() -> str:
     out = subprocess.check_output(
         ["aws", "cloudformation", "describe-stacks",
@@ -129,6 +156,9 @@ def main() -> int:
           f"{headroom['planned']:,}")
 
     url = api_url()
+    # The console is the operator's own terminal, not the artifact; the id is
+    # printed there so a failure can be diagnosed. It is `redact`ed on the way
+    # to disk, which is the copy that gets committed.
     print(f"api: {url}\nquestion: {QUESTION!r}\n")
 
     before = opus.spent_today(config.MODEL_VERDICT)
@@ -150,7 +180,10 @@ def main() -> int:
         "ruled": "the human seat chose this over `make smoke` at the M06 "
                  "window: 2 Claude calls instead of 10",
         "question": QUESTION,
-        "api": url,
+        "api": redact(url),
+        "api_redacted": "the host is removed deliberately; see `redact` in "
+                        "milestones/M06/dashboard_traffic.py. /query is "
+                        "unauthenticated and this file is public.",
         "calls": [first, second],
         "opus_tokens_before": before,
         "opus_tokens_after": after,

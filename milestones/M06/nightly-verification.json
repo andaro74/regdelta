@@ -1,14 +1,18 @@
 {
-  "at": "2026-08-21T20:21:23+00:00",
+  "at": "2026-08-21T20:50:22+00:00",
   "command": "eval \"$(python evals/local_env.py)\" && python milestones/M06/verify_nightly.py",
   "cost_claim": "the nightly makes no Bedrock call; `opus_tokens_spent` is the measurement of that, not a restatement of it",
   "deployed": {
     "emf_lines": [
-      "{\"CorpusDocuments\": 52.0, \"EvalStalenessHours\": 8760.0, \"GraphLogicChecked\": 3.0, \"GraphLogicErrors\": 0.0, \"GraphLogicUndated\": 0.0, \"HotTierUp\": 0.0, \"NightlyCheckFailed\": 0.0, \"_aws\": {\"CloudWatchMetrics\": [{\"Dimensions\": [[\"check\"]], \"Metrics\": [{\"Name\": \"CorpusDocuments\", \"Unit\": \"Count\"}, {\"Name\": \"EvalStalenessHours\", \"Unit\": \"None\"}, {\"Name\": \"GraphLogicChecked\", \"Unit\": \"Count\"}, {\"Name\": \"GraphLogicErrors\", \"Unit\": \"Count\"}, {\"Name\": \"GraphLogicUndated\", \"Unit\": \"Count\"}, {\"Name\": \"HotTierUp\", \"Unit\": \"Count\"}, {\"Name\": \"NightlyCheckFailed\", \"Unit\": \"Count\"}], \"Namespace\": \"RegDelta\"}], \"Timestamp\": 1787343684182}, \"check\": \"nightly\", \"corpus_sha\": \"35a293e17117\", \"eval_staleness\": {\"hours\": null, \"reason\": \"no EvalPassRate ever published\"}, \"graph_logic\": {\"checked\": [\"2024-29957\", \"2025-03118\", \"2025-00830\"], \"errors\": [], \"ok\": true, \"undated\": []}, \"tier\": \"s3vectors\"}"
+      "{\"CorpusDocuments\": 52.0, \"EvalStalenessHours\": 8760.0, \"GraphLogicChecked\": 3.0, \"GraphLogicErrors\": 0.0, \"GraphLogicUndated\": 0.0, \"HotTierUp\": 0.0, \"NightlyCheckFailed\": 0.0, \"_aws\": {\"CloudWatchMetrics\": [{\"Dimensions\": [[\"check\"]], \"Metrics\": [{\"Name\": \"CorpusDocuments\", \"Unit\": \"Count\"}, {\"Name\": \"EvalStalenessHours\", \"Unit\": \"None\"}, {\"Name\": \"GraphLogicChecked\", \"Unit\": \"Count\"}, {\"Name\": \"GraphLogicErrors\", \"Unit\": \"Count\"}, {\"Name\": \"GraphLogicUndated\", \"Unit\": \"Count\"}, {\"Name\": \"HotTierUp\", \"Unit\": \"Count\"}, {\"Name\": \"NightlyCheckFailed\", \"Unit\": \"Count\"}], \"Namespace\": \"RegDelta\"}], \"Timestamp\": 1787345423063}, \"check\": \"nightly\", \"corpus_sha\": \"35a293e17117\", \"eval_staleness\": {\"hours\": null, \"reason\": \"no EvalPassRate ever published\"}, \"graph_logic\": {\"checked\": [\"2024-29957\", \"2025-03118\", \"2025-00830\"], \"errors\": [], \"ok\": true, \"undated\": []}, \"tier\": \"s3vectors\"}"
     ],
     "function": "regdelta-core-NightlyCheckFnF2F17D58-xWCuDSltnMb3",
     "function_error": null,
-    "log_tail": " \"GraphLogicUndated\", \"Unit\": \"Count\"}, {\"Name\": \"HotTierUp\", \"Unit\": \"Count\"}, {\"Name\": \"NightlyCheckFailed\", \"Unit\": \"Count\"}], \"Namespace\": \"RegDelta\"}], \"Timestamp\": 1787343684182}, \"check\": \"nightly\", \"corpus_sha\": \"35a293e17117\", \"eval_staleness\": {\"hours\": null, \"reason\": \"no EvalPassRate ever published\"}, \"graph_logic\": {\"checked\": [\"2024-29957\", \"2025-03118\", \"2025-00830\"], \"errors\": [], \"ok\": true, \"undated\": []}, \"tier\": \"s3vectors\"}\n{\"nightly\": {\"checked\": \"graph logic and infrastructure only; no golden questions, no model call, no retrieval query\", \"corpus\": {\"available\": true, \"documents\": 52, \"documents_sha\": \"35a293e17117\", \"newest_pub_date\": \"2026-08-19\", \"oldest_pub_date\": \"2024-12-27\"}, \"eval_staleness\": {\"hours\": null, \"reason\": \"no EvalPassRate ever published\"}, \"graph_logic\": {\"checked\": [\"2024-29957\", \"2025-03118\", \"2025-00830\"], \"errors\": [], \"ok\": true, \"undated\": []}, \"staleness_alarm_hours\": 168.0, \"status\": \"ok\", \"tier\": \"s3vectors\"}}\nEND RequestId: 5497dd25-b8e8-44cb-8701-a340fdbf727a\nREPORT RequestId: 5497dd25-b8e8-44cb-8701-a340fdbf727a\tDuration: 5171.33 ms\tBilled Duration: 5522 ms\tMemory Size: 128 MB\tMax Memory Used: 102 MB\tInit Duration: 350.43 ms\t\n",
+    "log_summary": [
+      "START RequestId: 2fc878c0-c0a5-4740-a4d9-510913c94cc5 Version: $LATEST",
+      "END RequestId: 2fc878c0-c0a5-4740-a4d9-510913c94cc5",
+      "REPORT RequestId: 2fc878c0-c0a5-4740-a4d9-510913c94cc5\tDuration: 5273.44 ms\tBilled Duration: 5636 ms\tMemory Size: 128 MB\tMax Memory Used: 99 MB\tInit Duration: 361.65 ms"
+    ],
     "payload": {
       "checked": "graph logic and infrastructure only; no golden questions, no model call, no retrieval query",
       "corpus": {
@@ -73,5 +77,5 @@
     "status": "ok",
     "tier": "s3vectors"
   },
-  "sha": "0491418"
+  "sha": "58b6af0"
 }

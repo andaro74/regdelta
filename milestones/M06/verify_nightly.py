@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -119,7 +120,7 @@ def invoke_deployed(name: str) -> dict:
             ["aws", "lambda", "invoke", "--function-name", name,
              "--region", config.REGION, "--payload", "e30=",  # {} in base64
              "--log-type", "Tail", str(out)],
-            capture_output=True, text=True, cwd=ROOT)
+            capture_output=True, text=True, cwd=ROOT, timeout=300)
         if proc.returncode != 0:
             return {"error": proc.stderr.strip()[:600]}
         meta = json.loads(proc.stdout or "{}")
@@ -134,10 +135,33 @@ def invoke_deployed(name: str) -> dict:
     if meta.get("LogResult"):
         tail = base64.b64decode(meta["LogResult"]).decode("utf-8", "replace")
         # The EMF line is the evidence that metrics leave through stdout rather
-        # than a PutMetricData grant the role does not hold.
+        # than a PutMetricData grant the role does not hold. FILTERED, so it is
+        # the evidence it claims to be and nothing else.
         record["emf_lines"] = [ln for ln in tail.splitlines()
                                if '"_aws"' in ln][:4]
-        record["log_tail"] = tail[-1200:]
+        # THE RAW TAIL IS NOT COMMITTED BY DEFAULT.
+        #
+        # It was `tail[-1200:]` — "whatever the function last wrote", verbatim,
+        # into a public repo. Today that is EMF plus the REPORT line and is
+        # benign. The failure path is the concern, and this milestone has a
+        # specimen of it three files away: `cache-outage.json` shows what a
+        # boto3 error in this stack looks like written out in full — assumed
+        # role ARN, role name, table physical id. A failing nightly writes that
+        # shape here automatically, and a slice of the END of a log is exactly
+        # where a traceback lands.
+        #
+        # Kept behind a flag so committing it is a decision rather than a
+        # default. `REPORT`/`START`/`END` are Lambda's own framing lines and
+        # carry no application output. security-reviewer, M06.
+        if os.environ.get("VERIFY_NIGHTLY_RAW_LOG") == "1":
+            record["log_tail"] = tail[-1200:]
+            record["log_tail_note"] = ("RAW, opted in via "
+                                       "VERIFY_NIGHTLY_RAW_LOG=1. Read it "
+                                       "before committing it.")
+        else:
+            record["log_summary"] = [
+                ln.strip()[:200] for ln in tail.splitlines()
+                if ln.startswith(("REPORT", "START", "END"))][:3]
     return record
 
 
