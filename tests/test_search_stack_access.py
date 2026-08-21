@@ -436,8 +436,8 @@ def test_a_fault_drop_that_cannot_fail_a_deploy_is_rejected(monkeypatch, bad):
 # THIS stack grants it, on the collection ARN. Split deliberately: either test
 # alone passes while the grant vanishes entirely, or while a second copy is
 # left behind in core.
-def query_role_aoss_statements(template: dict) -> list[dict]:
-    """`aoss:APIAccessAll` statements attached to the imported query role.
+def role_aoss_statements(template: dict, role_arn: str) -> list[dict]:
+    """`aoss:APIAccessAll` statements attached to an imported role.
 
     Found by the role the policy is attached to, not by policy name — CDK
     derives the name from a construct path, and pinning that would make this
@@ -449,8 +449,16 @@ def query_role_aoss_statements(template: dict) -> list[dict]:
     ARN found nothing and reported the grant missing while the template held it
     — the same instrument-reads-the-wrong-field shape as ADR-0013, in the test
     written to check the fix.
+
+    PARAMETERISED BY ROLE AT M06, and that is a finding rather than a tidy-up.
+    It was hardcoded to the query role, so when SPEC/06's load driver acquired
+    the same grant nothing pinned it: security-reviewer deleted all four lines
+    of the driver's grant and the ENTIRE SUITE stayed green. The driver would
+    then take a bare 403 on every AOSS call, the router would fall back
+    silently, and the Tier B half of a disposition whose default outcome is
+    RETIREMENT would carry Tier A's numbers.
     """
-    role_name = QUERY_ROLE.rsplit("/", 1)[-1]
+    role_name = role_arn.rsplit("/", 1)[-1]
     out = []
     for res in template["Resources"].values():
         if res["Type"] != "AWS::IAM::Policy":
@@ -465,44 +473,64 @@ def query_role_aoss_statements(template: dict) -> list[dict]:
     return out
 
 
-def test_the_query_role_is_granted_aoss_on_the_collection_arn():
-    """The grant SPEC/05 asks for, on the resource SPEC/05 names.
+#: Every role `regdelta-search` grants `aoss:APIAccessAll` to, and why it has
+#: it. Parameterised so that the three properties below — granted at all,
+#: granted on the collection ARN, granted API access and nothing more — are
+#: asserted for each of them by construction. A role added to this stack
+#: without an entry here is a role whose IAM half nobody pinned, which is
+#: exactly what M06 shipped and security-reviewer caught.
+AOSS_GRANTED_ROLES = [
+    (QUERY_ROLE, "SPEC/05: the query path reads the hot tier"),
+    (DRIVER_ROLE, "SPEC/06: the disposition driver reads the hot tier"),
+]
+
+
+@pytest.mark.parametrize("role_arn,why", AOSS_GRANTED_ROLES,
+                         ids=[r.rsplit("/", 1)[-1] for r, _ in AOSS_GRANTED_ROLES])
+def test_each_granted_role_gets_aoss_on_the_collection_arn(role_arn, why):
+    """The grant exists, on the resource SPEC/05 names.
 
     `Fn::GetAtt: [Collection, Arn]` is the collection ITSELF — the id AWS
     generates at creation — and not `collection/*`, which is the widest thing
     the persistent stack could say.
+
+    A MISSING grant is a finding here, not only an over-wide one. The data
+    access policy is the sufficient half and IAM is the necessary half; with
+    the IAM half absent the call is denied, the router falls back silently, and
+    the run records the other tier's latencies under this one's name.
     """
-    template = synth()
-    stmts = query_role_aoss_statements(template)
-    assert len(stmts) == 1, f"expected one aoss grant on the query role: {stmts}"
+    stmts = role_aoss_statements(synth(), role_arn)
+    assert len(stmts) == 1, f"expected one aoss grant on {role_arn} ({why}): {stmts}"
     assert stmts[0]["Resource"] == {"Fn::GetAtt": ["Collection", "Arn"]}, \
         stmts[0]["Resource"]
 
 
-def test_the_grant_dies_with_the_collection():
-    """Why it lives here rather than in core, as a property of the template.
-
-    The statement is in an `AWS::IAM::Policy` OWNED BY THIS STACK, so
-    `cdk destroy regdelta-search` removes it. In core it survived `make down`,
-    leaving the one internet-facing role in the account holding AOSS reach over
-    every collection here — including other projects' — until the next
-    `make up`.
-    """
-    template = synth()
-    stmts = query_role_aoss_statements(template)
-    assert stmts, "the grant is not in the ephemeral stack; it cannot expire"
-
-
-def test_the_query_role_gets_no_write_permission_from_iam_either():
+@pytest.mark.parametrize("role_arn,why", AOSS_GRANTED_ROLES,
+                         ids=[r.rsplit("/", 1)[-1] for r, _ in AOSS_GRANTED_ROLES])
+def test_each_granted_role_gets_api_access_and_nothing_more(role_arn, why):
     """IAM is the necessary half; the data-access policy above is the
-    sufficient half. Both must be read-only for this role, and a test of one
+    sufficient half. Both must be read-only for these roles, and a test of one
     is not a test of the other."""
-    template = synth()
-    for stmt in query_role_aoss_statements(template):
+    stmts = role_aoss_statements(synth(), role_arn)
+    for stmt in stmts:
         actions = stmt["Action"]
         actions = actions if isinstance(actions, list) else [actions]
         assert actions == ["aoss:APIAccessAll"], \
-            f"the query role's IAM grant carries more than API access: {actions}"
+            f"{role_arn}'s IAM grant carries more than API access: {actions}"
+
+
+@pytest.mark.parametrize("role_arn,why", AOSS_GRANTED_ROLES,
+                         ids=[r.rsplit("/", 1)[-1] for r, _ in AOSS_GRANTED_ROLES])
+def test_each_grant_dies_with_the_collection(role_arn, why):
+    """Why these live here rather than in core, as a property of the template.
+
+    The statement is in an `AWS::IAM::Policy` OWNED BY THIS STACK, so
+    `cdk destroy regdelta-search` removes it. In core it survived `make down`,
+    leaving a core role holding AOSS reach over every collection in the
+    account — including other projects' — until the next `make up`.
+    """
+    assert role_aoss_statements(synth(), role_arn), (
+        f"{role_arn}'s grant is not in the ephemeral stack; it cannot expire")
 
 
 # ------------------------------------------------ SPEC/06's load driver (M06)

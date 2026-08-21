@@ -124,8 +124,14 @@ def test_the_driver_can_invoke_the_embedding_model(template):
     invoke = [s for s in driver_statements(template)
               if "bedrock:InvokeModel" in _actions(s)]
     assert len(invoke) == 1, f"expected one bedrock statement, got {invoke}"
-    granted = " ".join(_flat(r) for r in _resources(invoke[0]))
-    assert config.EMBED_MODEL in granted
+    # The whole statement, both halves: exactly one action, and exactly one
+    # resource that names the embedder. A membership check on the resource
+    # would pass a statement that also carried `bedrock:Converse`, and a
+    # membership check on the action would pass a five-ARN resource list.
+    assert set(_actions(invoke[0])) == {"bedrock:InvokeModel"}
+    resources = _resources(invoke[0])
+    assert len(resources) == 1, f"expected one model ARN, got {resources}"
+    assert config.EMBED_MODEL in _flat(resources[0])
 
 
 def test_the_driver_cannot_invoke_any_model_but_the_embedder(template):
@@ -154,11 +160,18 @@ def test_the_driver_cannot_invoke_any_model_but_the_embedder(template):
     assert "inference-profile" not in granted
 
 
-def test_the_driver_holds_no_write_grant_anywhere(template):
+def test_the_drivers_grants_are_exactly_these(template):
     """It reads a parameter, reads a table, queries a vector index, embeds and
     writes a trace. Everything else is a mistake, and the list is short enough
-    to pin whole."""
-    allowed = {
+    to pin whole.
+
+    AN EQUALITY, NOT A SUBSET BOUND, and the change is a finding rather than a
+    preference. `granted <= allowed` detects widening and is blind to a grant
+    going MISSING — the same asymmetry that let the driver's `aoss:APIAccessAll`
+    ship with nothing pinning it, which security-reviewer found by deleting it
+    and watching the whole suite stay green.
+    """
+    expected = {
         "ssm:GetParameter",
         "dynamodb:GetItem", "dynamodb:BatchGetItem", "dynamodb:Query",
         "dynamodb:Scan", "dynamodb:ConditionCheckItem", "dynamodb:DescribeTable",
@@ -174,7 +187,9 @@ def test_the_driver_holds_no_write_grant_anywhere(template):
     }
     granted = {a for s in driver_statements(template)
                if s.get("Effect") == "Allow" for a in _actions(s)}
-    assert granted <= allowed, f"unexpected grants: {sorted(granted - allowed)}"
+    assert granted == expected, (
+        f"gained: {sorted(granted - expected)}  "
+        f"lost: {sorted(expected - granted)}")
 
 
 def test_the_only_wildcard_resource_is_the_pinned_xray_exemption(template):
@@ -187,6 +202,27 @@ def test_the_only_wildcard_resource_is_the_pinned_xray_exemption(template):
                  if s.get("Effect") == "Allow" and "*" in _resources(s)
                  and not set(_actions(s)) <= WILDCARD_EXEMPT]
     assert offenders == [], f"wildcard resources on LoadDriverFn: {offenders}"
+
+
+def test_the_role_attaches_only_the_managed_policies_we_expect(template):
+    """The M04 finding on QueryFn, which this role did not inherit.
+
+    Every other assertion in this file walks `AWS::IAM::Policy` resources and
+    never looks at `ManagedPolicyArns`, so attaching a managed policy was the
+    one way to widen this role without tripping any of them —
+    `AdministratorAccess` would have read identically to all of it, on the role
+    whose whole job is to dispatch ninety Bedrock-touching calls a second.
+
+    MEASURED AS A GUARD GAP, NOT A MISCONFIGURATION: the synthesised role today
+    carries only the basic execution role. security-reviewer, M06.
+    """
+    role_id = _function(template)["Properties"]["Role"]["Fn::GetAtt"][0]
+    managed = template["Resources"][role_id]["Properties"].get(
+        "ManagedPolicyArns", [])
+    names = sorted(
+        str(m["Fn::Join"][1][-1] if isinstance(m, dict) else m) for m in managed)
+    assert names == [":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"], \
+        names
 
 
 # ------------------------------------------------------------- the instrument

@@ -100,6 +100,13 @@ def enable_xray(fn: _lambda.Function) -> None:
     identical pair: SPEC/06's disposition is defined on the span, so a driver
     whose spans never leave measures the right interval and can prove nothing
     about it.
+
+    TWO PRINCIPALS CARRY THE EXEMPTION AS OF M06, and only one of them is
+    internet-facing. The documented-not-measured note lives with the allowlist
+    in `tests/test_query_fn_iam.py`, which `tests/test_load_driver_iam.py`
+    imports rather than copies; the owed verification — a denied
+    `PutTraceSegments` against a resource-scoped policy — is a claim about the
+    ACTIONS and one probe settles it for both.
     """
     fn.node.default_child.add_property_override("TracingConfig.Mode", "Active")
     fn.add_to_role_policy(iam.PolicyStatement(
