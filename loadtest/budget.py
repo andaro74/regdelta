@@ -16,17 +16,40 @@ budget and still be **impossible**. Collapsing the two into one check is how
 M06 nearly spent real money discovering that SPEC/06's 500-user profile needs
 125x a cap that cannot be bought.
 
-## The estimate is a model; the meter is a measurement
+## The estimate is a model; the meter is a measurement — AND THE METER HAS NO CALLER
 
 `check_plan` runs on predicted token counts and is therefore wrong by however
-much the prediction is wrong. That is not good enough for a ceiling, so
-`Meter` books **actual** usage as it is reported by Bedrock and refuses the
-next call when the ceiling is in reach.
+much the prediction is wrong. `Meter` exists to close that: it books **actual**
+usage and refuses the next call when the ceiling is in reach.
 
-`Meter.reserve()` is the operative half and the ordering is deliberate: it is
-called BEFORE a call, with that call's estimate, and raises if the estimate
-would cross. Checking after the fact detects an overshoot; it does not prevent
-one. A ceiling that reports having been crossed is a log line, not a ceiling.
+**`Meter` IS NOT WIRED INTO ANYTHING.** Grepped at M06: its only callers are
+its own tests. This file said three times that it enforced the ceiling on
+actuals, `config.LOADTEST_BUDGET_USD` said the run "aborts DURING the run if
+measured spend reaches it — the second is the one that matters", and
+`check_plan` stamped **"loadtest.budget.Meter enforces the ceiling on actuals"**
+into every recorded attempt of the disposition. The evidence artifact carried a
+false claim about its own spend control, in the milestone whose subject is
+unattended spend. eng-code-reviewer, M06.
+
+**What actually holds the line today**, stated so nobody has to infer it:
+
+1. `check_plan`, before the run, on all three cost components — see
+   `loadtest/retrieval_load.py:price`, which subtracts Lambda and OCU from the
+   ceiling before handing it here, and which refuses a schedule that exceeds a
+   non-adjustable request-rate cap.
+2. **IAM.** `LoadDriverFn` holds `bedrock:InvokeModel` on Titan Text
+   Embeddings V2 and on nothing else, so the disposition path cannot invoke a
+   Claude model whatever the code does. That is the control that would actually
+   stop a runaway, and it is not in this file.
+3. The estimate's own shape: the disposition's Bedrock cost is $0.03 of a $0.23
+   run. There is no per-call spend for a meter to book that could move the
+   total — the money is Lambda-seconds and OCU-hours, which `Meter` cannot
+   express because a `Call` needs a model.
+
+So `Meter` is kept, tested and UNUSED, and the honest reading is that a
+per-call meter is the wrong instrument for this run rather than a missing one.
+Wire it the day a load profile drives a priced model — SPEC/06's `/query`
+profiles would have needed it, and they are deferred.
 
 ## An unpriced model is not free
 
@@ -147,8 +170,13 @@ def check_plan(plan: Plan, *, ceiling: float | None = None,
         "daily_cap_by_model": {
             m: config.BEDROCK_DAILY_TOKEN_CAP.get(m) for m in tokens},
         "spent_today_supplied": spent_today is not None,
-        "basis": "ESTIMATE from predicted token counts, not a measurement; "
-                 "loadtest.budget.Meter enforces the ceiling on actuals",
+        # WHAT THIS IS AND IS NOT. It said "Meter enforces the ceiling on
+        # actuals", and Meter has no caller — a false claim about its own
+        # spend control, stamped into every recorded attempt.
+        "basis": "ESTIMATE from predicted token counts, not a measurement. "
+                 "Nothing books actuals during this run: the ceiling is held "
+                 "before it starts by this check, and during it by IAM — the "
+                 "load driver can invoke the embedding model and no other.",
     }
 
     if usd > ceiling:
@@ -176,8 +204,13 @@ def check_plan(plan: Plan, *, ceiling: float | None = None,
 class Meter:
     """Books ACTUAL usage during a run and refuses the next call at the ceiling.
 
+    UNUSED AS OF M06 — see the module docstring. Kept and tested because a
+    profile that drives a priced model needs it; not wired into the disposition,
+    whose Bedrock cost is three cents of a twenty-three-cent run and whose real
+    control is the driver's IAM grant.
+
     Not thread-safe by construction, and that is stated rather than assumed:
-    `record` and `reserve` mutate one dict. The retrieval driver is concurrent,
+    `record` and `reserve` mutate one dict. A concurrent driver
     so it must hold a lock around these or meter per worker and merge — see
     `loadtest/retrieval_load.py`. A ceiling that races is not a ceiling.
     """

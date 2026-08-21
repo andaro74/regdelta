@@ -38,9 +38,20 @@ destination from a SaaS tracer, but it is the same data, it is retained, and it
 is readable by anything holding `logs:FilterLogEvents`. Writing it there by
 default would reverse that decision by implication.
 
-Counts and lengths of those fields ARE carried, because "the answer was empty"
-and "eight chunks were retrieved" are facts about the system rather than about
-the asker.
+Counts and lengths of those fields ARE NOT carried, and this paragraph used to
+say they were. A tree-wide grep at M06 found no answer-length, query-length or
+applicability-size metric anywhere, so the claim was false for every SECRET
+key — which means "the answer was empty" is precisely the fact the dashboard
+cannot see. That is the allowlist symptom this docstring catalogues above,
+committed by the file describing it. eng-code-reviewer, M06.
+
+The argument for carrying them stands and is why this is worth doing: "the
+answer was empty" and "eight chunks were retrieved" are facts about the system
+rather than about the asker. `retrieved`'s count IS carried, because
+`retrieved` is not SECRET. The rest is one dimension-free measure per node, and
+it is deliberately not being added in the week the Tier B disposition is
+measured — a new metric on the request path is a change to the thing being
+measured.
 """
 from __future__ import annotations
 

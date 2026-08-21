@@ -364,54 +364,84 @@ def test_a_step_that_reached_the_tier_it_was_pointed_at_is_eligible(node):
     assert out["dispositive_eligible"] is True
 
 
-def test_a_silent_fallback_to_the_other_tier_is_not_a_measurement(node):
-    """THE FINDING. Every call falls back; nothing raises.
+def test_a_wholesale_fallback_is_a_100_percent_error_rate(node):
+    """THE FINDING, and Part IIb E's answer to it. Every call falls back;
+    nothing raises.
 
-    The rate is met, no Titan throttle fires, the error count is zero and the
-    latencies are real — they are just Tier A's. Without this the step is
-    eligible and its p95 is filed under Tier B.
+    The rate is met, no Titan throttle fires, and the latencies are real — they
+    are just Tier A's. The first fix made a fallback a DISQUALIFIER, which the
+    product seat's reviewer showed produces no error, no dispositive step, no
+    failed measurement and no attempt: unbounded re-runs, with the clause's
+    default outcome unreachable by the behaviour it exists to measure.
+
+    The split: a fallback is a SEARCH-BACKEND FAILURE. It goes in the error
+    rate — SPEC/06's numerator is "AOSS or S3 Vectors 5xx" and that is exactly
+    what happened — and it contributes no latency, because the latency belongs
+    to the tier that rescued it. A tier that fell back on everything therefore
+    records a 100% error rate and no p95, which is the honest description.
     """
     node["service_ms"] = 1.0
     node["fall_back_every"] = 1
     out = retrieval_load.run_step(rate=20, seconds=0.4, questions=["q"],
                                   expected_tier="aoss")
 
-    assert out["tiers_observed"] == ["s3vectors"]
-    assert out["errors"] == 0, "the router does not raise on a fallback"
+    assert out["error_rate"] == 1.0, "every call was a search-backend failure"
+    assert out["fallbacks"] == out["returned"]
+    assert out["errors_raised"] == 0, "the router does not raise on a fallback"
     assert out["rate_within_5pct"] is True, "the rate was met; that is the trap"
-    assert out["tier_as_asked"] is False
+    assert out["n"] == 0 and out["p95_ms"] is None, (
+        "a fallen-back call's latency is the OTHER tier's and must not be "
+        "filed under this one")
+    assert out["tiers_observed"] == []
     assert out["dispositive_eligible"] is False
 
 
-def test_a_partial_fallback_is_refused_too(node):
-    """The worst of the three cases, and the one a membership test lets past.
+def test_a_partial_fallback_is_measured_rather_than_refused(node):
+    """Part IIb E, and the case that decides whether the clause terminates.
 
-    A partial data-access-policy propagation makes SOME calls fall back. The
-    step then holds a p95 computed over a mixture of both tiers and labelled
-    as one of them — which `expected in tiers_observed` would accept.
+    One call in three falls back. Under the old rule the step was disqualified
+    and the half became a gate refusal that consumed no attempt — so a Tier B
+    degrading under concurrency, which is the ONLY regime its remaining case is
+    about, could never produce a verdict.
+
+    Under the split it produces the right one: the fallen-back third is a 33%
+    error rate, the two thirds AOSS actually answered give the p95, and the
+    step stays dispositive. The comparability gate in the orchestrator then
+    decides whether that p95 may be compared at all.
     """
     node["service_ms"] = 1.0
     node["fall_back_every"] = 3
     out = retrieval_load.run_step(rate=30, seconds=0.5, questions=["q"],
                                   expected_tier="aoss")
 
-    assert out["tiers_observed"] == ["aoss", "s3vectors"]
+    assert out["tiers_observed"] == ["aoss"], (
+        "the tier that ANSWERED, over the calls that were not rescued")
     assert out["fallbacks"] > 0
-    assert out["tier_as_asked"] is False
-    assert out["dispositive_eligible"] is False
+    assert 0.2 < out["error_rate"] < 0.5
+    assert out["n"] == out["returned"] - out["errors"] > 0
+    assert out["tier_as_asked"] is True
+    assert out["dispositive_eligible"] is True, (
+        "a measurable degradation must be measurable; refusing it is how the "
+        "clause failed to terminate")
 
 
-def test_a_fallback_reason_alone_disqualifies_the_step(node):
-    """A per-call fallback that lands back on the expected tier still means the
-    router did not do what was asked. Counting only `tiers_observed` would let
-    it through as a clean sample."""
+def test_a_fallback_that_lands_on_the_expected_tier_is_still_a_failure(node):
+    """The router reporting `retrieval_tier: aoss` alongside a fallback reason
+    still means the search backend failed on that call.
+
+    It goes in the error rate like any other fallback, and it contributes no
+    latency — the reason a fallback has no latency is that the timing describes
+    a rescue, not the tier under test, and that holds however the rescue
+    resolved.
+    """
     node["service_ms"] = 1.0
     node["fallback"] = "AossError: 503, retried on the same tier"
     out = retrieval_load.run_step(rate=20, seconds=0.3, questions=["q"],
                                   expected_tier="aoss")
 
-    assert out["tiers_observed"] == ["aoss"]
-    assert out["fallbacks"] > 0
+    assert out["fallbacks"] == out["returned"] > 0
+    assert out["error_rate"] == 1.0
+    assert out["n"] == 0
     assert out["dispositive_eligible"] is False
 
 
@@ -603,3 +633,106 @@ def test_the_three_populations_are_reported_separately(node):
     assert out["dispatched"] == out["returned"]
     assert out["n"] == out["returned"] - out["errors"] < out["dispatched"]
     assert 0 < out["sample_completeness"] < 1.0
+
+
+# --------------------------------------------- the thread ceiling and the join
+# eng-code-reviewer, M06. A Lambda execution environment has a hard 1,024
+# process/thread quota; in-flight is `rate x service time`, and the top step is
+# exactly where a saturating tier's service time rises. Unbounded, the driver
+# reaches the quota, `Thread.start()` raises in the dispatch loop, and the whole
+# 90/s step is lost — at the one rate Tier B's remaining case is about.
+
+
+def test_a_refused_dispatch_is_recorded_and_the_step_is_not_dispositive(monkeypatch, node):
+    """A refusal is DATA, not a skip and not a block.
+
+    Blocking for a slot would close the loop: the offered load would become a
+    function of the tier's own latency, which is the single property this
+    driver exists to avoid. So the driver refuses, says how often, and the step
+    cannot be dispositive because it did not offer the load it recorded.
+    """
+    monkeypatch.setattr(retrieval_load, "THREAD_CEILING", 2)
+    node["service_ms"] = 80.0
+    out = retrieval_load.run_step(rate=50, seconds=0.4, questions=["q"],
+                                  expected_tier="aoss")
+
+    assert out["dispatch_refused"] > 0
+    assert out["offered"] > out["dispatched"]
+    assert out["dispositive_eligible"] is False
+    assert out["accounted_for_every_call"] is False
+
+
+def test_the_achieved_rate_is_over_offered_not_over_dispatched(monkeypatch, node):
+    """Otherwise a driver that refused half its dispatches reports the reduced
+    rate as though it were the schedule — coordinated omission by another
+    route, and the achieved-rate check would call it well behaved."""
+    monkeypatch.setattr(retrieval_load, "THREAD_CEILING", 2)
+    node["service_ms"] = 80.0
+    out = retrieval_load.run_step(rate=50, seconds=0.4, questions=["q"],
+                                  expected_tier="aoss")
+
+    assert out["achieved_rate"] == pytest.approx(50, rel=0.2), (
+        "the schedule offered 50/s; the driver could not deliver it, and the "
+        "honest report is 'offered 50, dispatched fewer'")
+    assert out["rate_within_5pct"] is True
+    assert out["dispositive_eligible"] is False, (
+        "meeting the offered rate is not enough when the calls never started")
+
+
+def test_the_join_deadline_is_absolute_not_per_thread(monkeypatch, node):
+    """`for t in threads: t.join(timeout=120)` gives EVERY hung thread its own
+    120 seconds. LoadDriverFn has 300 s total and a 60 s step leaves ~240, so
+    two hung threads kill the invocation and the step is lost as an invocation
+    error — instead of reporting `unaccounted > 0` and refusing itself.
+
+    Three threads hang here against a 150 ms budget. Per-thread the join would
+    take at least 450 ms; absolute, it takes about 150.
+    """
+    monkeypatch.setattr(retrieval_load, "JOIN_TIMEOUT_S", 0.15)
+    node["service_ms"] = 1.0
+    node["hang_every"] = 1
+    node["hang_s"] = 3.0
+
+    t0 = time.perf_counter()
+    out = retrieval_load.run_step(rate=10, seconds=0.3, questions=["q"],
+                                  expected_tier="aoss")
+    join_budget = time.perf_counter() - t0 - 0.3
+
+    assert out["threads_abandoned"] >= 3
+    assert join_budget < 0.45, (
+        f"the join took {join_budget:.2f}s of straggler budget; an absolute "
+        "deadline caps it at JOIN_TIMEOUT_S however many threads hang")
+    assert out["dispositive_eligible"] is False
+
+
+def test_abandoned_threads_are_reported_so_the_next_step_can_be_distrusted(
+        monkeypatch, node):
+    """The ghost-load leak. A thread the driver walked away from is still
+    running when the orchestrator invokes the next step into the same warm
+    container, so step N+1's offered load silently includes calls step N
+    abandoned. Nothing in N+1 can see them — they are not in its `dispatched`,
+    its `achieved_rate` or its `_InFlight`.
+
+    The driver cannot stop that; what it can do is SAY it happened, so the
+    orchestrator can refuse the following step too."""
+    monkeypatch.setattr(retrieval_load, "JOIN_TIMEOUT_S", 0.05)
+    node["service_ms"] = 1.0
+    node["hang_every"] = 2
+    node["hang_s"] = 2.0
+
+    out = retrieval_load.run_step(rate=20, seconds=0.3, questions=["q"],
+                                  expected_tier="aoss")
+    assert out["threads_abandoned"] > 0
+
+
+def test_mean_concurrency_is_stable_and_over_the_window(node):
+    """`mean()` used to `_accrue()`, so it moved the integral it read: a second
+    call returned a different answer, and it integrated to NOW while dividing
+    by a window that had already closed."""
+    inflight = retrieval_load._InFlight()
+    inflight.enter()
+    time.sleep(0.02)
+    first = inflight.mean(0.02)
+    second = inflight.mean(0.02)
+    assert first == second, "mean() is a getter and must not move the integral"
+    assert first > 0

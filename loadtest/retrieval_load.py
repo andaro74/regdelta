@@ -102,6 +102,55 @@ REPORT_DIR = HERE / "reports"
 #: survives on error rate only if it is at least this far BELOW Tier A's.
 ERROR_RATE_ADVANTAGE = 0.05
 
+#: WHAT THIS MEASUREMENT IS KNOWN NOT TO CONTROL FOR, carried in every report.
+#:
+#: The seat ruled Part IIb D option 2 — "record it as a stated limitation and
+#: run" — and a limitation with no field behind it is a promise the report can
+#: pass every gate without keeping (`pm-spec-reviewer` blocker B9). So it is a
+#: constant here and it is written into the artifact, which means a reader who
+#: finds `verdict: retire` also finds the sentence that bounds what the
+#: retirement means.
+#:
+#: This list is not a disclaimer. Each entry is a specific, measured or
+#: structural asymmetry between the two tiers that this profile does NOT
+#: remove, and each says which direction it pushes.
+KNOWN_LIMITATIONS = [
+    {
+        "id": "aoss-client-opens-a-connection-per-call",
+        "what": "src/retrieval/aoss_client.py issues every request through "
+                "urllib.request.urlopen, which opens a fresh TCP+TLS "
+                "connection per call because nothing installs an opener "
+                "holding a pool. The S3 Vectors path goes through botocore, "
+                "which keeps a urllib3 pool per client "
+                "(config.RETRIEVAL_POOL_SIZE).",
+        "measured": False,
+        "why_not_measured": "the handshake cost is not observable offline and "
+                            "separating it from AOSS's own latency needs a "
+                            "pooled client to compare against, which is a "
+                            "structural change to a tier whose default "
+                            "outcome is removal",
+        "direction": "against Tier B — toward the default outcome, retirement",
+        "bounds_the_verdict_to": "RegDelta's AOSS tier AS IMPLEMENTED. The "
+                                 "clause retires a stack, a client, a reindex "
+                                 "Lambda and a routing branch; it does not "
+                                 "make a claim about OpenSearch Serverless.",
+        "ruled": "Part IIb D option 2 — record and run",
+    },
+    {
+        "id": "aoss-per-call-credential-cost-was-fixed-not-controlled-for",
+        "what": "the same client rebuilt a botocore Session per request: "
+                "6.430 ms median of GIL-bound CPU inside the measured "
+                "interval, on the AOSS path only "
+                "(milestones/M06/aoss_per_call_overhead.json). Memoised at "
+                "M06, so THIS run does not carry it.",
+        "measured": True,
+        "direction": "removed — noted because M04's 889.3 ms Tier B median, "
+                     "which ADR-0012 rests on, was taken WITH it",
+        "ruled": "fixed, and recorded so the two numbers are not compared "
+                 "as though the instrument had not changed",
+    },
+]
+
 #: Titan tokens per retrieval call, as an UPPER BOUND rather than an average.
 #: The amendment's cost table says "~10 tokens (assumed, not measured)"; this
 #: is still not a measurement, but it is at least derived from the strings the
@@ -316,10 +365,61 @@ def run_half(tier: str, sha: str, *, allow_dirty: bool) -> int:
                f"{int(LAMBDA_MEMORY_GB * 1024)}MB")
     print(f"vantage: {vantage}")
 
-    runs = []
+    path = report_path(sha)
+    runs: list[dict] = []
+    # THE ATTEMPT IS CHECKPOINTED AFTER EVERY RUN, and the reason is the OCU
+    # meter. Fifteen invocations take about sixteen minutes per half; with the
+    # artifact written only at the end, one transient `TooManyRequestsException`
+    # on invocation fifteen — and invocation retries are deliberately OFF —
+    # discarded everything and, on the AOSS half, burned the `make up` window
+    # with nothing to show. Now each completed run is on disk before the next
+    # one starts. eng-code-reviewer, M06.
+    def checkpoint(final: bool) -> dict:
+        artifact = load_artifact(path)
+        artifact["sha"] = sha
+        artifact["dirty"] = bool(allow_dirty and git_dirty(
+            exclude=("loadtest/reports/",)))
+        half = artifact["tiers"].get(tier) or {"attempts": []}
+        record = {
+            "at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+            "vantage": vantage,
+            "corpus": corpus.fingerprint(),
+            "config": {"RERANK": config.RERANK,
+                       "RETRIEVAL_LEXICAL_LANE": config.RETRIEVAL_LEXICAL_LANE,
+                       "NAIVE_TOP_K": config.NAIVE_TOP_K,
+                       "EMBED_MODEL": config.EMBED_MODEL},
+            "budget": priced,
+            # PER-ATTEMPT, not a whole-artifact scalar. `dirty` used to sit on
+            # the artifact, so a first half recorded from a dirty tree was
+            # erased by a clean second half at the same sha.
+            "dirty": bool(allow_dirty and git_dirty(
+                exclude=("loadtest/reports/",))),
+            "complete": final,
+            "runs": runs,
+        }
+        # IN PROGRESS UNTIL THE LAST RUN LANDS. An attempt that was interrupted
+        # is on disk, so nothing is lost, and it is marked so `dispose` does
+        # not judge a half-finished campaign as a failed measurement.
+        if not final:
+            record["verdict"] = "in-progress"
+        if half["attempts"] and not half["attempts"][-1].get("complete", True):
+            half["attempts"][-1] = record          # replace the in-progress one
+        else:
+            half["attempts"].append(record)
+        artifact["tiers"][tier] = half
+        write_artifact(path, artifact)
+        return artifact
+
     for run_index in range(RUNS_PER_TIER):
         warmup = run_index < WARMUP_RUNS
         steps = []
+        # GHOST LOAD. A step that abandoned threads leaves them running in the
+        # warm container, so the NEXT step's offered load silently includes
+        # calls its predecessor walked away from — invisible in that step's
+        # `dispatched`, `achieved_rate` and `_InFlight`. The driver cannot stop
+        # it; it reports `threads_abandoned`, and this carries the taint
+        # forward one step. eng-code-reviewer, M06.
+        contaminated = False
         for rate in SCHEDULE:
             label = f"{tier}/run{run_index}/{rate}ps"
             print(f"  {label}{' (warmup)' if warmup else ''} …", flush=True)
@@ -327,36 +427,29 @@ def run_half(tier: str, sha: str, *, allow_dirty: bool) -> int:
             step = invoke_step(client, fn_name, rate=rate, tier=tier,
                                label=label)
             step["wall_s"] = round(time.time() - t0, 1)
+            if contaminated:
+                step["preceded_by_abandoned_threads"] = True
+            contaminated = bool(step.get("threads_abandoned"))
             steps.append(step)
             print(f"    achieved {step.get('achieved_rate')}/s  "
                   f"p95 {step.get('p95_ms')} ms  "
                   f"tiers {step.get('tiers_observed')}  "
+                  f"errors {step.get('error_rate')}  "
                   f"eligible {step.get('dispositive_eligible')}")
         runs.append({"run": run_index, "warmup": warmup, "steps": steps})
+        checkpoint(final=run_index == RUNS_PER_TIER - 1)
 
-    path = report_path(sha)
     artifact = load_artifact(path)
-    artifact["sha"] = sha
-    artifact["dirty"] = bool(allow_dirty and git_dirty(
-        exclude=("loadtest/reports/",)))
     # ATTEMPTS ARE APPENDED, NOT OVERWRITTEN. Change 6 bounds the floor at one
     # re-run and says the second failure is recorded; a half that silently
     # replaced its predecessor would make "how many attempts" unanswerable from
     # the artifact, which is the only place it is written down.
-    half = artifact["tiers"].get(tier) or {"attempts": []}
-    half["attempts"].append({
-        "at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-        "vantage": vantage,
-        "corpus": corpus.fingerprint(),
-        "config": {"RERANK": config.RERANK,
-                   "RETRIEVAL_LEXICAL_LANE": config.RETRIEVAL_LEXICAL_LANE,
-                   "NAIVE_TOP_K": config.NAIVE_TOP_K,
-                   "EMBED_MODEL": config.EMBED_MODEL},
-        "budget": priced,
-        "runs": runs,
-    })
-    artifact["tiers"][tier] = half
+    half = artifact["tiers"][tier]
     artifact["disposition"] = dispose(artifact)
+    # STAMPED ONTO THE ATTEMPT AFTER JUDGING IT, so the NEXT run can tell a
+    # failed measurement from a gate refusal. `_prior_failed_measurements`
+    # reads it back and excludes the latest, so this is not circular.
+    half["attempts"][-1]["verdict"] = artifact["disposition"]["verdict"]
     write_artifact(path, artifact)
     report(artifact["disposition"], path)
     return exit_code(artifact["disposition"])
@@ -386,6 +479,12 @@ def _step_ok(step: dict, tier: str) -> bool:
         tier it is a measurement of, with nothing having fallen back
     """
     if step.get("invocation_error"):
+        return False
+    # A step whose predecessor abandoned threads received load nobody recorded.
+    if step.get("preceded_by_abandoned_threads") or step.get("threads_abandoned"):
+        return False
+    # A dispatch the driver could not make is load it did not offer.
+    if step.get("dispatch_refused"):
         return False
     rate = step.get("driven_rate")
     achieved = step.get("achieved_rate")
@@ -423,8 +522,102 @@ def _step_ok(step: dict, tier: str) -> bool:
     return step.get("expected_tier") == tier
 
 
+def _why_ineligible(step: dict, tier: str) -> list[str]:
+    """Every condition this step fails, named.
+
+    Derived from the same predicate rather than restated: `_step_ok` is the
+    gate and this is its explanation, so a condition added there without an
+    entry here shows up as a step refused for no stated reason — which
+    `tests/test_tier_disposition.py` asserts cannot happen.
+    """
+    why = []
+    if step.get("invocation_error"):
+        why.append("the driver invocation failed")
+    if step.get("preceded_by_abandoned_threads"):
+        why.append("the previous step abandoned threads into this container")
+    if step.get("threads_abandoned"):
+        why.append(f"{step['threads_abandoned']} threads abandoned")
+    if step.get("dispatch_refused"):
+        why.append(f"{step['dispatch_refused']} dispatches refused at the "
+                   "thread ceiling — load it did not offer")
+    rate, achieved = step.get("driven_rate"), step.get("achieved_rate")
+    if not rate or achieved is None:
+        why.append("no rate recorded")
+    elif abs(achieved - rate) / rate > 0.05:
+        why.append(f"achieved {achieved}/s against a driven {rate}/s "
+                   "— outside 5%")
+    if (step.get("bedrock_retries") or {}).get("total"):
+        why.append(f"{step['bedrock_retries']['total']} Titan throttle(s)")
+    if step.get("tiers_observed") != [tier]:
+        why.append(f"answered from {step.get('tiers_observed')}, not [{tier!r}]")
+    if not step.get("latencies_ms"):
+        why.append("no call returned a latency")
+    dispatched, returned = step.get("dispatched"), step.get("returned")
+    if dispatched is None or returned is None:
+        why.append("the call account is missing from this step")
+    elif returned != dispatched:
+        why.append(f"{dispatched - returned} of {dispatched} calls unaccounted")
+    if step.get("expected_tier") != tier:
+        why.append(f"recorded under {tier!r} but pointed at "
+                   f"{step.get('expected_tier')!r}")
+    return why
+
+
 def _latest(half: dict) -> dict:
-    return (half.get("attempts") or [{}])[-1]
+    """The newest COMPLETE attempt.
+
+    The campaign is checkpointed after every run, so an interrupted one is on
+    disk marked `complete: false`. That is deliberate — nothing is lost — but
+    it is not a measurement, and `--judge-only` run over an interrupted
+    campaign must not judge it as one.
+    """
+    complete = [a for a in half.get("attempts") or [] if a.get("complete", True)]
+    return complete[-1] if complete else {}
+
+
+def _prior_failed_measurements(half: dict) -> int:
+    """How many attempts BEFORE the latest were failed measurements.
+
+    Change 6 bounds the floor at one re-run of a FAILED MEASUREMENT. A gate
+    refusal is not one: it means the run was invalid — wrong corpus, wrong
+    tier, wrong vantage — and re-running after fixing the configuration is not
+    a second bite at the same cherry. Counting every recorded attempt made a
+    corpus that moved between halves cost Tier B one of its two chances.
+
+    The latest attempt is excluded because it is the one being judged; its
+    verdict is this call's output, not its input. That also makes `dispose`
+    idempotent, which `--judge-only` relies on.
+
+    AN ATTEMPT CARRYING NO VERDICT IS NOT COUNTED, and the direction is
+    deliberate. It could be argued either way — an unclassifiable attempt
+    counted as a failure makes the clause terminate sooner, which
+    `SPEC/06:48-49` wants. But "terminate sooner" here means RETIRING TIER B ON
+    A RUN NOBODY CLASSIFIED, which is precisely the outcome every other guard
+    in this milestone exists to prevent. The other direction costs one extra
+    campaign: $0.23 and thirty-five minutes.
+
+    Unclassified attempts are counted separately and reported, so the choice is
+    visible in the artifact rather than buried here.
+    """
+    prior = [a for a in half.get("attempts") or [] if a.get("complete", True)][:-1]
+    return sum(1 for a in prior if a.get("verdict") == "failed-measurement")
+
+
+def _incomplete_attempts(half: dict) -> int:
+    """Attempts a crash or a kill left half-written.
+
+    They are on disk because the campaign is checkpointed after every run, so
+    nothing is lost — but they are not measurements and must not be judged as
+    failed ones.
+    """
+    return sum(1 for a in half.get("attempts") or []
+               if not a.get("complete", True))
+
+
+def _unclassified_attempts(half: dict) -> int:
+    """Prior attempts with no recorded verdict — see the note above."""
+    prior = [a for a in half.get("attempts") or [] if a.get("complete", True)][:-1]
+    return sum(1 for a in prior if "verdict" not in a)
 
 
 def _steps_at(attempt: dict, rate: int) -> list[dict]:
@@ -447,12 +640,16 @@ def _percentile(values: list[float], q: float) -> float | None:
 def dispose(artifact: dict) -> dict:
     """Judge whatever halves the artifact holds. Pure — no AWS, no invocation."""
     tiers = artifact.get("tiers") or {}
-    present = [t for t in TIERS if t in tiers]
+    present = [t for t in TIERS if t in tiers and _latest(tiers[t])]
     failures: list[str] = []
     out: dict = {
         "at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "judged_by_sha": git_sha(),
         "tiers_present": present,
+        # ON EVERY OUTCOME, not only on a rendered verdict. A failed
+        # measurement and a gate refusal are also read by someone deciding
+        # what to do next.
+        "known_limitations": KNOWN_LIMITATIONS,
         "keep_condition": "Tier B keeps its place only if its p95 retrieval "
                           "latency is at or below Tier A's, OR its retrieval "
                           "error rate is at least 5 percentage points lower. "
@@ -460,16 +657,35 @@ def dispose(artifact: dict) -> dict:
         "failures": failures,
     }
 
+    interrupted = {t: _incomplete_attempts(tiers[t]) for t in tiers}
+    if any(interrupted.values()):
+        out["interrupted_attempts_per_tier"] = {
+            t: n for t, n in interrupted.items() if n}
+
     if len(present) < 2:
         out["verdict"] = "incomplete"
         out["incomplete_reason"] = (
-            f"only {present or ['no']} half recorded at this sha; the "
-            "disposition needs both. Run the other tier on this commit.")
+            f"only {present or ['no']} half has a COMPLETE attempt at this "
+            "sha; the disposition needs both. Run the other tier on this "
+            "commit."
+            + (f" ({out['interrupted_attempts_per_tier']} interrupted attempt(s) "
+               "are on disk and were not judged.)"
+               if out.get("interrupted_attempts_per_tier") else ""))
         return out
 
     attempts = {t: _latest(tiers[t]) for t in present}
     out["attempts_per_tier"] = {t: len(tiers[t].get("attempts") or [])
                                 for t in present}
+    # The number Change 6's bound is actually about. Reported beside the raw
+    # attempt count so a reader can see the difference rather than infer it.
+    out["prior_failed_measurements_per_tier"] = {
+        t: _prior_failed_measurements(tiers[t]) for t in present}
+    unclassified = {t: _unclassified_attempts(tiers[t]) for t in present}
+    if any(unclassified.values()):
+        # Not a failure — a disclosure. These attempts are NOT counted against
+        # Change 6's bound, and a reader is entitled to know the bound was
+        # computed over fewer attempts than the artifact holds.
+        out["unclassified_prior_attempts"] = unclassified
     out["vantage"] = {t: attempts[t].get("vantage") for t in present}
     # ONE VANTAGE, RECORDED AND IDENTICAL — the clause's words. Both halves are
     # driven from the same deployed function, so a disagreement here means one
@@ -551,8 +767,13 @@ def dispose(artifact: dict) -> dict:
                 "bedrock_retries": [(s.get("bedrock_retries") or {}).get("total")
                                     for s in steps],
                 "span_status": _merge_counts(s.get("span_status") for s in steps),
+                # WHY, not just WHICH. This carried step labels, so a
+                # reader of the artifact that retires a tier could see that a
+                # step was refused and not which of the eight conditions
+                # refused it. eng-code-reviewer, M06.
                 "ineligible_reasons": [
-                    s.get("label") for s in steps if not _step_ok(s, tier)],
+                    {"step": s.get("label"), "why": _why_ineligible(s, tier)}
+                    for s in steps if not _step_ok(s, tier)],
             }
         entry["both_eligible"] = all(entry[t]["eligible"] for t in present)
         per_rate[rate] = entry
@@ -588,7 +809,26 @@ def dispose(artifact: dict) -> dict:
         # argument against Tier B. Bounded at one re-run, because
         # "M06 cannot close without disposing of this clause either way"
         # outranks the convenience of a third attempt.
-        second = min(out["attempts_per_tier"].values()) >= 2
+        # COUNT PRIOR FAILED MEASUREMENTS, NOT RECORDED ATTEMPTS.
+        #
+        # `attempts_per_tier` counts everything `run_half` wrote, and it writes
+        # unconditionally — including an attempt that was then gate-failed.
+        # Reproduced against this function: attempt 1 gate-failed because the
+        # poller moved the corpus between the halves (the exact case the corpus
+        # gate exists for), attempt 2 was the FIRST genuine failed measurement,
+        # and the verdict came back `retire`, exit 5, "SECOND failed
+        # measurement". One real failed measurement, Tier B retired.
+        #
+        # The gate-before-floor ordering above only protects the run in which
+        # the gate fires; the next run inherited the spent attempt.
+        # eng-code-reviewer, M06.
+        #
+        # PRIOR, excluding the attempt being judged: this call is deciding
+        # whether the latest attempt is a failed measurement, so the latest
+        # attempt's own verdict cannot be an input to that. One prior failure
+        # on each tier makes this one the second.
+        second = min(_prior_failed_measurements(tiers[t])
+                     for t in present) >= 1
         out["verdict"] = "retire" if second else "failed-measurement"
         out["dispositive_rate"] = None
         out["failed_measurement"] = True

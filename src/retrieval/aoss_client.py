@@ -15,6 +15,7 @@ M01c) they drifted and the failure surfaced after the writes had landed.
 import hashlib
 import json
 import re
+import threading
 import urllib.error
 import urllib.request
 
@@ -112,12 +113,18 @@ def check_endpoint(endpoint: str) -> str:
 #: cannot be fixed in four lines. It is raised with the seat rather than
 #: changed unilaterally in the week Tier B is being disposed of.
 _session = None
+#: Same reason as `s3vectors_tier._clients_lock`: check-then-set, first
+#: exercised by many threads at once. Benign here — the loser only rebuilds a
+#: session — but duplicated work in the one window the memo exists to avoid.
+_session_lock = threading.Lock()
 
 
 def _credentials():
     global _session
     if _session is None:
-        _session = botocore.session.get_session()
+        with _session_lock:
+            if _session is None:
+                _session = botocore.session.get_session()
     creds = _session.get_credentials()
     if creds is None:
         raise AossError("no AWS credentials available for SigV4")

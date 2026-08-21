@@ -106,7 +106,12 @@ def step(rate: int, tier: str, *, p95: float, n: int = 100,
 
 def half(tier: str, *, p95: float, errors: int = 0, n: int = 100,
          corpus_sha: str = "abc123def456", vantage: str = "lambda:fn:us-west-2:2048MB",
-         rates=orch.SCHEDULE, attempts: int = 1, **step_kw) -> dict:
+         rates=orch.SCHEDULE, attempts: int = 1, verdicts=None,
+         complete=None, **step_kw) -> dict:
+    """`verdicts` stamps the PRIOR attempts, as `run_half` does after judging
+    each one. Change 6's bound counts failed measurements, not everything that
+    was written, so a builder that left them unstamped would be modelling an
+    artifact this code cannot produce."""
     runs = [{"run": i, "warmup": i < orch.WARMUP_RUNS,
              "steps": [step(r, tier, p95=p95, n=n, errors=errors, **step_kw)
                        for r in rates]}
@@ -120,7 +125,13 @@ def half(tier: str, *, p95: float, errors: int = 0, n: int = 100,
         "budget": {},
         "runs": runs,
     }
-    return {"attempts": [one] * attempts}
+    out = [dict(one) for _ in range(attempts)]
+    for i, a in enumerate(out):
+        if verdicts is not None and i < len(verdicts) and verdicts[i] is not None:
+            a["verdict"] = verdicts[i]
+        if complete is not None and i < len(complete):
+            a["complete"] = complete[i]
+    return {"attempts": out}
 
 
 def artifact(**tiers) -> dict:
@@ -350,8 +361,10 @@ def test_a_second_failed_measurement_disposes_by_the_default_outcome():
     qualifies, and this retirement was not measured.
     """
     out = orch.dispose(artifact(
-        s3vectors=half("s3vectors", p95=300.0, achieved=1.0, attempts=2),
-        aoss=half("aoss", p95=300.0, achieved=1.0, attempts=2)))
+        s3vectors=half("s3vectors", p95=300.0, achieved=1.0, attempts=2,
+                       verdicts=["failed-measurement"]),
+        aoss=half("aoss", p95=300.0, achieved=1.0, attempts=2,
+                  verdicts=["failed-measurement"])))
     assert out["verdict"] == "retire"
     assert out["failed_measurement"] is True
     assert "DEFAULT OUTCOME" in out["verdict_reason"]
@@ -692,3 +705,183 @@ def test_a_fallen_back_step_is_reported_as_ineligible_not_merely_gated():
         assert entry["eligible"] is False
         assert entry["ineligible_reasons"], (
             "the step that answered from the wrong tier is not named")
+
+
+# ----------------------------------------- what counts against Change 6's bound
+# eng-code-reviewer, M06, HIGH 1. `attempts_per_tier` counted everything
+# `run_half` wrote, and it writes unconditionally — including an attempt that
+# was then gate-failed. Reproduced against the real `dispose()`: a corpus that
+# moved between the halves, then ONE genuine failed measurement, and the verdict
+# came back `retire` / exit 5 / "SECOND failed measurement". Tier B retired on
+# one real failure and one configuration error.
+
+
+def test_a_gate_failed_attempt_does_not_spend_one_of_the_two(node=None):
+    """The reproduction, as a test. The gate-before-floor ordering protects
+    only the run in which the gate fires; the next run inherited the cost."""
+    out = orch.dispose(artifact(
+        s3vectors=half("s3vectors", p95=300.0, achieved=1.0, attempts=2,
+                       verdicts=["gate-failed"]),
+        aoss=half("aoss", p95=300.0, achieved=1.0, attempts=2,
+                  verdicts=["gate-failed"])))
+
+    assert out["attempts_per_tier"] == {"s3vectors": 2, "aoss": 2}
+    assert out["prior_failed_measurements_per_tier"] == {"s3vectors": 0, "aoss": 0}
+    assert out["verdict"] == "failed-measurement", (
+        "a corpus that moved between halves is not a bite at Change 6's cherry")
+    assert orch.exit_code(out) == 4
+
+
+def test_an_unclassified_prior_attempt_is_disclosed_and_not_counted():
+    """The direction is a choice and it is visible in the artifact.
+
+    Counting an unclassifiable attempt as a failure would retire Tier B on a
+    run nobody classified — the outcome every other guard here exists to
+    prevent. Not counting it costs one extra campaign: $0.23 and 35 minutes.
+    """
+    out = orch.dispose(artifact(
+        s3vectors=half("s3vectors", p95=300.0, achieved=1.0, attempts=2),
+        aoss=half("aoss", p95=300.0, achieved=1.0, attempts=2)))
+
+    assert out["unclassified_prior_attempts"] == {"s3vectors": 1, "aoss": 1}
+    assert out["prior_failed_measurements_per_tier"] == {"s3vectors": 0, "aoss": 0}
+    assert out["verdict"] == "failed-measurement"
+
+
+def test_an_interrupted_attempt_is_kept_but_not_judged():
+    """The campaign is checkpointed after every run, so a crash on invocation
+    fifteen of fifteen leaves the completed runs on disk instead of discarding
+    sixteen minutes and an OCU window. What is on disk is marked incomplete,
+    and an incomplete campaign is not a measurement."""
+    out = orch.dispose(artifact(
+        s3vectors=half("s3vectors", p95=300.0),
+        aoss=half("aoss", p95=300.0, attempts=2, complete=[True, False])))
+
+    assert out["interrupted_attempts_per_tier"] == {"aoss": 1}
+    assert out["verdict"] == "keep", (
+        "the last COMPLETE attempt is the one judged")
+
+
+def test_a_half_with_only_an_interrupted_attempt_is_incomplete():
+    out = orch.dispose(artifact(
+        s3vectors=half("s3vectors", p95=300.0),
+        aoss=half("aoss", p95=300.0, complete=[False])))
+    assert out["verdict"] == "incomplete"
+    assert orch.exit_code(out) == 2
+    assert "interrupted" in out["incomplete_reason"]
+
+
+# ------------------------------------------------------------- the ghost load
+def test_a_step_preceded_by_abandoned_threads_is_not_dispositive():
+    """Step N walked away from threads that were still running; the orchestrator
+    invoked step N+1 into the same warm container, so N+1's offered load
+    includes calls N abandoned — invisible in N+1's own dispatched count,
+    achieved rate and in-flight sample."""
+    good = step(90, "aoss", p95=300.0, n=10)
+    assert orch._step_ok(good, "aoss") is True
+    assert orch._step_ok({**good, "preceded_by_abandoned_threads": True},
+                         "aoss") is False
+    assert orch._step_ok({**good, "threads_abandoned": 2}, "aoss") is False
+
+
+def test_a_step_that_could_not_dispatch_is_not_dispositive():
+    """A refused dispatch is load the driver did not offer, so the step did not
+    hold the rate it is recorded under."""
+    good = step(90, "aoss", p95=300.0, n=10)
+    assert orch._step_ok({**good, "dispatch_refused": 3}, "aoss") is False
+
+
+# ------------------------------------------ the artifact explains its own gates
+def test_every_refused_step_carries_a_stated_reason():
+    """`ineligible_reasons` used to carry step LABELS, so a reader of the
+    artifact that retires a tier could see that a step was refused and not
+    which of the conditions refused it.
+
+    Asserted against `_step_ok` rather than against a list of conditions, so a
+    clause added to the gate without an entry in the explanation shows up here
+    as a step refused for no stated reason.
+    """
+    broken = [
+        step(90, "aoss", p95=300.0, n=10, achieved=1.0),
+        step(90, "aoss", p95=300.0, n=10, throttles=2),
+        step(90, "aoss", p95=300.0, n=10, observed=["s3vectors"]),
+        step(90, "aoss", p95=300.0, n=10, unaccounted=5),
+        step(90, "aoss", p95=0, latencies=[], n=10, errors=10),
+        {**step(90, "aoss", p95=300.0, n=10), "dispatch_refused": 3},
+        {**step(90, "aoss", p95=300.0, n=10), "threads_abandoned": 1},
+        {**step(90, "aoss", p95=300.0, n=10),
+         "preceded_by_abandoned_threads": True},
+        {**step(90, "aoss", p95=300.0, n=10), "invocation_error": "boom"},
+        step(90, "aoss", p95=300.0, n=10, expected="s3vectors"),
+    ]
+    for s in broken:
+        assert orch._step_ok(s, "aoss") is False, s.get("label")
+        why = orch._why_ineligible(s, "aoss")
+        assert why, f"refused with no stated reason: {s}"
+
+
+def test_a_good_step_has_nothing_to_explain():
+    """The other side: an explanation that fires on a passing step would fill
+    the artifact with reasons for things that did not happen."""
+    good = step(90, "aoss", p95=300.0, n=10)
+    assert orch._step_ok(good, "aoss") is True
+    assert orch._why_ineligible(good, "aoss") == []
+
+
+def test_the_report_carries_what_it_did_not_control_for():
+    """Part IIb D option 2 — "record it as a stated limitation and run".
+
+    A limitation with no field behind it is a promise the report can pass every
+    gate without keeping. On EVERY outcome, because a failed measurement and a
+    gate refusal are also read by someone deciding what to do next.
+    """
+    for art in (artifact(s3vectors=half("s3vectors", p95=300.0)),
+                artifact(s3vectors=half("s3vectors", p95=300.0),
+                         aoss=half("aoss", p95=900.0))):
+        out = orch.dispose(art)
+        ids = {lim["id"] for lim in out["known_limitations"]}
+        assert "aoss-client-opens-a-connection-per-call" in ids
+
+    out = orch.dispose(artifact(s3vectors=half("s3vectors", p95=300.0),
+                                aoss=half("aoss", p95=900.0)))
+    assert out["verdict"] == "retire"
+    transport = next(lim for lim in out["known_limitations"]
+                     if lim["id"] == "aoss-client-opens-a-connection-per-call")
+    assert transport["direction"].startswith("against Tier B")
+    assert "AS IMPLEMENTED" in transport["bounds_the_verdict_to"], (
+        "a retirement verdict must carry the sentence that bounds what it "
+        "means, or the artifact reads as a judgement about OpenSearch "
+        "Serverless")
+
+
+def test_re_judging_a_recorded_failure_does_not_escalate_it():
+    """`--judge-only` must be idempotent, and the mutation harness found that
+    nothing here proved it.
+
+    After one failed measurement `run_half` stamps the attempt with its
+    verdict, so a later `--judge-only` sees a verdict on the very attempt it is
+    judging. Counting it turns one recorded failure into "the second" — exit 4
+    (a re-run is owed) silently becomes exit 5 (retired by the default
+    outcome), just by looking at the artifact again.
+
+    Every other test here builds artifacts whose LATEST attempt is unstamped,
+    which is the state during a run and not the state on disk afterwards. This
+    is the state on disk.
+    """
+    art = artifact(
+        s3vectors=half("s3vectors", p95=300.0, achieved=1.0, attempts=1,
+                       verdicts=["failed-measurement"]),
+        aoss=half("aoss", p95=300.0, achieved=1.0, attempts=1,
+                  verdicts=["failed-measurement"]))
+
+    first = orch.dispose(art)
+    assert first["verdict"] == "failed-measurement"
+    assert first["prior_failed_measurements_per_tier"] == {
+        "s3vectors": 0, "aoss": 0}, (
+        "the attempt being judged is this call's output, not its input")
+    assert orch.exit_code(first) == 4
+
+    again = orch.dispose(art)
+    assert again["verdict"] == first["verdict"], (
+        "reading the artifact a second time retired Tier B")
+    assert orch.exit_code(again) == 4

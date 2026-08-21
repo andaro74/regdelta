@@ -3,7 +3,7 @@
   "subject": "loadtest/retrieval_load.py",
   "baseline_green": true,
   "tree_restored_and_green": true,
-  "mutations": 26,
+  "mutations": 29,
   "survivors": 0,
   "results": [
     {
@@ -151,6 +151,27 @@
       "outcome": "killed",
       "exit": 1,
       "why": "a step recorded by a driver that predates the fields would be assumed to have accounted for everything \u2014 the artifact is the evidence, and an absent field is not a passing one",
+      "tail": null
+    },
+    {
+      "id": "O1b-any-recorded-attempt-counts-against-the-bound",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "eng-code-reviewer HIGH 1, as it actually occurred. `run_half` writes an attempt unconditionally, including one that is then gate-failed, so a corpus that moved between the halves spent one of Change 6's two chances and the FIRST real failed measurement retired Tier B",
+      "tail": null
+    },
+    {
+      "id": "O1c-the-attempt-being-judged-counts-itself",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the latest attempt's verdict is this call's OUTPUT; counting it as an input makes the judgement circular and --judge-only non-idempotent",
+      "tail": null
+    },
+    {
+      "id": "O1d-an-interrupted-attempt-is-judged-as-a-measurement",
+      "outcome": "killed",
+      "exit": 1,
+      "why": "the campaign is checkpointed after every run, so a crash leaves a half-written attempt on disk. It is not lost and it is not a measurement; judging it as one disposes of the clause on a campaign that never finished",
       "tail": null
     },
     {

@@ -204,6 +204,30 @@ MUTATIONS = [
      "have accounted for everything — the artifact is the evidence, and an "
      "absent field is not a passing one"),
 
+    ("O1b-any-recorded-attempt-counts-against-the-bound",
+     "        second = min(_prior_failed_measurements(tiers[t])\n"
+     "                     for t in present) >= 1",
+     '        second = min(len(tiers[t].get("attempts") or [])\n                     for t in present) >= 2',
+     "eng-code-reviewer HIGH 1, as it actually occurred. `run_half` writes "
+     "an attempt unconditionally, including one that is then gate-failed, "
+     "so a corpus that moved between the halves spent one of Change 6's "
+     "two chances and the FIRST real failed measurement retired Tier B"),
+
+    ("O1c-the-attempt-being-judged-counts-itself",
+     '    prior = [a for a in half.get("attempts") or [] if a.get("complete", True)][:-1]',
+     '    prior = [a for a in half.get("attempts") or [] if a.get("complete", True)]',
+     "the latest attempt's verdict is this call's OUTPUT; counting it as "
+     "an input makes the judgement circular and --judge-only "
+     "non-idempotent"),
+
+    ("O1d-an-interrupted-attempt-is-judged-as-a-measurement",
+     '    complete = [a for a in half.get("attempts") or [] if a.get("complete", True)]',
+     '    complete = [a for a in half.get("attempts") or []]',
+     "the campaign is checkpointed after every run, so a crash leaves a "
+     "half-written attempt on disk. It is not lost and it is not a "
+     "measurement; judging it as one disposes of the clause on a campaign "
+     "that never finished"),
+
     # ----------------------------------------------------------- O: the order
     ("O1-the-floor-is-decided-before-the-gate",
      '    if failures:\n'
@@ -220,14 +244,16 @@ MUTATIONS = [
      "default outcome — on a misconfiguration"),
 
     ("O2-a-failed-measurement-is-a-retirement-on-the-first-attempt",
-     '        second = min(out["attempts_per_tier"].values()) >= 2',
+     "        second = min(_prior_failed_measurements(tiers[t])\n"
+     "                     for t in present) >= 1",
      "        second = True",
      "Change 6: a run that reached no real load is a failed measurement, NOT a "
      "retirement. Unbounded the other way, a dead profile becomes the argument "
      "against Tier B"),
 
     ("O3-the-floor-never-terminates",
-     '        second = min(out["attempts_per_tier"].values()) >= 2',
+     "        second = min(_prior_failed_measurements(tiers[t])\n"
+     "                     for t in present) >= 1",
      "        second = False",
      "the other direction, and the reason Change 6 is bounded at one re-run: "
      "M06 would end with Tier B alive and the bar never met, which "
@@ -249,6 +275,36 @@ MUTATIONS = [
 ]
 
 
+#: Where a pristine copy lives while a mutation is applied.
+#:
+#: THE `finally` BELOW ONLY RUNS IF THE PROCESS GETS TO RUN IT. A tool timeout
+#: SIGKILLed this harness mid-mutation at M06 and left the source carrying one;
+#: the next run reported BASELINE IS RED for a reason that read like a broken
+#: test rather than like a leftover edit. A sidecar survives the kill.
+BACKUP_SUFFIX = ".mutation-backup"
+
+
+def _backup_path(path):
+    return path.with_suffix(path.suffix + BACKUP_SUFFIX)
+
+
+def recover(paths) -> list[str]:
+    """Restore any source left mutated by an interrupted run.
+
+    Returns what it restored, so the caller can say so rather than quietly
+    repairing the tree — a harness that silently fixes its own mess teaches
+    nobody that the mess happened.
+    """
+    restored = []
+    for path in paths:
+        backup = _backup_path(path)
+        if backup.exists():
+            path.write_text(backup.read_text(encoding="utf-8"), encoding="utf-8")
+            backup.unlink()
+            restored.append(str(path))
+    return restored
+
+
 def run_guard() -> tuple[int, str]:
     proc = subprocess.run(
         [sys.executable, "-m", "pytest", TEST, "-q", "--no-header"],
@@ -258,6 +314,11 @@ def run_guard() -> tuple[int, str]:
 
 
 def main() -> int:
+    # BEFORE THE BASELINE. A source left mutated by an interrupted
+    # run would otherwise present as a failing test.
+    if restored := recover([ORCH]):
+        print("recovered from an interrupted run: "
+              + ", ".join(restored) + "\n")
     baseline_rc, baseline_out = run_guard()
     if baseline_rc != 0:
         print("BASELINE IS RED — fix the guard before mutating it.")
@@ -266,6 +327,7 @@ def main() -> int:
     print(f"baseline: green ({TEST})\n")
 
     original = ORCH.read_text(encoding="utf-8")
+    _backup_path(ORCH).write_text(original, encoding="utf-8")
     results = []
     for mid, find, replace, why in MUTATIONS:
         if find not in original:
@@ -284,6 +346,9 @@ def main() -> int:
         results.append({"id": mid, "outcome": outcome, "exit": rc,
                         "why": why, "tail": out if rc == 0 else None})
         print(f"  {mid:52s} {outcome}")
+
+    # The run finished, so the sidecar has nothing left to protect.
+    _backup_path(ORCH).unlink(missing_ok=True)
 
     after_rc, _ = run_guard()
     survivors = [r for r in results if r["outcome"] != "killed"]
