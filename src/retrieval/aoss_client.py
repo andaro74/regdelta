@@ -79,6 +79,57 @@ def check_endpoint(endpoint: str) -> str:
     return endpoint
 
 
+#: The botocore session, built ONCE. Same idiom, and the same reason, as
+#: `s3vectors_tier._clients`.
+#:
+#: `botocore.session.get_session()` CONSTRUCTS A NEW SESSION every call — it is
+#: not a cached accessor, whatever the name suggests — and `get_credentials()`
+#: then runs the whole resolver chain against it. `request()` did that once per
+#: AOSS request.
+#:
+#: MEASURED OFFLINE, local CPU only, no network: 6.404 ms median, 64.5 ms max,
+#: against 0.000 ms for frozen credentials off a reused session (n=30).
+#: For comparison the SigV4 signing both tiers pay is 0.139 ms.
+#:
+#: This is a MEASUREMENT-VALIDITY defect and not a performance nicety, because
+#: of where it lands and what it is made of. It is inside `router.retrieve()` —
+#: the interval SPEC/06's disposition defines its p95 over — it is on the AOSS
+#: path only, so Tier A never pays it, and it is pure Python, so it is
+#: serialised on the GIL. At the clause's top step of 90 calls per second that
+#: is 90 x 6.4 = 576 ms of CPU per second of wall clock in a 2048 MB Lambda
+#: (~1.2 vCPU), which does not merely add 6 ms per call: it saturates and
+#: queues, and everything behind it in the interpreter waits.
+#:
+#: Retiring Tier B on a number that includes it would be retiring it for this
+#: repo's own client. Found while pricing the disposition, after
+#: security-reviewer's connection-pool finding on the other tier.
+#:
+#: THE CONNECTION POOL IS THE LARGER HALF AND IS NOT FIXED HERE.
+#: `urllib.request.urlopen` opens a fresh TCP + TLS connection on every call,
+#: because nothing installs an opener holding a pool, while botocore keeps a
+#: urllib3 pool per client. That is a structural difference between the two
+#: tiers' transports, it is not measurable offline, and unlike this one it
+#: cannot be fixed in four lines. It is raised with the seat rather than
+#: changed unilaterally in the week Tier B is being disposed of.
+_session = None
+
+
+def _credentials():
+    global _session
+    if _session is None:
+        _session = botocore.session.get_session()
+    creds = _session.get_credentials()
+    if creds is None:
+        raise AossError("no AWS credentials available for SigV4")
+    # FROZEN PER CALL, not cached. The frozen triple is a point-in-time copy,
+    # and a container that outlives a credential refresh would sign with an
+    # expired key — a 403 that reads exactly like a data-access-policy denial,
+    # which is the failure mode this file's endpoint check already exists to
+    # keep distinguishable. `get_credentials()` on a live session is the cheap
+    # half; it was the session construction that cost 6.4 ms.
+    return creds.get_frozen_credentials()
+
+
 def request(endpoint: str, method: str, path: str, body=None,
             *, content_type: str = "application/json", timeout: int = 60):
     """Signed request. Returns the parsed JSON body.
@@ -109,11 +160,8 @@ def request(endpoint: str, method: str, path: str, body=None,
     headers = {"Content-Type": content_type,
                "X-Amz-Content-Sha256": hashlib.sha256(data or b"").hexdigest()}
     aws = AWSRequest(method=method, url=url, data=data, headers=headers)
-    creds = botocore.session.get_session().get_credentials()
-    if creds is None:
-        raise AossError("no AWS credentials available for SigV4")
     # AOSS rejects UNSIGNED-PAYLOAD, so the body must be signed for real.
-    SigV4Auth(creds.get_frozen_credentials(), "aoss", config.REGION).add_auth(aws)
+    SigV4Auth(_credentials(), "aoss", config.REGION).add_auth(aws)
 
     req = urllib.request.Request(url, data=data, method=method,
                                  headers=dict(aws.headers))
