@@ -36,10 +36,12 @@ from aws_cdk import (
     aws_lambda as _lambda,
     aws_s3 as s3,
     aws_s3_deployment as s3deploy,
+    aws_sns as sns,
     aws_sqs as sqs,
 )
 from constructs import Construct
 
+from core.observability import add_observability
 from shared import config
 
 # Resolved from this file, not the process CWD — same reason as
@@ -658,7 +660,6 @@ class RegDeltaCoreStack(cdk.Stack):
                       description="Demo UI; /api/* proxies to the same API")
 
         # TODO SPEC/04: SES identity for HITL notifications.
-        # TODO SPEC/06: nightly eval Lambda + regression alarm + dashboard.
 
         # ------------------------------------------------------------------
         # THE SEARCH STACK'S DELETION ROLE. SPEC/05, closing the TODO that
@@ -829,6 +830,54 @@ class RegDeltaCoreStack(cdk.Stack):
             schedule=events.Schedule.cron(minute="0", hour="1"),
             targets=[targets.LambdaFunction(janitor)],
         )
+
+        # ------------------------------------------------------------------
+        # SPEC/06 Observability: the nightly check, the dashboard and the
+        # alarms. Everything is in core/observability.py; the three functions
+        # it needs are passed rather than looked up, so the wiring is visible
+        # here and the reasoning lives there.
+        #
+        # THE NIGHTLY CHECK SHIPS src/ AND RUNS NO GOLDEN QUESTION. It reads
+        # the registry through graph.amendment_graph — the deterministic half
+        # of the graph, per CLAUDE.md's rule that dates come from the amendment
+        # graph and not from vector similarity — so it needs the same code the
+        # query function runs and none of the eval harness. src/ops/nightly.py
+        # states at length why the full set nightly is neither affordable nor
+        # possible: 4.5% of a NON-ADJUSTABLE daily Opus cap, every night,
+        # before anyone does any work.
+        # ------------------------------------------------------------------
+        nightly = _lambda.Function(
+            self, "NightlyCheckFn",
+            runtime=_lambda.Runtime.PYTHON_3_14,
+            handler="ops.nightly.handler",
+            code=asset_policy.python_source(),
+            timeout=Duration.minutes(5),
+            environment={**common_env,
+                         "SEARCH_ENDPOINT_PARAM": SSM_ENDPOINT_PARAM},
+        )
+        self.registry_table.grant_read_data(nightly)
+        nightly.add_to_role_policy(iam.PolicyStatement(
+            actions=["ssm:GetParameter"],
+            resources=[self.format_arn(
+                service="ssm", resource="parameter",
+                resource_name=SSM_ENDPOINT_PARAM.lstrip("/"))]))
+        # READ ONLY. The nightly check reads EvalPassRate to compute staleness
+        # and emits everything else through EMF on stdout, so it never needs
+        # PutMetricData. Granting write here would put a metric-publishing
+        # capability on an unattended role for no reason — and would make the
+        # numbers on the dashboard forgeable from a second place.
+        nightly.add_to_role_policy(iam.PolicyStatement(
+            actions=["cloudwatch:GetMetricStatistics"], resources=["*"]))
+
+        # No subscription, deliberately — see add_observability's docstring.
+        # An alarm with no action still changes state and still answers "was it
+        # firing last Tuesday", which is what the evidence pack needs. A
+        # fabricated email destination would be a delivery promise nobody has
+        # tested.
+        self.alarm_topic = sns.Topic(self, "AlarmTopic",
+                                     display_name="RegDelta alarms")
+        add_observability(self, query_fn=query_fn, janitor_fn=janitor,
+                          nightly_fn=nightly, alarm_topic=self.alarm_topic)
 
         cdk.CfnOutput(self, "CorpusBucketName", value=self.corpus_bucket.bucket_name)
         cdk.CfnOutput(self, "PollerFnName", value=poller.function_name)

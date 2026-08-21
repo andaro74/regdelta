@@ -1,0 +1,10 @@
+{
+  "engine": "logs:TestMetricFilter \u2014 the same matcher CloudWatch will use",
+  "patterns": {
+    "could_not_act": "{ ($.janitor.status = \"unhandled-state\") || ($.janitor.status = \"unhandled-error\") || ($.janitor.retry_of_failed IS TRUE) }",
+    "delete_requested": "{ $.janitor.status = \"delete-requested\" }"
+  },
+  "specimens": 6,
+  "failures": [],
+  "note": "specimens are the janitor's own return values, two copied from the live M05 teardown, not written to fit the patterns"
+}
