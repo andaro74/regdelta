@@ -127,20 +127,92 @@ deferrals have no authority and M06 does not close.
 
 ---
 
+## The window, run 2026-08-21. Deployed and spent.
+
+The header above ("nothing is deployed, nothing has been spent") describes
+sessions one and two. **This section supersedes it.**
+
+`regdelta-core` deployed; `make up` at **16:37Z**, `make down` at **16:58Z** —
+21 minutes of OCU. Hydration gate passed: 1157 chunks indexed, 1157 in the
+corpus.
+
+### Disposition: KEEP
+
+`milestones/M06/tier-disposition-f651aea.json` (raw report gitignored for size;
+this one is identical with the per-step latency arrays elided).
+
+| rate | AOSS p95 | S3 Vectors p95 | both eligible |
+|---|---|---|---|
+| 10/s | 178.3 ms | 257.2 ms | yes |
+| 25/s | 177.9 ms | 258.7 ms | yes |
+| **50/s** | **185.9 ms** | **281.4 ms** | **dispositive** |
+| 75/s | 587.3 ms | 3304.7 ms | no |
+| 90/s | 418.5 ms | 502.1 ms | no |
+
+n 5996/6000, error rates 0.000667 vs 0.0 — inside the clause's own 5-point
+materiality, so the populations are comparable and the latency disjunct holds.
+Both halves at `f651aea`, one corpus fingerprint `35a293e17117`, configs agree,
+zero failed measurements.
+
+**Neither tier reaches 75 or 90/s from a 2048 MB driver.** Dispatch refusals
+fire and achieved rates collapse to 66–79/s. That is the VANTAGE saturating,
+recorded as a limitation rather than a property of either tier.
+
+**The warmup exclusion earned its place.** AOSS run 0 gave p95 12.7 s and
+16.1 s at 75 and 90/s, with 2,351 refused dispatches and 79 fallbacks; runs 1
+and 2 at the same rates gave 368 ms and 421 ms with none of either. Reported as
+a measurement, run 0 would have told the opposite story.
+
+### Two defects found by instruments built for something else
+
+1. **The response cache had been dead since M05.** `dashboard_traffic.py` asks
+   one question twice and refuses if the second is not a hit. Two misses.
+   QueryFn's state-table grants named `THREAD#*` and `REVIEW#*`; the table has
+   a third prefix, `CACHE#`. Every `/query` paid full model price and reported
+   `cache: "miss"`, which is what a healthy cache says the first time. NOT the
+   golden set — `run_evals.py` sends `no_cache` on every question by design.
+   Evidence in `cache-outage.json`, captured before the fix ended it.
+   **The tests asserted the bug**, both pinned from the same short list the
+   policy came from. Replaced with a test that derives the prefixes from `src/`.
+2. **The dashboard had never rendered.** Three ratio panels carried
+   `MAX([<series>, 1])`, which CloudWatch metric math rejects. Fixing that made
+   them render EMPTY — the second defect the first one hid: EMF publishes
+   `Queries` under the PAIR `(cache, status)` and `BedrockCostUsd` per `model`,
+   so each panel named a dimension combination that is never published. Same
+   for `SearchOCU`/`IndexingOCU`, per `ClientId`. SEARCH fixes all four.
+
+### What it cost, and one number that is not settled
+
+Bedrock $0.20 (3 uncached `/query` at $0.047623 plus embeddings), Lambda
+$0.12, AOSS **$0.39–$0.77**. Opus 23,578 of 2,592,000 tokens — 0.9% of a cap
+that reports `Adjustable: false`.
+
+**The AOSS figure is a range because `OCU_USD_PER_HOUR = 0.242` is ambiguous
+and the panel may be double-counting.** Its docstring says "$0.242/hr **for the
+pair**"; the expression multiplies it by `search + index` OCUs, i.e. treats it
+as per-OCU. AWS list is $0.24 per OCU-hour, which favours the expression and
+makes the docstring wrong — but the M05 measurement it cites ($0.14 for
+34.7 minutes of a two-OCU collection) implies $0.121/OCU-hr, which favours the
+docstring. **Not resolved here and not silently changed**: it is an M05-derived
+constant and Cost Explorer had not posted the day's usage at capture time.
+Settle it from CE and correct one or the other.
+
+The load test drove the collection to **10 search OCUs**, which is why the
+estimate quoted before the window ($0.084, assuming 2) was low by roughly 9×.
+A 90/s load test scales the thing it is testing; price it that way next time.
+
+---
+
 ## What is left
 
-1. **The window.** `make core`, `make up`, the disposition run, one
-   `make smoke`, dashboard screenshot, `make down`. Priced at **≈$0.49** by
-   `make tier-disposition-price` plus the smoke run; ceiling $20 in code, $25
-   for the session.
-2. **The nightly verification artifact** — `pm-spec-reviewer` blocker B8. One
-   free read-only invocation of `NightlyCheckFn`, recorded as
-   `milestones/M06/nightly-verification.json`. Owed before the nightly
-   amendment is acted on.
-3. **Re-run `security-reviewer` and `eng-code-reviewer`** on this session's
-   fix commits before the PR. Both reviews found defects in what the previous
-   review's fixes introduced, so a third pass over the third pass is not
-   ceremony.
+1. **Both amendments are still DRAFTS.** `spec06-disposition-amendment.md` v4
+   and `spec06-nightly-amendment.md`. Without adoption the deferrals have no
+   authority and M06 does not close. **This is the blocker.**
+2. **`eng-code-reviewer` on the whole branch** before the PR, and
+   `security-reviewer` on the commits made AFTER its review of the IAM diff
+   (that review's own two MEDIUMs are taken and in `971123f`).
+3. **Rebase onto `main` once PR #12 lands.** Not before.
+4. **The OCU constant**, above.
 
 ---
 
