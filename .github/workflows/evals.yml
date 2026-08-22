@@ -151,12 +151,41 @@ jobs:
       - run: pip install -r requirements.txt
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_EVAL_ROLE_ARN }}   # OIDC role, read-only + invoke
-          aws-region: us-east-1
+          role-to-assume: ${{ vars.AWS_EVAL_ROLE_ARN }}   # OIDC role, read-only
+          # WAS us-east-1, AGAINST A us-west-2 STACK. Nothing had ever run this
+          # job — `if: vars.EVAL_GATE_ENABLED` has been false since 2026-08-08 —
+          # so the mismatch sat here unexercised, which is this file's own
+          # recurring lesson.
+          #
+          # It is not cosmetic. This step EXPORTS AWS_REGION, and
+          # shared/config.py:5 reads `os.environ.get("AWS_REGION", "us-west-2")`
+          # — so the default that makes everything else work would have been
+          # overridden by the wrong value, and every boto3 client in the job
+          # would have looked in an empty region. The corpus fingerprint's
+          # `table.scan` is the one that matters: it fails, `fingerprint()`
+          # swallows it (`except Exception` by design, see its docstring), and
+          # the scorecard posts `corpus: {"available": false}` while looking
+          # entirely healthy.
+          aws-region: us-west-2
       - name: Run golden set vs staging
         id: evals
         env:
           REGDELTA_API_URL: ${{ vars.STAGING_API_URL }}
+          # WITHOUT THIS THE POSTED SCORECARD IS CORPUS-BLIND, and blind in the
+          # silent direction. `shared.corpus.fingerprint()` returns
+          # `{"available": false, "reason": "REGISTRY_TABLE unset"}` and the card
+          # carries that instead of a documents_sha.
+          #
+          # That fingerprint is the field that ruled corpus drift in or out in
+          # one line when q03 regressed during the M05 window, and M05 recorded
+          # against itself that the one card where q03 first failed was the one
+          # recorded without the environment resolved. A merge gate posting a
+          # comment on every PR is exactly where that must not happen.
+          #
+          # A table NAME, not a secret — but see the note on AWS_EVAL_ROLE_ARN
+          # in docs/governance/branch-protection.md about what a `vars` value
+          # does and does not hide on a public repo.
+          REGISTRY_TABLE: ${{ vars.REGISTRY_TABLE }}
         # NO PIPE. `python ... | tee` made `$?` the exit status of TEE, which
         # always succeeds, so this step reported exit=0 no matter how many
         # golden questions failed and the header's claim above was false. The

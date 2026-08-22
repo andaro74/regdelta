@@ -39,9 +39,13 @@ not. ADMITTED is a standing property of the question set awaiting an SME ruling
 — it is true of six questions today — so gating on it would fail every PR in the
 repo over someone else's open question. See the note above the return statement.
 
-A STALE ADMISSION GATES. An entry matching no recorded answer is the register
-rotting, which is the failure mode an override list has, so it fails the run
-rather than being ignored.
+TWO WAYS THE REGISTER ITSELF FAILS THE RUN. A STALE entry matches no recorded
+answer — the register rotting, which is the failure mode an override list has.
+An UNCITED entry matches one but cites no ruling document a reader could open.
+Both are the register failing to be what it claims, so both gate rather than
+being ignored. A third case, an entry whose question has no recorded answer in
+this run at all, is reported NOT EVALUATED and deliberately does not gate: a
+subset run produces the same condition. ADR-0015 records that as a hole.
 
 FRAGILE WAS UNDIRECTED UNTIL 2026-08-18 and flagged any disagreement, over runs
 pooled across commits. A question that failed, was fixed and now passes was
@@ -98,6 +102,26 @@ def load_admissions() -> list[dict]:
     if not ADMISSIONS.exists():
         return []
     return json.loads(ADMISSIONS.read_text(encoding="utf-8")).get("admissions", [])
+
+
+def cites_ruling(entry: dict) -> bool:
+    """Does this entry point at a ruling document that is actually there?
+
+    THE MECHANISM'S MOST LOAD-BEARING PROPERTY, and until pm-spec-reviewer
+    found it (M07, finding 2) it was not a property at all. `ruling` was read
+    only at print time via `entry.get('ruling')`, so an entry with no ruling
+    key admitted the failure exactly as well as a ruled one and printed
+    "— None". ADR-0015 says the only thing requiring a ruling behind an entry
+    is a convention; that was true, and it is the sentence the whole design
+    rests on. It is a check now.
+
+    An entry that cites nothing, or cites a document that is not in the tree,
+    cannot be falsified by a reader — which is precisely what ADR-0005 says
+    makes a seat ruling sound. So it does not admit anything, and the run
+    fails rather than proceeding on an uncitable override.
+    """
+    ruling = entry.get("ruling")
+    return bool(ruling) and (ROOT / ruling).exists()
 
 
 def admission_for(admissions: list[dict], qid: str, run: dict,
@@ -212,6 +236,7 @@ def main() -> int:
 
     fragile, improved, regressed, admitted, unseen = [], [], [], [], []
     false_fails: list[tuple[str, dict, dict]] = []
+    uncited: list[tuple[str, dict, dict]] = []
     for qid, q in questions.items():
         if args.id and qid not in args.id:
             continue
@@ -233,8 +258,16 @@ def main() -> int:
             entry = admission_for(admissions, qid, run, fails) if fails else None
             if entry is not None:
                 used.append(admissions.index(entry))
-                false_fails.append((qid, run, entry))
-                fails = []
+                # MATCHED, BUT UNUSABLE. An entry that cites no ruling, or
+                # cites one that is not in the tree, is marked used so it is
+                # not double-reported as stale — and then does NOT admit. The
+                # failure stands and the run gates below.
+                if not cites_ruling(entry):
+                    uncited.append((qid, run, entry))
+                    entry = None
+                else:
+                    false_fails.append((qid, run, entry))
+                    fails = []
             verdicts.append((run, not fails, fails, entry))
 
         agent = [v for v in verdicts if v[0]["mode"] != "naive"]
@@ -353,15 +386,22 @@ def main() -> int:
               f"answer changed, or it now fails for another reason — in every "
               f"case the entry no longer describes anything and must be "
               f"re-ruled or removed.")
+    for qid, run, entry in uncited:
+        print(f"UNCITED ADMISSION  {qid} at {run['sha'][:7]}: matches a failing "
+              f"answer but cites {entry.get('ruling')!r}, which is not in the "
+              f"tree. An override a reader cannot falsify is not a seat ruling "
+              f"(ADR-0005). NOT admitted — the failure below stands.")
     for entry in unevaluated:
         print(f"NOT EVALUATED    {entry.get('question')} at {entry.get('sha')}: "
               f"no recorded answer for that question in this run, so the "
-              f"admission was neither used nor judged. Reported, not gated.")
+              f"admission was neither used nor judged. Reported, not gated — "
+              f"a subset run (--id, a fixture) produces the same condition. "
+              f"ADR-0015 records this as a hole.")
     if unseen:
         print(f"NO RECORDED ANSWER  {', '.join(sorted(unseen))} — "
               f"nothing to replay; these rest on hand-written specimens alone.")
     if not (fragile or improved or regressed or admitted or false_fails
-            or stale or unevaluated):
+            or stale or unevaluated or uncited):
         print("No question changes its verdict across the answers on file.")
 
     # WHAT GATES AND WHAT ONLY REPORTS.
@@ -386,7 +426,10 @@ def main() -> int:
     # into a general admit path. An entry that matches nothing is that rot,
     # observable, and it can only be caused by someone editing the register or
     # the history — never by an ordinary change. So it fails the run.
-    if fragile or regressed or stale:
+    # An UNCITED admission gates for a different reason than a stale one: it
+    # describes something real and simply has no ruling a reader could check.
+    # Both are the register failing to be what it claims, so both fail the run.
+    if fragile or regressed or stale or uncited:
         return 1
     if admitted and args.strict:
         return 1

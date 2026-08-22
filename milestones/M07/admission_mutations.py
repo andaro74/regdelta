@@ -82,6 +82,24 @@ CASES = [
 
     ("a second, unruled entry alongside the good one",
      [copy.deepcopy(GOOD), mutate(sha="deadbee")[0]], True, "STALE ADMISSION"),
+
+    # ---- Added after pm-spec-reviewer, M07 findings 1 and 2. Both were gaps
+    # in this set, and finding 2 was a gap in the mechanism: `ruling` was read
+    # only at print time, so an entry citing nothing admitted just as well as
+    # a ruled one and printed "— None".
+    ("no ruling reference — an override a reader cannot falsify",
+     mutate(ruling=""), True, "UNCITED ADMISSION"),
+
+    ("ruling cites a document that is not in the tree",
+     mutate(ruling="milestones/M07/does-not-exist.md"), True,
+     "UNCITED ADMISSION"),
+
+    # NOT a refusal: this PINS THE DOCUMENTED HOLE rather than closing it. An
+    # entry whose question has no recorded answer is never judged, because a
+    # subset run produces the identical condition. It must be reported and
+    # must NOT gate, and the good entry beside it must still work.
+    ("entry for a question with no recorded cards — the documented hole",
+     [copy.deepcopy(GOOD), mutate(question="q99")[0]], False, "NOT EVALUATED"),
 ]
 
 print(f"{'mutation':62} {'exit':4} {'gates?':7} marker")

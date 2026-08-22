@@ -106,10 +106,31 @@ def test_the_real_register_parses_and_every_entry_is_complete():
 def test_every_entry_cites_a_ruling_document_that_exists():
     """ADR-0005: what makes a seat ruling sound is a source a reader can
     falsify. An entry pointing at a document that is not there is an assertion
-    with a citation-shaped hole in it."""
+    with a citation-shaped hole in it.
+
+    `replay_history.cites_ruling` now enforces this at runtime too, so this
+    test is the fast, named failure rather than the only line of defence."""
     for e in json.loads(REGISTER.read_text(encoding="utf-8"))["admissions"]:
         assert (ROOT / e["ruling"]).exists(), \
             f"{e['question']} at {e['sha']} cites {e['ruling']}, which is absent"
+        assert replay_history.cites_ruling(e)
+
+
+def test_m07_adds_exactly_one_entry():
+    """SPEC/07 Out of scope, and the SME ruling it comes from
+    (milestones/M07/q03-rulings.md §A.4): "one entry (q03 at 1f46b92) is what
+    the measurement covers, and I would not open it wider."
+
+    A second entry is a new seat ruling, not an application of this one. This
+    test is what stops the register growing by habit — it fails on the second
+    entry and sends whoever added it back to a seat."""
+    doc = json.loads(REGISTER.read_text(encoding="utf-8"))
+    assert len(doc["admissions"]) == 1, (
+        "the register has grown past the one observation M07's SME ruling "
+        "covers. A new entry needs its own ruling and its own line in SPEC/07 "
+        "Out of scope — not a passing edit to this test.")
+    only = doc["admissions"][0]
+    assert (only["question"], only["sha"]) == ("q03", "1f46b92")
 
 
 def test_the_gate_is_green_only_because_of_the_register():
@@ -202,6 +223,40 @@ def test_an_admission_cannot_suppress_a_passing_answer(tmp_path, monkeypatch):
 # --------------------------------------------------------------------------
 # Rot, and the scoping bug that the first version of the rot check caused
 # --------------------------------------------------------------------------
+
+def test_an_entry_citing_no_ruling_does_not_admit(tmp_path, monkeypatch):
+    """FOUND BY pm-spec-reviewer, M07 finding 2, and it was a hole in the
+    mechanism rather than only in the prose. `ruling` was read at print time
+    only, so an entry with no ruling admitted the failure exactly as well as a
+    ruled one and printed "— None". SPEC/07 and ADR-0015 both asserted "every
+    admission cites a ruling" as a fact while nothing required it.
+
+    ADR-0005: what makes a seat ruling sound is a source a reader can falsify.
+    An override citing nothing is not a ruling, so it admits nothing."""
+    fragile_history(tmp_path)
+    rc, out = replay(tmp_path, monkeypatch, [entry(ruling="")])
+    assert rc == 1
+    assert "UNCITED ADMISSION" in out
+    assert "FALSE FAIL" not in out
+    assert "FRAGILE" in out, "the failure it tried to admit must still stand"
+
+
+def test_an_entry_citing_an_absent_document_does_not_admit(tmp_path, monkeypatch):
+    """A path that does not resolve is the same defect with a longer string."""
+    fragile_history(tmp_path)
+    rc, out = replay(tmp_path, monkeypatch,
+                     [entry(ruling="milestones/M07/does-not-exist.md")])
+    assert rc == 1
+    assert "UNCITED ADMISSION" in out
+
+
+def test_an_uncited_entry_is_not_also_reported_stale(tmp_path, monkeypatch):
+    """It matched an answer; it is unusable for a different reason. Reporting
+    it twice under two names would describe one defect as two."""
+    fragile_history(tmp_path)
+    _, out = replay(tmp_path, monkeypatch, [entry(ruling="")])
+    assert "STALE ADMISSION" not in out
+
 
 def test_a_stale_entry_gates(tmp_path, monkeypatch):
     """The register paying for itself. An entry that describes nothing is the
