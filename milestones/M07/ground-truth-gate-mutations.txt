@@ -1,0 +1,17 @@
+attempt                                                        want    got     
+----------------------------------------------------------------------------------------
+edit ground truth, cite nothing — Door 1 as filmed             BLOCK   BLOCK   
+write the ruling in the same commit as the change              BLOCK   BLOCK   
+write the ruling in an EARLIER commit of the SAME branch       BLOCK   BLOCK   
+cite a ruling that was never written at all                    BLOCK   BLOCK   
+cite a real file on main that is not a document                BLOCK   BLOCK   
+cite an absolute path outside the repo                         BLOCK   BLOCK   
+traverse out of the repo and back to something that exists     BLOCK   BLOCK   
+hide the edit behind a second, properly-ruled commit           allow   allow   
+a register entry citing a ruling written in the same PR (M2)   BLOCK   BLOCK   
+corrupt the register so it parses as 'no entries'              BLOCK   BLOCK   
+change scenarios.json — product scope, same treatment          BLOCK   BLOCK   
+the intended two-PR flow: ruling on main first                 allow   allow   
+an ordinary change touching nothing SME-owned                  allow   allow   
+
+0 survivor(s) out of 13

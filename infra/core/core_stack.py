@@ -995,6 +995,100 @@ class RegDeltaCoreStack(cdk.Stack):
             actions=["iam:DeleteRolePolicy", "iam:GetRolePolicy"],
             resources=[load_driver.role.role_arn]))
 
+        # ------------------------------------------ the eval gate's CI role
+        # SPEC/07 item 2. Assumed by .github/workflows/evals.yml's `golden-set`
+        # job over GitHub OIDC, so no long-lived key exists to leak.
+        #
+        # THE PROVIDER IS REFERENCED, NOT CREATED. One already exists in this
+        # account (`aws iam list-open-id-connect-providers`), and IAM allows
+        # exactly one per URL — so `iam.OpenIdConnectProvider(...)` here would
+        # fail the deploy with EntityAlreadyExists, on the stack that holds the
+        # corpus. Checked before writing rather than after deploying.
+        github_oidc = iam.OpenIdConnectProvider.from_open_id_connect_provider_arn(
+            self, "GitHubOidc",
+            f"arn:aws:iam::{self.account}:oidc-provider/"
+            f"token.actions.githubusercontent.com")
+
+        ci_eval = iam.Role(
+            self, "CiEvalRole",
+            role_name="regdelta-ci-eval",
+            description="GitHub Actions eval gate. Reads the registry table for "
+                        "the corpus fingerprint. Nothing else.",
+            max_session_duration=Duration.hours(1),
+            assumed_by=iam.WebIdentityPrincipal(
+                github_oidc.open_id_connect_provider_arn, {
+                    "StringEquals": {
+                        # WITHOUT `aud`, ANY GitHub repository IN THE WORLD can
+                        # assume this role. The audience claim is what binds the
+                        # token to STS rather than to some other consumer, and
+                        # it is the single most common omission in a hand-written
+                        # GitHub OIDC trust policy.
+                        "token.actions.githubusercontent.com:aud":
+                            "sts.amazonaws.com",
+                        # SCOPED TO THE EVENT, not just the repo.
+                        # `repo:andaro74/regdelta:*` — the shape most examples
+                        # use — would let ANY ref in this repo assume it,
+                        # including a branch pushed by anyone who ever gets
+                        # write access. evals.yml triggers on `pull_request`
+                        # alone, and the sub claim for that event is exactly
+                        # this string.
+                        #
+                        # Consequence, stated because it will look like a bug
+                        # one day: adding a `push:` or `schedule:` trigger to
+                        # that workflow makes this role stop working, with an
+                        # AccessDenied at configure-aws-credentials. That is the
+                        # intended direction — a new trigger is a new thing to
+                        # authorise, not something to inherit.
+                        "token.actions.githubusercontent.com:sub":
+                            "repo:andaro74/regdelta:pull_request",
+                        # THE sub CLAIM IS NAME-BOUND; THIS ONE IS NOT.
+                        # `andaro74/regdelta` is a personal-account path. If the
+                        # account is renamed or the repo deleted, whoever
+                        # registers that owner/name mints tokens with a
+                        # byte-identical `sub` and `aud` and assumes this role.
+                        # The numeric id cannot be re-registered.
+                        # security-reviewer, M07 L1.
+                        "token.actions.githubusercontent.com:repository_id":
+                            "1322516232",
+                    },
+                    # `job_workflow_ref` WAS CONSIDERED AND DEFERRED, not
+                    # missed. It would stop a future workflow in this repo
+                    # inheriting the role silently, and it needs `StringLike`
+                    # on a claim whose exact rendering
+                    # (`OWNER/REPO/.github/workflows/FILE@REF`) this repo has
+                    # never observed — the role has never been assumed. Two
+                    # unverified claim pins on the same first run make an
+                    # AccessDenied ambiguous about which one was wrong, and
+                    # single-variable change is the discipline ADR-0005 was
+                    # written to enforce. Add it after the first successful
+                    # assumption, when the real claim can be read off the run.
+                }),
+        )
+        # `dynamodb:Scan` ONLY, and on the table ARN only.
+        #
+        # NOT `grant_read_data`, which would add GetItem, BatchGetItem, Query,
+        # ConditionCheckItem and DescribeTable, and would extend to every index.
+        # `shared.corpus.fingerprint()` makes one kind of call — `table.scan` —
+        # and `test_the_ci_eval_grant_matches_what_the_fingerprint_calls` reads
+        # that off the code rather than off this line.
+        #
+        # NOTHING IS GRANTED FOR THE API ITSELF, and that is not an omission:
+        # the HttpApi below has no authorizer and run_evals.ask() sends an
+        # unsigned POST, so invoking it needs no IAM identity at all. SPEC/07
+        # item 2 says so in the spec after the PM-seat amendment of 2026-08-21
+        # (milestones/M07/spec07-oidc-amendment.md), because a reader who
+        # expects an invoke permission and finds none should learn why.
+        ci_eval.add_to_policy(iam.PolicyStatement(
+            sid="ReadRegistryForCorpusFingerprint",
+            actions=["dynamodb:Scan"],
+            resources=[self.registry_table.table_arn]))
+
+        cdk.CfnOutput(self, "CiEvalRoleArn", value=ci_eval.role_arn,
+                      description="Set as the AWS_EVAL_ROLE_ARN Actions variable")
+        cdk.CfnOutput(self, "RegistryTableName",
+                      value=self.registry_table.table_name,
+                      description="Set as the REGISTRY_TABLE Actions variable")
+
         # No subscription, deliberately — see add_observability's docstring.
         # An alarm with no action still changes state and still answers "was it
         # firing last Tuesday", which is what the evidence pack needs. A

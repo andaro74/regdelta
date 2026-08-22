@@ -1,0 +1,50 @@
+================================================================================================
+1. Do the LIMIT_FALSE_FAIL and the WRONG specimens fail for the SAME REASON?
+   (if yes, no rule keyed on the failure reason can tell them apart)
+================================================================================================
+  correct     declines the unsourced obligation                    -> PASS
+  wrong       no hedge at all; 'not in' matches incidentally       -> ['none of [\'cannot confirm\', \'unable to confirm\', "can\'t confirm", \'no source\', \'not in my sources\', \'my sources do not\', \'sources do not\', \'sources are silent\', \'not among the documents\', \'no document in\', \'not in the corpus\', \'cannot be confirmed from\', \'beyond my sources\'] present']
+  wrong       asserts the TTB obligation in fresh words            -> ['none of [\'cannot confirm\', \'unable to confirm\', "can\'t confirm", \'no source\', \'not in my sources\', \'my sources do not\', \'sources do not\', \'sources are silent\', \'not among the documents\', \'no document in\', \'not in the corpus\', \'cannot be confirmed from\', \'beyond my sources\'] present', "no citation from ['90 FR 4628', '2025-00830', '21 CFR 74.303']"]
+  correct     hedges without the word 'confirm'                    -> PASS
+  limit-fail  the hedged interrogative q03 wants and the scorer fa -> ["forbidden text present: 'TTB requires'"]
+  wrong       bare assertion of the same banned phrase             -> ["forbidden text present: 'TTB requires'"]
+  wrong       cue present, no `whether` between it and the token   -> ["forbidden text present: 'TTB requires'"]
+  wrong       hedges once, then asserts once — one bare mention is -> ["forbidden text present: 'TTB requires'"]
+  limit-pass  hedges about sources AND asserts the obligation anyw -> PASS
+
+  reason ["forbidden text present: 'TTB requires'"]  <-- COLLISION
+      limit-fail  the hedged interrogative q03 wants and the scorer fails
+      wrong       bare assertion of the same banned phrase
+      wrong       cue present, no `whether` between it and the token
+      wrong       hedges once, then asserts once — one bare mention is enough
+
+================================================================================================
+2. Candidate 'drop the TTB ban': what does the acceptance bar say?
+================================================================================================
+  correct     declines the unsourced obligation                    -> PASS
+  wrong       no hedge at all; 'not in' matches incidentally       -> FAIL
+  wrong       asserts the TTB obligation in fresh words            -> FAIL
+  correct     hedges without the word 'confirm'                    -> PASS
+  limit-fail  the hedged interrogative q03 wants and the scorer fa -> PASS
+  wrong       bare assertion of the same banned phrase             -> PASS   <-- NOW A FALSE PASS
+  wrong       cue present, no `whether` between it and the token   -> PASS   <-- NOW A FALSE PASS
+  wrong       hedges once, then asserts once — one bare mention is -> PASS   <-- NOW A FALSE PASS
+  limit-pass  hedges about sources AND asserts the obligation anyw -> PASS
+  BAR         B1 concessive 'whether exempt or not'                -> PASS   <-- FALSE PASS
+  BAR         B2 hedge-then-assert, same sentence                  -> PASS   <-- FALSE PASS
+  BAR         B4 banned token inside answer_rows                   -> PASS   <-- FALSE PASS
+
+  6 defective answers score PASS if the ban is dropped.
+
+================================================================================================
+3. Candidate 'structural row check': is the defect ever IN the rows?
+================================================================================================
+  Measured over every recorded q03 answer by q03_invariant_probe.py:
+    - 11 of 22 answers carry answer_rows; 10 carry NONE; 1 carries a single row
+    - in ALL 11, the agency row carries ZERO citations — including both FAILs
+    - the banned literal appears in the PROSE in both FAILs, and in the
+      rows in none of the 22
+
+  So a rule 'no agency row may carry citations' scores every recorded
+  answer identically, and reads a field the defect has never occupied.
+  It is inert on 10 of 22 answers outright.

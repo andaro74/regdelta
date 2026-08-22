@@ -1,0 +1,26 @@
+card                                   mode   pass  rows agency-rows(cited/uncited) banned-literal-in
+----------------------------------------------------------------------------------------------------------------------
+1f46b92-aoss-full.json                 agent  True  2 rows cited=0 uncited=1          -
+1f46b92-s3vectors-full.json            agent  False 2 rows cited=0 uncited=1          prose
+1fa942a-aoss-full.json                 agent  True  2 rows cited=0 uncited=1          -
+1fa942a-s3vectors-full.json            agent  True  2 rows cited=0 uncited=1          -
+2cea737-naive-full.json                naive  False NO ROWS cited=0 uncited=0          -
+2cea737-s3vectors-full.json            agent  True  2 rows cited=0 uncited=1          -
+4296f04-s3vectors-full.json            agent  True  2 rows cited=0 uncited=1          -
+42e9010-s3vectors-full.json            agent  True  NO ROWS cited=0 uncited=0          -
+585a95f-s3vectors-full.json            agent  True  NO ROWS cited=0 uncited=0          -
+6fad8f6-naive-full.json                naive  False NO ROWS cited=0 uncited=0          -
+74822d4-naive-full.json                naive  False NO ROWS cited=0 uncited=0          -
+74822d4-s3vectors-full.json            agent  True  2 rows cited=0 uncited=1          -
+7f012b8-naive-full.json                naive  True  NO ROWS cited=0 uncited=0          -
+95235d9-aoss-full.json                 agent  True  2 rows cited=0 uncited=1          -
+95235d9-s3vectors-full.json            agent  True  2 rows cited=0 uncited=1          -
+a7bd28c-s3vectors-full.json            agent  True  1 rows cited=0 uncited=0          -
+ac839ca-naive-full.json                naive  False NO ROWS cited=0 uncited=0          -
+ac839ca-s3vectors-full.json            agent  True  NO ROWS cited=0 uncited=0          -
+e26d8ef-s3vectors-full.json            agent  True  2 rows cited=0 uncited=1          -
+f3f00d6-s3vectors-full.json            agent  True  NO ROWS cited=0 uncited=0          -
+f95e716-s3vectors-full.json            agent  True  NO ROWS cited=0 uncited=0          -
+1f46b92-aoss-full.run1.json            agent  False 2 rows cited=0 uncited=1          prose
+
+row-count shapes observed: {'2 rows': 11, 'NO ROWS': 10, '1 rows': 1}

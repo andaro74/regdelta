@@ -1,0 +1,69 @@
+# The SME seat, as a required check rather than as a review.
+#
+# Door 1 of docs/governance/demo-script.md. A pull request that changes what
+# "correct" means must cite a ruling that is ALREADY on main — so the ruling
+# and the change cannot arrive together, and the seat is exercised as a
+# separate recorded act.
+#
+# WHY NOT `require_code_owner_review`. ADR-0005: GitHub does not let an author
+# approve their own PR and this repo has one collaborator, so a code-owner
+# requirement does not gate, it deadlocks — PR #1 sat BLOCKED for four days
+# proving it. Its extension goes further: "The signature is theater. The seat
+# is not." A second account buys the theater back; it is still the same person
+# clicking approve, and ADR-0005 rejected it in those words.
+#
+# A check does what a review cannot here: it binds the repository owner once
+# the admin bypass is removed, it cannot be satisfied from inside the pull
+# request it is blocking, and what it demands is EVIDENCE a reader can open
+# rather than a signature.
+#
+# Reasoning and the exit codes live in evals/check_ground_truth_ruling.py, not
+# here, so the rule can be run and tested on a laptop without a runner.
+name: ground-truth-gate
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # THE JOB NAME IS THE REQUIRED-CHECK CONTEXT, and it is the bare name.
+  # `ground-truth-gate / ruling-cited` is the UI's DISPLAY format — workflow
+  # name, slash, job name — and a required check written that way matches
+  # nothing and sits pending forever. That is what deadlocked PR #1 alongside
+  # the review requirement, isolated by a single-variable A/B/A in PR #4.
+  # ADR-0005. Renaming this job silently un-gates the branch.
+  ruling-cited:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # NO `if:` CONDITION, DELIBERATELY. A required check that does not run
+    # leaves the PR pending rather than passing, and whether a SKIPPED required
+    # check blocks is a question ADR-0005 left open at M04 and this repo has
+    # never answered. So the job always runs and reports; when the diff touches
+    # no SME-owned path it passes and says so. The gate must not depend on an
+    # unanswered question about GitHub's own semantics.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # FULL HISTORY, and this is load-bearing. The default is depth 1, and
+          # the whole mechanism is `git cat-file -e <base>:<ruling>` — asking
+          # whether the ruling existed BEFORE this pull request. Without the
+          # base commit in the clone that question cannot be asked at all, and
+          # a check that cannot ask its own question would fail every PR for a
+          # reason unrelated to the seat.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.14" }
+      # No pip install: the script is stdlib plus git. Deliberate — this gate
+      # must be the cheapest and least breakable thing in the repo, because it
+      # runs on every pull request and blocks all of them.
+      - name: The ruling must already be on main
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python evals/check_ground_truth_ruling.py \
+            --base "$BASE_SHA" --head "$HEAD_SHA"

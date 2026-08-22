@@ -1,0 +1,10 @@
+mutation                                                           applied  killed by named test
+--------------------------------------------------------------------------------------------------------
+aud condition dropped — any GitHub repo in the world may assume it yes      test_the_audience_claim_is_pinned_to_sts
+sub widened to repo:andaro74/regdelta:* — any ref in this repo     yes      test_the_subject_claim_is_scoped_to_the_event_not_just_the_repo
+the explicit statement replaced by grant_read_data                 yes      test_it_holds_exactly_one_statement_granting_exactly_one_action
+repository_id dropped — the sub claim alone survives a rename (L1) yes      test_the_repository_is_pinned_by_id_and_not_only_by_name
+an execute-api grant added to 'fix' the role                       yes      test_it_grants_nothing_for_the_api
+
+core_stack.py restored byte-for-byte: True
+0 survivor(s) out of 5

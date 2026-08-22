@@ -1,0 +1,15 @@
+{
+    "RoleName": "regdelta-ci-eval",
+    "PolicyName": "CiEvalRoleDefaultPolicyA7352372",
+    "PolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Action": "dynamodb:Scan",
+                "Resource": "arn:aws:dynamodb:us-west-2:581208540944:table/regdelta-core-RegistryTableF2430F90-2FKHSM738R7Y",
+                "Effect": "Allow",
+                "Sid": "ReadRegistryForCorpusFingerprint"
+            }
+        ]
+    }
+}

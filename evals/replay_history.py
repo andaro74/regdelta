@@ -29,11 +29,23 @@ What it reports, and why each matters:
             baseline (ADR-0002); a question it can satisfy is measuring less
             than it claims.
 
+  FALSE FAIL  a recorded answer the SME seat examined individually and ruled a
+            false fail (evals/admitted_false_fails.json). Reported on every
+            run, counted, and not gated. See the note above `admission_for`.
+
 FRAGILE and REGRESSED exit non-zero; IMPROVED and ADMITTED do not, the latter
 unless --strict. The first two are defects a change either introduces or does
 not. ADMITTED is a standing property of the question set awaiting an SME ruling
 — it is true of six questions today — so gating on it would fail every PR in the
 repo over someone else's open question. See the note above the return statement.
+
+TWO WAYS THE REGISTER ITSELF FAILS THE RUN. A STALE entry matches no recorded
+answer — the register rotting, which is the failure mode an override list has.
+An UNCITED entry matches one but cites no ruling document a reader could open.
+Both are the register failing to be what it claims, so both gate rather than
+being ignored. A third case, an entry whose question has no recorded answer in
+this run at all, is reported NOT EVALUATED and deliberately does not gate: a
+subset run produces the same condition. ADR-0015 records that as a hole.
 
 FRAGILE WAS UNDIRECTED UNTIL 2026-08-18 and flagged any disagreement, over runs
 pooled across commits. A question that failed, was fixed and now passes was
@@ -45,13 +57,15 @@ about TIME, so cards are ordered by their `at` rather than by filename.
 Nothing here edits ground truth. A finding is an argument for a ruling, and
 under CLAUDE.md that ruling is the SME seat's.
 
-    python evals/replay_history.py            # what CI runs
-    python evals/replay_history.py --strict   # ADMITTED gates too
+    python evals/replay_history.py                  # what CI runs
+    python evals/replay_history.py --strict         # ADMITTED gates too
+    python evals/replay_history.py --no-admissions  # the true state, unadmitted
     python evals/replay_history.py --id q05 -v
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import itertools
 import json
 import sys
@@ -59,11 +73,99 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from run_evals import check
+from ruling_paths import resolves_in_tree
+from run_evals import check, flatten_answer
 
 ROOT = Path(__file__).resolve().parent.parent
 HISTORY = ROOT / "evals" / "history"
 GOLDEN = ROOT / "evals" / "golden_questions.json"
+ADMISSIONS = ROOT / "evals" / "admitted_false_fails.json"
+
+
+def scored_digest(resp: dict) -> str:
+    """Digest of the exact text `check()` scores, and nothing else.
+
+    Over `flatten_answer(resp)` rather than over `resp`, which also carries
+    `cache`, `tier` and `fallback_reason` — those describe how the answer was
+    obtained, not what was scored. An admission keyed on them would break when
+    the same answer came back off a different tier, which is not a change in
+    the artifact the seat ruled on.
+    """
+    return hashlib.sha256(flatten_answer(resp).encode("utf-8")).hexdigest()
+
+
+def load_admissions() -> list[dict]:
+    """The SME seat's per-observation false-fail rulings.
+
+    Absent file means an empty register, not an error: a checkout without one
+    should gate MORE, never less.
+    """
+    if not ADMISSIONS.exists():
+        return []
+    return json.loads(ADMISSIONS.read_text(encoding="utf-8")).get("admissions", [])
+
+
+def cites_ruling(entry: dict) -> bool:
+    """Does this entry point at a ruling document that is actually there?
+
+    THE MECHANISM'S MOST LOAD-BEARING PROPERTY, and until pm-spec-reviewer
+    found it (M07, finding 2) it was not a property at all. `ruling` was read
+    only at print time via `entry.get('ruling')`, so an entry with no ruling
+    key admitted the failure exactly as well as a ruled one and printed
+    "— None". ADR-0015 says the only thing requiring a ruling behind an entry
+    is a convention; that was true, and it is the sentence the whole design
+    rests on. It is a check now.
+
+    An entry that cites nothing, or cites a document that is not in the tree,
+    cannot be falsified by a reader — which is precisely what ADR-0005 says
+    makes a seat ruling sound. So it does not admit anything, and the run
+    fails rather than proceeding on an uncitable override.
+
+    THE FIRST VERSION WAS `(ROOT / ruling).exists()` AND WAS BYPASSABLE BY ANY
+    ABSOLUTE PATH — `pathlib` lets an absolute right-hand operand replace the
+    root entirely, so `ROOT / "/etc/passwd"` is `/etc/passwd`, which exists on
+    the runner. security-reviewer, M07 M1.
+
+    The rule moved to `ruling_paths` when `check_ground_truth_ruling` had to
+    make the identical decision: two copies of a security check are two chances
+    to get it wrong and one place anyone remembers to fix.
+    """
+    return resolves_in_tree(entry.get("ruling"), ROOT)
+
+
+def admission_for(admissions: list[dict], qid: str, run: dict,
+                  fails: list[str]) -> dict | None:
+    """The register entry admitting THIS failure of THIS recorded answer, if any.
+
+    Four things must match, and each one is load-bearing:
+
+      question + sha   the observation the seat named
+      scored_sha256    the answer itself. A different answer — including a
+                       paraphrase, which is the whole difficulty with q03 —
+                       has a different digest and is NOT admitted. This is
+                       what keeps FRAGILE live on new non-determinism, and it
+                       is the difference between this and the general admit
+                       path M05 §11 refused: an entry names an artifact, not
+                       a rule, so it cannot generalise to a future answer.
+      admits_fails     the failure reasons, EXACTLY and in order. If the same
+                       recorded answer starts failing for a different or an
+                       additional reason — a token added to the golden set, a
+                       new check kind — the entry does not apply and the gate
+                       fires. An admission cannot silence a defect it was not
+                       written for.
+
+    Never consulted for a passing answer: the caller only asks when `fails` is
+    non-empty, so this can suppress a FAIL and can never manufacture one.
+    """
+    for entry in admissions:
+        if entry.get("question") != qid or entry.get("sha") != run["sha"]:
+            continue
+        if entry.get("admits_fails") != fails:
+            continue
+        if entry.get("scored_sha256") != scored_digest(run["resp"]):
+            continue
+        return entry
+    return None
 
 
 def recorded() -> dict[str, list[dict]]:
@@ -122,6 +224,10 @@ def main() -> int:
                     help="also fail on ADMITTED (a naive-control answer passing). "
                          "Off by default: that is a standing SME-seat question about "
                          "the question set, not a defect a given change introduced.")
+    ap.add_argument("--no-admissions", action="store_true",
+                    help="ignore evals/admitted_false_fails.json and report the "
+                         "unadmitted state. The audit run: what the gate would say "
+                         "if no seat had ruled on anything.")
     args = ap.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -133,7 +239,13 @@ def main() -> int:
         print("no recorded answers yet — cards carry them only from aa79ec5 onward.")
         return 0
 
+    admissions = [] if args.no_admissions else load_admissions()
+    used: list[int] = []
+    examined: set[str] = set()
+
     fragile, improved, regressed, admitted, unseen = [], [], [], [], []
+    false_fails: list[tuple[str, dict, dict]] = []
+    uncited: list[tuple[str, dict, dict]] = []
     for qid, q in questions.items():
         if args.id and qid not in args.id:
             continue
@@ -141,14 +253,34 @@ def main() -> int:
         if not runs:
             unseen.append(qid)
             continue
+        examined.add(qid)
 
         verdicts = []
         for run in runs:
             fails = check(q, run["resp"])
-            verdicts.append((run, not fails, fails))
+            # THE SEAT'S RULING IS APPLIED HERE AND NOWHERE ELSE. Only after
+            # check() has scored the answer, and only to a verdict that is
+            # already FAIL — so the register can subtract a failure and can
+            # never add or preserve a pass. run_evals.py is untouched, so
+            # `make evals` still scores the answer as failing and the live
+            # scorecard still says so. This is the merge gate, not the scorer.
+            entry = admission_for(admissions, qid, run, fails) if fails else None
+            if entry is not None:
+                used.append(admissions.index(entry))
+                # MATCHED, BUT UNUSABLE. An entry that cites no ruling, or
+                # cites one that is not in the tree, is marked used so it is
+                # not double-reported as stale — and then does NOT admit. The
+                # failure stands and the run gates below.
+                if not cites_ruling(entry):
+                    uncited.append((qid, run, entry))
+                    entry = None
+                else:
+                    false_fails.append((qid, run, entry))
+                    fails = []
+            verdicts.append((run, not fails, fails, entry))
 
-        agent = [(r, ok, f) for r, ok, f in verdicts if r["mode"] != "naive"]
-        control = [(r, ok, f) for r, ok, f in verdicts if r["mode"] == "naive"]
+        agent = [v for v in verdicts if v[0]["mode"] != "naive"]
+        control = [v for v in verdicts if v[0]["mode"] == "naive"]
 
         # DIRECTIONAL, and that is a ruling, not a refinement.
         #
@@ -171,17 +303,20 @@ def main() -> int:
         #
         # Ordering is by `at`, so "went pass -> fail" is a claim about time.
         # See recorded(): it used to sort by filename, i.e. by sha.
-        verdicts_in_time = [ok for _, ok, _ in agent]
+        verdicts_in_time = [ok for _, ok, _, _ in agent]
         went_bad = any(prev and not cur
                        for prev, cur in itertools.pairwise(verdicts_in_time))
         if went_bad:
             fragile.append((qid, agent))
         elif len(set(verdicts_in_time)) > 1:
             improved.append((qid, agent))
-        for run, ok, fails in agent:
+        # An admitted observation is not REGRESSED either, and that follows
+        # rather than being decided separately: the seat ruled the answer was
+        # never wrong, so it did not regress against a question it still meets.
+        for run, ok, fails, _ in agent:
             if run["recorded_pass"] and not ok:
                 regressed.append((qid, run, fails))
-        for run, ok, _ in control:
+        for run, ok, _, _ in control:
             if ok:
                 admitted.append((qid, run))
 
@@ -190,19 +325,26 @@ def main() -> int:
             mark = "!!"
         elif any(qid == i[0] for i in improved):
             mark = "++"
+        # An admitted run prints ADMIT, never PASS. It did not pass; a seat
+        # ruled its failure was not evidence of anything, and a reader
+        # scanning this grid has to be able to see the difference.
         print(f" {mark} {qid}  " + " ".join(
-            f"{r['sha'][:7]}:{r['mode'][:5]}={'PASS' if ok else 'FAIL'}"
-            for r, ok, _ in verdicts))
+            f"{r['sha'][:7]}:{r['mode'][:5]}="
+            f"{'ADMIT' if e is not None else 'PASS' if ok else 'FAIL'}"
+            for r, ok, _, e in verdicts))
         if args.verbose:
-            for run, _ok, fails in verdicts:
+            for run, _ok, fails, entry in verdicts:
                 for f in fails:
                     print(f"        {run['sha'][:7]} {run['mode']}: {f}")
+                if entry is not None:
+                    print(f"        {run['sha'][:7]} {run['mode']}: ADMITTED "
+                          f"{entry['admits_fails']} — {entry.get('ruling')}")
 
     print("\n" + "-" * 74)
     for qid, runs in fragile:
         print(f"FRAGILE   {qid}: agent answers disagree across runs — "
               f"{' '.join(f'{r[0]['sha'][:7]}={'PASS' if r[1] else 'FAIL'}' for r in runs)}")
-        for run, ok, fails in runs:
+        for run, ok, fails, _ in runs:
             if not ok:
                 print(f"          {run['sha'][:7]} failed on: {fails[0]}")
     for qid, runs in improved:
@@ -216,10 +358,59 @@ def main() -> int:
     for qid, run in admitted:
         print(f"ADMITTED  {qid}: the NAIVE control's answer at {run['sha'][:7]} "
               f"passes. ADR-0002 makes that a question worth re-reading.")
+    # PRINTED EVERY RUN, never folded into a count elsewhere. The register's
+    # whole defence is that it is visible; a suppression a reader has to go
+    # looking for is the thing M05 §11 refused.
+    for qid, run, entry in false_fails:
+        print(f"FALSE FAIL {qid}: the answer at {run['sha'][:7]} fails on "
+              f"{entry['admits_fails'][0]!r}, and the SME seat ruled that a "
+              f"false fail on {entry.get('ruled_at')}.")
+        print(f"           NOT a defect this change introduced, and NOT fixed — "
+              f"see {entry.get('ruling')}.")
+    # STALENESS IS ONLY A CLAIM ABOUT QUESTIONS THIS RUN ACTUALLY EXAMINED.
+    #
+    # The first version compared `used` against the whole register, which made
+    # `--id q05` report q03's entry as stale and turned the gate red on a
+    # scoping flag. Two synthetic-history tests failed the same way. Neither is
+    # register rot: the entry describes an observation the run never looked at.
+    #
+    # So an entry is judged only when its question was replayed against at
+    # least one recorded answer. Everything that rot actually looks like in
+    # this repo is still caught — a typo in the register, a deleted card, an
+    # answer that changed, a reason that changed — because in all four q03 still
+    # has runs and the entry still matches none of them.
+    #
+    # THE HOLE THIS LEAVES, stated rather than discovered later: if every card
+    # for a question disappears, its entries are never judged. That is reported
+    # below as NOT EVALUATED and deliberately does not gate, because the same
+    # condition is produced by any legitimate run over a subset of history.
+    stale = [e for i, e in enumerate(admissions)
+             if i not in used and e.get("question") in examined]
+    unevaluated = [e for i, e in enumerate(admissions)
+                   if i not in used and e.get("question") not in examined]
+    for entry in stale:
+        print(f"STALE ADMISSION  {entry.get('question')} at {entry.get('sha')}: "
+              f"matches no recorded answer failing "
+              f"{entry.get('admits_fails')}. Either the card is gone, the "
+              f"answer changed, or it now fails for another reason — in every "
+              f"case the entry no longer describes anything and must be "
+              f"re-ruled or removed.")
+    for qid, run, entry in uncited:
+        print(f"UNCITED ADMISSION  {qid} at {run['sha'][:7]}: matches a failing "
+              f"answer but cites {entry.get('ruling')!r}, which is not in the "
+              f"tree. An override a reader cannot falsify is not a seat ruling "
+              f"(ADR-0005). NOT admitted — the failure below stands.")
+    for entry in unevaluated:
+        print(f"NOT EVALUATED    {entry.get('question')} at {entry.get('sha')}: "
+              f"no recorded answer for that question in this run, so the "
+              f"admission was neither used nor judged. Reported, not gated — "
+              f"a subset run (--id, a fixture) produces the same condition. "
+              f"ADR-0015 records this as a hole.")
     if unseen:
         print(f"NO RECORDED ANSWER  {', '.join(sorted(unseen))} — "
               f"nothing to replay; these rest on hand-written specimens alone.")
-    if not (fragile or improved or regressed or admitted):
+    if not (fragile or improved or regressed or admitted or false_fails
+            or stale or unevaluated or uncited):
         print("No question changes its verdict across the answers on file.")
 
     # WHAT GATES AND WHAT ONLY REPORTS.
@@ -237,10 +428,25 @@ def main() -> int:
     # Found by running this in CI conditions rather than by reasoning about it:
     # the first version returned 1 for all three, which would have turned the
     # branch red on the commit that added it.
-    if fragile or regressed:
+    #
+    # A STALE ADMISSION GATES, and that is the register paying for itself. The
+    # standing objection to an override list is that it rots: entries outlive
+    # the thing they described and nobody notices, so the list quietly grows
+    # into a general admit path. An entry that matches nothing is that rot,
+    # observable, and it can only be caused by someone editing the register or
+    # the history — never by an ordinary change. So it fails the run.
+    # An UNCITED admission gates for a different reason than a stale one: it
+    # describes something real and simply has no ruling a reader could check.
+    # Both are the register failing to be what it claims, so both fail the run.
+    if fragile or regressed or stale or uncited:
         return 1
     if admitted and args.strict:
         return 1
+    if false_fails:
+        print(f"\n{len(false_fails)} FALSE FAIL(s) above are admitted by "
+              f"evals/admitted_false_fails.json — each one an SME-seat ruling on "
+              f"one named recorded answer, not a rule. They are REPORTED, not "
+              f"gated. `--no-admissions` shows the unadmitted state.")
     if admitted:
         print(f"\n{len(admitted)} ADMITTED finding(s) above are REPORTED, not gated — "
               f"they are open SME-seat questions about the question set, not defects "

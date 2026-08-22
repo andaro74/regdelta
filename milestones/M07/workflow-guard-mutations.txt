@@ -1,0 +1,16 @@
+mutation                                                         applied  killed by named test  
+----------------------------------------------------------------------------------------------------
+workflow-level grant widened to contents: write                  yes      test_the_workflow_level_grant_is_the_floor
+golden-set loses its own permissions block (the REPLACES defect) yes      test_every_job_declares_its_own_permissions
+unit granted id-token: write it does not need                    yes      test_unit_assumes_no_aws_role_and_reads_no_secrets
+golden-set loses pull-requests: write while still posting a comment yes      test_each_job_holds_exactly_what_its_steps_need
+region reverted to us-east-1 against a us-west-2 stack           yes      test_the_gate_runs_in_the_region_the_stack_is_in
+REGISTRY_TABLE dropped — the scorecard goes corpus-blind         yes      test_the_gate_can_fingerprint_the_corpus
+Enforce stops running on failure, so a failed comment skips the gate yes      test_the_enforce_step_still_fails_closed
+the exit code is interpolated into the shell instead of read via env yes      test_the_enforce_step_still_fails_closed
+the fork clause dropped — golden-set runs on outside PRs (M3)    yes      test_the_gate_does_not_run_on_fork_pull_requests
+the role ARN read as an unmasked variable, leaking the account id yes      test_the_account_id_and_the_api_host_are_secrets_not_variables
+the API host read as an unmasked variable — HIGH, it is unauthenticated yes      test_the_account_id_and_the_api_host_are_secrets_not_variables
+
+workflow restored byte-for-byte: True
+0 survivor(s) out of 11
