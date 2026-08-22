@@ -30,6 +30,14 @@ REPO = "andaro74/regdelta"
 RULESET_ID = 20392406
 ADD = ["golden-set", "ruling-cited"]
 
+# MERGE COMMITS ONLY. A squash on PR #13 orphaned f651aea and forced the
+# preservation tag `m06-disposition`, because a squash rewrites the commits it
+# lands and this project's commit messages ARE the record — the milestone
+# READMEs say so and say to read them for the detail. Leaving squash available
+# and writing "never squash" in a README makes the record depend on someone
+# reading it. Set to None to leave the field alone.
+MERGE_METHODS = ["merge"]
+
 
 def api(*args: str, body: str | None = None) -> dict:
     cmd = ["gh", "api", *args]
@@ -70,6 +78,8 @@ def main() -> int:
         "rules": json.loads(json.dumps(before["rules"])),   # deep copy
     }
     for rule in body["rules"]:
+        if rule["type"] == "pull_request" and MERGE_METHODS is not None:
+            rule["parameters"]["allowed_merge_methods"] = list(MERGE_METHODS)
         if rule["type"] == "required_status_checks":
             got = rule["parameters"]["required_status_checks"]
             have = {c["context"] for c in got}
@@ -79,6 +89,7 @@ def main() -> int:
 
     want = sorted(set(checks_of(before)) | set(ADD))
     print("AFTER   required checks (intended):", want)
+    print("AFTER   allowed_merge_methods (intended):", MERGE_METHODS)
     if not apply:
         print("\nDRY RUN — nothing written. Re-run with --apply.")
         return 0
@@ -92,6 +103,12 @@ def main() -> int:
     print("  required checks:", sorted(checks_of(after)),
           "OK" if sorted(checks_of(after)) == want else "MISMATCH")
     ok &= sorted(checks_of(after)) == want
+    if MERGE_METHODS is not None:
+        got = [r for r in after["rules"] if r["type"] == "pull_request"][0]
+        got = got["parameters"]["allowed_merge_methods"]
+        print("  allowed_merge_methods:", got,
+              "OK" if sorted(got) == sorted(MERGE_METHODS) else "MISMATCH")
+        ok &= sorted(got) == sorted(MERGE_METHODS)
     for field in ("name", "target", "enforcement", "conditions", "bypass_actors"):
         same = json.dumps(after.get(field), sort_keys=True) == \
                json.dumps(before.get(field), sort_keys=True)

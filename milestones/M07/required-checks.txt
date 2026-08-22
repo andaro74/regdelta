@@ -45,3 +45,35 @@ WHAT IS NOT ESTABLISHED HERE. That a required check actually refuses a merge.
 This records what GitHub's API reports about its own configuration, which is
 the same narrow claim bypass-probe.txt makes and stops at. Whether the merge
 button is refused is settled by a blocked pull request, and that is Door 1.
+
+==========================================================================
+SECOND RUN, same session: merge commits only
+
+$ python milestones/M07/add_required_checks.py --apply
+
+BEFORE  required checks: ['unit', 'golden-set', 'ruling-cited']
+AFTER   required checks (intended): ['golden-set', 'ruling-cited', 'unit']
+AFTER   allowed_merge_methods (intended): ['merge']
+
+READ BACK
+  required checks: ['golden-set', 'ruling-cited', 'unit'] OK
+  allowed_merge_methods: ['merge'] OK
+  name unchanged: True
+  target unchanged: True
+  enforcement unchanged: True
+  conditions unchanged: True
+  bypass_actors unchanged: True
+  the four rules survived: True
+
+RESULT: OK
+
+WHY. "Merge with a merge commit, never a squash" was trap #1 in this
+milestone's README, and it is there because PR #13's squash orphaned f651aea
+and forced the preservation tag `m06-disposition`. A squash rewrites the
+commits it lands, and in this repo the commit messages ARE the record — every
+milestone README says to read them for the detail.
+
+A trap written in a README is a control that depends on someone reading the
+README at the right moment. This one no longer does: `squash` and `rebase` are
+no longer offered. That is the same substitution this milestone makes
+everywhere else — a checkable artifact instead of an instruction to be careful.
