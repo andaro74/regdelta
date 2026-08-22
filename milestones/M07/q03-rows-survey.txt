@@ -1,0 +1,283 @@
+==============================================================================
+1f46b92-aoss-full.json   q03  pass=True  status=pending_review
+  answer_rows: 2 rows
+    [0] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920']
+        product: fruit-flavored cocktail mixer
+        trigger: Removal of 21 CFR 74.303 (FD&C Red No. 3 listing for food use)
+        required_change: Reformulate to eliminate FD&C Red No. 3 from the product; after the effective date, any food containing Red No. 3 is adulterated
+        real_deadline: 2027-01-15
+        confidence: 0.9
+    [1] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=[]
+        product: fruit-flavored cocktail mixer
+        trigger: Formula on file with another federal agency (likely TTB)
+        required_change: Possible obligation to amend formula filing with that agency — cannot confirm from these sources
+        real_deadline: none
+        confidence: 0.3
+  answer (1562 chars): Your fruit-flavored cocktail mixer is a food product. The order revoking the listing of FD&C Red No. 3 for food use (removal of 21 CFR 74.303) was published on January 16, 2025 (90 FR 4628, Doc. 2025-00830) with an effective date of January 15, 2027. The order sets no separate compliance date; the d
+  top-level citations: ['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920', '21 CFR 74.303']
+==============================================================================
+1f46b92-s3vectors-full.json   q03  pass=False  status=pending_review
+  fails: ["forbidden text present: 'TTB requires'"]
+  answer_rows: 2 rows
+    [0] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920']
+        product: fruit-flavored cocktail mixer
+        trigger: Removal of 21 CFR 74.303 (FD&C Red No. 3 listing for food use)
+        required_change: Reformulate to eliminate FD&C Red No. 3; after the effective date, any food containing it is adulterated
+        real_deadline: 2027-01-15
+        confidence: 0.95
+    [1] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=[]
+        product: fruit-flavored cocktail mixer
+        trigger: Formula on file with another federal agency (likely TTB)
+        required_change: Possible obligation to amend formula filing and/or obtain new label approval with that agency — cannot confirm from these sources
+        real_deadline: none
+        confidence: 0.2
+  answer (1537 chars): Your fruit-flavored cocktail mixer is a food product. The order revoking the listing of FD&C Red No. 3 for food use (removal of 21 CFR 74.303) was published on January 16, 2025 (90 FR 4628, Doc. 2025-00830) with an effective date of January 15, 2027. The order sets no separate compliance date; the d
+  top-level citations: ['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920', '21 CFR 74.303']
+==============================================================================
+1fa942a-aoss-full.json   q03  pass=True  status=pending_review
+  answer_rows: 2 rows
+    [0] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920']
+        product: fruit-flavored cocktail mixer
+        trigger: Removal of 21 CFR 74.303 (FD&C Red No. 3 listing for food use)
+        required_change: Reformulate to eliminate FD&C Red No. 3 from the product; after the effective date, any food containing Red No. 3 is adulterated
+        real_deadline: 2027-01-15
+        confidence: 0.92
+    [1] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=[]
+        product: fruit-flavored cocktail mixer
+        trigger: Formula on file with another federal agency (likely TTB)
+        required_change: Possible obligation to amend formula approval with TTB — cannot confirm from these sources
+        real_deadline: none
+        confidence: 0.3
+  answer (1551 chars): Your fruit-flavored cocktail mixer is a food product. The order revoking the listing of FD&C Red No. 3 for food use (removal of 21 CFR 74.303) was published on January 16, 2025 (90 FR 4628, Doc. 2025-00830) with an effective date of January 15, 2027. The order sets no separate compliance date; the d
+  top-level citations: ['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920', '21 CFR 74.303']
+==============================================================================
+1fa942a-s3vectors-full.json   q03  pass=True  status=pending_review
+  answer_rows: 2 rows
+    [0] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920']
+        product: fruit-flavored cocktail mixer
+        trigger: Removal of 21 CFR 74.303 (FD&C Red No. 3 for food use)
+        required_change: Reformulate to eliminate FD&C Red No. 3 from the product; after the effective date the color additive is no longer listed and any food containing it is adulterated
+        real_deadline: 2027-01-15
+        confidence: 0.92
+    [1] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=[]
+        product: fruit-flavored cocktail mixer
+        trigger: Formula on file with another federal agency
+        required_change: Possible obligation to amend formula approval or notify the other agency — cannot confirm from these sources
+        real_deadline: none
+        confidence: 0.3
+  answer (1480 chars): Your fruit-flavored cocktail mixer is a food product. The order revoking the listing of FD&C Red No. 3 for food use (removal of 21 CFR 74.303) was published on January 16, 2025 (90 FR 4628, Doc. 2025-00830) with an effective date of January 15, 2027. The order sets no separate compliance date; the d
+  top-level citations: ['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920', '21 CFR 74.303']
+==============================================================================
+2cea737-naive-full.json   q03  pass=False  status=answered
+  fails: ["missing required: 'January 15, 2027'"]
+  answer_rows: ABSENT
+  answer (1868 chars): ## When You Must Stop Using Red No. 3
+
+Based on the available information, you must stop using FD&C Red No. 3 in your fruit-flavored cocktail mixer by the **effective date for the removal of § 74.303** (the food-use authorization). The final rule published at 90 FR 4628 revokes the authorization for
+  top-level citations: ['90 FR 4628']
+==============================================================================
+2cea737-s3vectors-full.json   q03  pass=True  status=pending_review
+  answer_rows: 2 rows
+    [0] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920']
+        product: fruit-flavored cocktail mixer
+        trigger: Removal of 21 CFR 74.303 (FD&C Red No. 3 listing for food use)
+        required_change: Reformulate to eliminate FD&C Red No. 3 from the product; after the effective date, any food containing Red No. 3 is adulterated
+        real_deadline: 2027-01-15
+        confidence: 0.92
+    [1] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=[]
+        product: fruit-flavored cocktail mixer
+        trigger: Formula on file with another federal agency
+        required_change: Possible obligation to amend or re-file formula with that agency — cannot confirm from these sources
+        real_deadline: none
+        confidence: 0.3
+  answer (1524 chars): Your fruit-flavored cocktail mixer is a food product. The order revoking the listing of FD&C Red No. 3 for food use (removal of 21 CFR 74.303) was published on January 16, 2025 (90 FR 4628, Doc. 2025-00830) with an effective date of January 15, 2027. The order sets no separate compliance date; the d
+  top-level citations: ['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920', '21 CFR 74.303']
+==============================================================================
+4296f04-s3vectors-full.json   q03  pass=True  status=pending_review
+  answer_rows: 2 rows
+    [0] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920']
+        product: fruit-flavored cocktail mixer
+        trigger: Removal of 21 CFR 74.303 (FD&C Red No. 3 for food use)
+        required_change: Cease use of FD&C Red No. 3 in the product; reformulate to remove the color additive before the effective date
+        real_deadline: 2027-01-15
+        confidence: 0.9
+    [1] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=[]
+        product: fruit-flavored cocktail mixer
+        trigger: Formula on file with another federal agency — possible obligation to update formula filing or obtain new label approval
+        required_change: Cannot confirm from these sources; may require amended formula submission or label re-approval with the other agency
+        real_deadline: none
+        confidence: 0.2
+  answer (1487 chars): Your fruit-flavored cocktail mixer is a food product. The order revoking the listing of FD&C Red No. 3 for food use (removal of 21 CFR 74.303) was published on January 16, 2025 (90 FR 4628, Doc. 2025-00830) with an effective date of January 15, 2027. The order sets no separate compliance date; the d
+  top-level citations: ['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920', '21 CFR 74.303']
+==============================================================================
+42e9010-s3vectors-full.json   q03  pass=True  status=None
+  answer_rows: ABSENT
+  answer (0 chars): 
+  top-level citations: []
+==============================================================================
+585a95f-s3vectors-full.json   q03  pass=True  status=None
+  answer_rows: ABSENT
+  answer (0 chars): 
+  top-level citations: []
+==============================================================================
+6fad8f6-naive-full.json   q03  pass=False  status=answered
+  fails: ["missing required: 'January 15, 2027'"]
+  answer_rows: ABSENT
+  answer (1861 chars): ## When You Must Stop Using Red No. 3
+
+Based on the available information, you must stop using FD&C Red No. 3 in your fruit-flavored cocktail mixer by the **effective date for the removal of § 74.303** (the food-use authorization). The final rule published at 90 FR 4628 revokes the authorization for
+  top-level citations: ['90 FR 4628']
+==============================================================================
+74822d4-naive-full.json   q03  pass=False  status=answered
+  fails: ["missing required: 'January 15, 2027'"]
+  answer_rows: ABSENT
+  answer (1878 chars): ## When You Must Stop Using Red No. 3
+
+Based on the available information, you must stop using FD&C Red No. 3 in your fruit-flavored cocktail mixer by the **effective date for the removal of § 74.303** (the food color additive listing). The final rule published at 90 FR 4628 revokes the authorizatio
+  top-level citations: ['90 FR 4628']
+==============================================================================
+74822d4-s3vectors-full.json   q03  pass=True  status=pending_review
+  answer_rows: 2 rows
+    [0] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920']
+        product: fruit-flavored cocktail mixer
+        trigger: Removal of 21 CFR 74.303 (FD&C Red No. 3 listing for food use)
+        required_change: Reformulate to eliminate FD&C Red No. 3 from the product
+        real_deadline: 2027-01-15
+        confidence: 0.95
+    [1] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=[]
+        product: fruit-flavored cocktail mixer
+        trigger: Formula on file with another federal agency
+        required_change: Possible obligation to amend formula filing with that agency — cannot confirm from these sources
+        real_deadline: none
+        confidence: 0.3
+  answer (1601 chars): Your fruit-flavored cocktail mixer is a food product. The order revoking the listing of FD&C Red No. 3 for food use (removal of 21 CFR 74.303) was published on January 16, 2025 (90 FR 4628, Doc. 2025-00830) with an effective date of January 15, 2027. The order sets no separate compliance date; the d
+  top-level citations: ['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920', '21 CFR 74.303']
+==============================================================================
+7f012b8-naive-full.json   q03  pass=True  status=None
+  answer_rows: ABSENT
+  answer (0 chars): 
+  top-level citations: []
+==============================================================================
+95235d9-aoss-full.json   q03  pass=True  status=pending_review
+  answer_rows: 2 rows
+    [0] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920']
+        product: fruit-flavored cocktail mixer
+        trigger: Removal of 21 CFR 74.303 (FD&C Red No. 3 listing for food use)
+        required_change: Reformulate to eliminate FD&C Red No. 3 from the product
+        real_deadline: 2027-01-15
+        confidence: 0.9
+    [1] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=[]
+        product: fruit-flavored cocktail mixer
+        trigger: Formula on file with another federal agency (likely TTB)
+        required_change: Possible obligation to amend formula filing — cannot confirm from these sources
+        real_deadline: none
+        confidence: 0.2
+  answer (1578 chars): Your fruit-flavored cocktail mixer is a food product. The order revoking the listing of FD&C Red No. 3 for food use (removal of 21 CFR 74.303) was published on January 16, 2025 (90 FR 4628, Doc. 2025-00830) with an effective date of January 15, 2027. The order sets no separate compliance date; the d
+  top-level citations: ['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920', '21 CFR 74.303']
+==============================================================================
+95235d9-s3vectors-full.json   q03  pass=True  status=pending_review
+  answer_rows: 2 rows
+    [0] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920']
+        product: fruit-flavored cocktail mixer
+        trigger: Removal of 21 CFR 74.303 (FD&C Red No. 3 for food use)
+        required_change: Reformulate to eliminate FD&C Red No. 3 from the product
+        real_deadline: 2027-01-15
+        confidence: 0.92
+    [1] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=[]
+        product: fruit-flavored cocktail mixer
+        trigger: Formula on file with another federal agency
+        required_change: Possible obligation to amend formula filing with that agency — cannot confirm from these sources
+        real_deadline: none
+        confidence: 0.3
+  answer (1357 chars): Your fruit-flavored cocktail mixer is a food product. The order revoking the listing of FD&C Red No. 3 for food use (21 CFR 74.303) was published on January 16, 2025 (90 FR 4628, Doc. 2025-00830). The effective date for the removal of § 74.303 is January 15, 2027. No separate compliance date is stat
+  top-level citations: ['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920', '21 CFR 74.303']
+==============================================================================
+a7bd28c-s3vectors-full.json   q03  pass=True  status=ok
+  answer_rows: 1 rows
+    [0] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920']
+        product: fruit-flavored cocktail mixer
+        trigger: Removal of 21 CFR 74.303 (FD&C Red No. 3 listing for food use) per Doc. 2025-00830
+        required_change: Cease use of FD&C Red No. 3 in the product; reformulate to remove the color additive before the listing is revoked
+        real_deadline: 2027-01-15
+        confidence: 0.92
+  answer (1452 chars): Your fruit-flavored cocktail mixer is a food product. The order revoking the listing of FD&C Red No. 3 for food use (removal of 21 CFR 74.303) was published on January 16, 2025 (90 FR 4628, Doc. 2025-00830) with an effective date of January 15, 2027. The order sets no separate compliance date; the d
+  top-level citations: ['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920', '21 CFR 74.303']
+==============================================================================
+ac839ca-naive-full.json   q03  pass=False  status=None
+  fails: ["missing required: 'January 15, 2027'"]
+  answer_rows: ABSENT
+  answer (0 chars): 
+  top-level citations: []
+==============================================================================
+ac839ca-s3vectors-full.json   q03  pass=True  status=None
+  answer_rows: ABSENT
+  answer (0 chars): 
+  top-level citations: []
+==============================================================================
+e26d8ef-s3vectors-full.json   q03  pass=True  status=pending_review
+  answer_rows: 2 rows
+    [0] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920']
+        product: fruit-flavored cocktail mixer
+        trigger: Removal of 21 CFR 74.303 (FD&C Red No. 3 listing for food use)
+        required_change: Reformulate to eliminate FD&C Red No. 3; after the effective date the color additive is no longer listed and any food containing it is adulterated
+        real_deadline: 2027-01-15
+        confidence: 0.92
+    [1] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=[]
+        product: fruit-flavored cocktail mixer
+        trigger: Formula on file with another federal agency
+        required_change: Possible obligation to amend formula filing with the other agency — cannot confirm from these sources
+        real_deadline: none
+        confidence: 0.3
+  answer (1354 chars): Your fruit-flavored cocktail mixer is a food product. The order revoking the listing of FD&C Red No. 3 for food use (removal of 21 CFR 74.303) was published on January 16, 2025 (90 FR 4628, Doc. 2025-00830) with an effective date of January 15, 2027. The order sets no separate compliance date; the d
+  top-level citations: ['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920', '21 CFR 74.303']
+==============================================================================
+f3f00d6-s3vectors-full.json   q03  pass=True  status=None
+  answer_rows: ABSENT
+  answer (0 chars): 
+  top-level citations: []
+==============================================================================
+f95e716-s3vectors-full.json   q03  pass=True  status=None
+  answer_rows: ABSENT
+  answer (0 chars): 
+  top-level citations: []
+==============================================================================
+1f46b92-aoss-full.run1.json   q03  pass=False  status=pending_review
+  fails: ["forbidden text present: 'TTB requires'"]
+  answer_rows: 2 rows
+    [0] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920']
+        product: fruit-flavored cocktail mixer
+        trigger: Removal of 21 CFR 74.303 (FD&C Red No. 3 listing for food use)
+        required_change: Reformulate to eliminate FD&C Red No. 3; product containing it will be adulterated after the effective date
+        real_deadline: 2027-01-15
+        confidence: 0.95
+    [1] keys=['citations', 'confidence', 'product', 'real_deadline', 'required_change', 'trigger']
+        citations=[]
+        product: fruit-flavored cocktail mixer
+        trigger: Formula on file with another federal agency (likely TTB)
+        required_change: Possible formula amendment or notification to that agency — cannot confirm from these sources
+        real_deadline: none
+        confidence: 0.3
+  answer (1489 chars): Your fruit-flavored cocktail mixer is a food product. The order revoking the listing of FD&C Red No. 3 for food use (removal of 21 CFR 74.303) was published on January 16, 2025 (90 FR 4628, Doc. 2025-00830) with an effective date of January 15, 2027. The order sets no separate compliance date; the d
+  top-level citations: ['90 FR 4628', '2025-00830', '91 FR 50475', '2026-15920', '21 CFR 74.303']

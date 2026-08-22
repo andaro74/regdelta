@@ -1,0 +1,13 @@
+BEFORE — as the repo stands
+    FRAGILE (gates)   : ['q03']
+    REGRESSED (gates) : none
+    replay would exit : 1
+
+AFTER  — admitting q03 at 1f46b92
+    FRAGILE (gates)   : none
+    REGRESSED (gates) : none
+    replay would exit : 0
+
+Note: the override above is applied to ONE (question, sha) pair and to a
+verdict that is already failing. It cannot turn a PASS into anything, and
+it cannot reach any other question or any future answer.
