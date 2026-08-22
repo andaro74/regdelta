@@ -217,6 +217,13 @@ the longest q05 completion observed — longer than all six that parsed. That is
 a guess with a shape, and it deserves the same suspicion as this document's
 first three framings.
 
+**And it earned it.** PR #22's next run (32594231310, 18/20, no regression)
+answered q05 at **788 output tokens** — LONGER than the 764 that failed twice,
+and it parsed. Length is not the discriminator. Four framings of this failure
+have now been wrong: q03, then non-determinism, then load, then completion
+length. The mechanism behind the parse failure is unexplained, and cannot be
+explained until something records the raw completion.
+
 ### The instrument that would have said so was built, and nothing reads it
 
 `nodes.py:126-131` predicted this failure class in writing, and named the field
