@@ -45,9 +45,32 @@ MUTATIONS = [
      "",
      "test_the_audience_claim_is_pinned_to_sts"),
 
-    ("sub widened to repo:andaro74/regdelta:* — any ref in this repo",
-     '                            "repo:andaro74/regdelta:pull_request",',
-     '                            "repo:andaro74/regdelta:*",',
+    # ANCHOR UPDATED 2026-08-22, AND THE STALENESS IS THE POINT.
+    # This mutation was recorded as applied-and-killed in
+    # ci-eval-role-mutations.txt against a `sub` of
+    # `repo:andaro74/regdelta:pull_request`. That string stopped existing
+    # hours later, when the subject was re-pinned to GitHub's IMMUTABLE
+    # form after PR #17 measured the claim actually issued
+    # (oidc-claims.txt). The artifact was never re-run, so it went on
+    # reading "0 survivors out of 5" about a file that no longer
+    # contained what it mutated.
+    #
+    # Caught at close by re-running it, which is the only reason the
+    # evidence pack does not ship a verified-looking claim about code that
+    # changed underneath it. It was catchable ONLY because the runner
+    # distinguishes NOT APPLIED from KILLED — had it counted an un-applied
+    # mutation as a pass, this would have been invisible and permanent.
+    # That distinction was built for the CRLF defect noted at the top of
+    # this file and it has now paid for itself twice.
+    #
+    # The PROPERTY is unchanged — no wildcard in the sub, still scoped to
+    # the event. Only the string it is written in moved, and the mutation
+    # now widens the immutable form exactly as it widened the name form.
+    ("sub widened to ...@1322516232:* — any ref in this repo",
+     '                            "repo:andaro74@3157440/regdelta@1322516232"\n'
+     '                            ":pull_request",',
+     '                            "repo:andaro74@3157440/regdelta@1322516232"\n'
+     '                            ":*",',
      "test_the_subject_claim_is_scoped_to_the_event_not_just_the_repo"),
 
     ("the explicit statement replaced by grant_read_data",
