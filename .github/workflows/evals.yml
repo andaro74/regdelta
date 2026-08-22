@@ -211,39 +211,6 @@ jobs:
       # The runtime manifest, not a bare `pip install boto3` — this job talks to
       # the deployed API and must not drift from what that API was built against.
       - run: pip install -r requirements.txt
-      # TEMPORARY DIAGNOSTIC — REMOVE ONCE THE ROLE ASSUMES.
-      #
-      # The first ever run of this job (PR #17, 2026-08-22) died on
-      # "Not authorized to perform sts:AssumeRoleWithWebIdentity" with the
-      # provider, the audience and the repository_id all verified correct
-      # against live IAM. That leaves the `sub` claim, and the repository
-      # reports sub_claim_prefix `repo:andaro74@3157440/regdelta@1322516232`
-      # — the IMMUTABLE form with numeric ids — while the role's trust pins the
-      # classic `repo:andaro74/regdelta:pull_request`. Guessing between those
-      # costs a cycle per guess, so this reads the claim instead.
-      #
-      # IT PRINTS CLAIMS, NEVER THE TOKEN. The JWT is a bearer credential for
-      # ~5 minutes and this is a public repository; the payload fields below
-      # are identifiers, not secrets. The request URL and request token come
-      # from the runner and are masked by Actions. Do not add the raw token to
-      # this list, and delete this whole step once the trust policy matches.
-      - name: Read the OIDC subject claim (temporary)
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import base64, json, os, urllib.request
-          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"] + "&audience=sts.amazonaws.com"
-          req = urllib.request.Request(url, headers={
-              "Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]})
-          tok = json.load(urllib.request.urlopen(req))["value"]
-          payload = tok.split(".")[1]
-          payload += "=" * (-len(payload) % 4)
-          claims = json.loads(base64.urlsafe_b64decode(payload))
-          for k in ("sub", "aud", "repository", "repository_id",
-                    "repository_owner", "repository_owner_id",
-                    "job_workflow_ref", "event_name", "ref"):
-              print(f"{k:22} {claims.get(k)!r}")
-          PY
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_EVAL_ROLE_ARN }}   # OIDC role, read-only
@@ -320,8 +287,20 @@ jobs:
             // security-reviewer, M07 L4.
             const body = "### 🧪 Eval gate — golden set\n~~~~\n" +
               fs.readFileSync('scorecard.txt','utf8').slice(-3000) + "\n~~~~" +
-              "\n_Ground truth owned by @regdelta-sme (CODEOWNERS). " +
-              "A failing gate blocks merge by branch protection._";
+              // WAS "Ground truth owned by @regdelta-sme (CODEOWNERS)",
+              // and CODEOWNERS is not what owns it.
+              // required_approving_review_count is 0 and
+              // require_code_owner_review is false on this repo's ruleset:
+              // CODEOWNERS ROUTES a review request, it does not require one
+              // (ADR-0005). What actually refuses an unruled ground-truth
+              // change is the ruling-cited check. A footer posted on every
+              // scorecard is the worst place to repeat a claim this repo
+              // has already measured as false.
+              "\n_Ground truth is SME-seat owned: a pull request changing " +
+              "it fails the ruling-cited check unless it cites a ruling " +
+              "already on main. A REGRESSION here blocks the merge; a " +
+              "question that has never passed is reported, not gated " +
+              "(milestones/M07/eval-gate-bar-ruling.md)._";
             await github.rest.issues.createComment({
               owner: context.repo.owner, repo: context.repo.repo,
               issue_number: context.issue.number, body });
