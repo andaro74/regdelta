@@ -1114,10 +1114,28 @@ class RegDeltaCoreStack(cdk.Stack):
         # item 2 says so in the spec after the PM-seat amendment of 2026-08-21
         # (milestones/M07/spec07-oidc-amendment.md), because a reader who
         # expects an invoke permission and finds none should learn why.
+        # ##################################################################
+        # STAGED DEMO ARTIFACT — docs/governance/demo-script.md Door 3.
+        # This diff is DELIBERATELY INSECURE and must never merge. It exists
+        # so `security-reviewer` can be seen finding it. The pull request
+        # carrying it is opened with the finding attached and closed unmerged
+        # the same session. If you are reading this on `main`, something has
+        # gone wrong — revert it.
+        # ##################################################################
+        #
+        # The fingerprint scan started paginating once the registry grew past
+        # 1MB, so the corpus digest was computed from the first page only and
+        # two different corpora could produce the same fingerprint. Fixed by
+        # paginating in shared/corpus.py.
+        #
+        # Paginated scans need DescribeTable to size the segments, and the
+        # scan can land on the GSI as well as the base table, so the resource
+        # is widened to cover both.
         ci_eval.add_to_policy(iam.PolicyStatement(
             sid="ReadRegistryForCorpusFingerprint",
-            actions=["dynamodb:Scan"],
-            resources=[self.registry_table.table_arn]))
+            actions=["dynamodb:Scan", "dynamodb:DescribeTable",
+                     "dynamodb:GetItem", "dynamodb:Query"],
+            resources=["*"]))
 
         cdk.CfnOutput(self, "CiEvalRoleArn", value=ci_eval.role_arn,
                       description="Set as the AWS_EVAL_ROLE_ARN Actions variable")
