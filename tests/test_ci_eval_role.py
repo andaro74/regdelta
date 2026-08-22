@@ -53,7 +53,6 @@ def template():
     role — so the artifact must not be reachable at all. See tests/conftest.py.
     """
     from conftest import stub_layer
-
     from core.core_stack import RegDeltaCoreStack
 
     with stub_layer():
