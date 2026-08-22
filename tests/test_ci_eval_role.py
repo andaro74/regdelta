@@ -95,13 +95,38 @@ def test_the_audience_claim_is_pinned_to_sts(role):
     assert cond["StringEquals"][f"{OIDC_HOST}:aud"] == "sts.amazonaws.com"
 
 
+# The subject GitHub ACTUALLY issues for a pull_request event on this
+# repository, read off the token on 2026-08-22 (PR #17,
+# milestones/M07/oidc-claims.txt). It is the IMMUTABLE form, carrying the
+# numeric owner id and repo id.
+#
+# This constant is a MEASUREMENT, not a preference. The value asserted here
+# used to be `repo:andaro74/regdelta:pull_request` — the form every published
+# example uses and the one the AWS docs show — and with it the role could not
+# be assumed at all. The failure was "Not authorized to perform
+# sts:AssumeRoleWithWebIdentity", which names no claim, so the token had to be
+# decoded to find out.
+#
+# It cannot be re-derived from the GitHub API. That endpoint
+# (`repos/OWNER/REPO/actions/oidc/customization/sub`) reports
+# `use_immutable_subject: false` while its own `sub_claim_prefix` shows the
+# immutable prefix. Those two fields disagree with each other and the issued
+# token disagrees with one of them. Only the token decides.
+EXPECTED_SUB = "repo:andaro74@3157440/regdelta@1322516232:pull_request"
+
+
 def test_the_subject_claim_is_scoped_to_the_event_not_just_the_repo(role):
-    """`repo:andaro74/regdelta:*` — the shape most examples use — would let ANY
-    ref in this repo assume the role, including a branch pushed by anyone who
-    ever gets write access. evals.yml triggers on `pull_request` alone."""
+    """`repo:...:*` — the shape most examples use — would let ANY ref in this
+    repo assume the role, including a branch pushed by anyone who ever gets
+    write access. evals.yml triggers on `pull_request` alone.
+
+    The event scoping is the property under test and it is unchanged. What
+    changed is the subject FORMAT, which is GitHub's to decide and was measured
+    rather than chosen — see EXPECTED_SUB above."""
     cond = role["Properties"]["AssumeRolePolicyDocument"]["Statement"][0]["Condition"]
     sub = cond["StringEquals"][f"{OIDC_HOST}:sub"]
-    assert sub == "repo:andaro74/regdelta:pull_request", sub
+    assert sub == EXPECTED_SUB, sub
+    assert sub.endswith(":pull_request"),         "the subject must still be scoped to the event, not just the repo"
     assert "*" not in sub, "a wildcard subject admits every ref in the repo"
     # NARROWED to the sub key. It read `"StringLike" not in cond`, which would
     # have blocked adding a legitimate StringLike on `job_workflow_ref` — a

@@ -1,0 +1,65 @@
+$ python milestones/M07/skipped_check_probe.py 16
+                                                       2026-08-22, PR #16
+
+PR #16
+  required checks on the ruleset: ['golden-set', 'ruling-cited', 'unit']
+    golden-set     SKIPPED
+    ruling-cited   SUCCESS
+    unit           SUCCESS
+  mergeable        : MERGEABLE
+  mergeStateStatus : CLEAN
+
+SINGLE-VARIABLE READ HOLDS: every other required check is SUCCESS
+  and golden-set is SKIPPED.
+
+ANSWER: a SKIPPED required status check does NOT block the merge.
+  (mergeStateStatus = CLEAN)
+
+==========================================================================
+WHY THIS ONE IS TRUSTWORTHY WHEN THE 2026-08-08 VERSION WAS NOT
+
+ADR-0005 answered this question once already, said "verified empirically", and
+was wrong. The observation behind it — PR #1 still BLOCKED — was equally
+explained by a context string that never matched any check, and nothing had
+been run to tell the two causes apart. The correction pulled the claim and left
+the question open for a milestone with a job that could actually skip.
+
+So the probe refuses to report an answer unless it has isolated the variable:
+every OTHER required check must read SUCCESS, and the only non-success must be
+the skip. mergeStateStatus is BLOCKED for any reason at all, and reading it off
+a PR with anything else wrong establishes nothing. That is the whole of the
+original mistake.
+
+Here `unit` and `ruling-cited` were both SUCCESS on the same commit, the
+ruleset required all three by bare job name (required-checks.txt), and
+`golden-set` was SKIPPED because `vars.EVAL_GATE_ENABLED` is 'false'. CLEAN.
+
+SCOPE, stated narrowly. One repository, one ruleset, one skip mechanism: a
+job-level `if:` evaluating false. It says nothing about a job skipped by a
+failed `needs:`, which reaches SKIPPED by a different path and deserves its own
+read before anyone leans on it.
+
+==========================================================================
+WHAT THIS MEANS FOR THIS REPOSITORY, AND IT IS NOT GOOD NEWS
+
+1. ADDING `golden-set` TO THE RULESET ACHIEVED NOTHING WHILE THE FLAG IS OFF.
+   It is "required" and it is skipping, and the PR reads CLEAN. The sentence
+   removed from evals.yml's header for being false is STILL false, and would
+   have stayed false even after the ruleset change if nobody had run this. The
+   header does not get its sentence back until `golden-set` actually executes.
+
+2. THE FORK GUARD IS A FAIL-OPEN PATH, and it was added for a good reason.
+   `golden-set`'s `if:` also skips on fork PRs, so a fork PR reads CLEAN with
+   no eval gate having run. The guard is right — without it a fork PR carries a
+   permanently red check nobody can fix — but "skips" and "passes" are the same
+   thing to the merge button, and that is now measured rather than assumed.
+   Nothing here proposes removing the guard; it proposes not describing
+   `golden-set` as a gate for fork PRs, because it is not one.
+
+3. `ground-truth-gate` HAVING NO `if:` WAS THE RIGHT CALL, and now for a
+   stronger reason than the one written beside it. That comment says the gate
+   "must not depend on an unanswered question about GitHub's own semantics".
+   The question is answered, and the answer is that an `if:` there would have
+   converted Door 1's gate into a no-op for any PR that made the condition
+   false. A caution taken against an unknown turns out to have been protecting
+   against a real hole.

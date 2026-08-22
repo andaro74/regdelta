@@ -1,0 +1,40 @@
+PART 1 — is each token a substring of its own negation?
+(if yes, an answer asserting the OPPOSITE scores PASS on it)
+
+  safe   'was fair'                   inside 'was not fair'
+  LEAKS  'fair at the time'           inside 'was not fair at the time'
+  safe   'was reasonable'             inside 'was not reasonable'
+  LEAKS  'reasonable at the time'     inside 'was not reasonable at the time'
+  LEAKS  'accurate at the time'       inside 'was not accurate at the time'
+  safe   'was a fair reading'         inside 'was not a fair reading'
+  LEAKS  'fair reading at the time'   inside 'not a fair reading at the time'
+  LEAKS  'fair then'                  inside 'was not fair then'
+  LEAKS  'correct at the time'        inside 'was not correct at the time'
+
+  leaking: 6 of 9
+  proposed deletion: ['accurate at the time', 'correct at the time', 'fair at the time', 'fair reading at the time', 'fair then', 'reasonable at the time']
+  deletion == leaking set: True
+
+
+PART 2 — replay every recorded answer. Does any verdict change?
+
+  1f46b92-aoss-full.json             group_now=False group_proposed=False same  matched=[]
+  1f46b92-s3vectors-full.json        group_now=False group_proposed=False same  matched=[]
+  1fa942a-aoss-full.json             group_now=False group_proposed=False same  matched=[]
+  1fa942a-s3vectors-full.json        group_now=False group_proposed=False same  matched=[]
+  2cea737-naive-full.json            group_now=False group_proposed=False same  matched=[]
+  2cea737-s3vectors-full.json        group_now=False group_proposed=False same  matched=[]
+  4296f04-s3vectors-full.json        group_now=False group_proposed=False same  matched=[]
+  6fad8f6-naive-full.json            group_now=False group_proposed=False same  matched=[]
+  95235d9-aoss-full.json             group_now=False group_proposed=False same  matched=[]
+  95235d9-s3vectors-full.json        group_now=False group_proposed=False same  matched=[]
+  a7bd28c-s3vectors-full.json        group_now=False group_proposed=False same  matched=[]
+  e26d8ef-s3vectors-full.json        group_now=False group_proposed=False same  matched=[]
+
+  recorded q12 answers replayed: 12
+  verdicts changed: 0
+  STRICT TIGHTENING: no recorded verdict moves. The deletion removes accept surface and flips nothing.
+
+  NOTE: 'flips nothing' is about the answers this repo HAS recorded.
+  The reason to delete the tokens is the answer it has NOT recorded yet —
+  the recorded failing answer missed a false PASS by one word.

@@ -439,6 +439,95 @@ def flatten_answer(resp: dict) -> str:
     return " ".join(parts)
 
 
+def history_verdicts() -> tuple[set[str], set[str]]:
+    """(ids that have EVER passed, ids that have ANY recorded run at all).
+
+    Reuses `replay_history.recorded()` rather than re-reading evals/history/,
+    so the two gates in this repo cannot disagree about what history says.
+    """
+    from replay_history import recorded  # same directory
+    runs = recorded()
+    ever = {qid for qid, rs in runs.items()
+            if any(r.get("recorded_pass") for r in rs)}
+    return ever, set(runs)
+
+
+def ever_passed() -> set[str]:
+    """Question ids that have passed in at least one recorded run."""
+    return history_verdicts()[0]
+
+
+def gate_verdict(per_q: list[dict]) -> int:
+    """The eval gate's exit code: 0 unless a question REGRESSED.
+
+    WAS `passed == total`, AND THAT BAR HAD NEVER BEEN SATISFIED. Ruled
+    2026-08-22 by the PM seat (milestones/M07/eval-gate-bar-ruling.md) on the
+    first day the gate ever ran in CI. The old bar demanded 20/20 with no
+    partial credit; no recorded run in evals/history/ has ever been 20/20. So
+    the moment `golden-set` became a required check, every merge in the
+    repository became impossible — including the milestone that built the gate.
+    A gate nothing can satisfy is not strict, it is a wall, and it would have
+    been removed within a day and the claim quietly dropped.
+
+    THE REPLACEMENT IS THE THEORY THIS REPO ALREADY USES for `unit`.
+    `replay_history.py` gates on REGRESSION against recorded history rather
+    than on an absolute score. This makes the two gates agree:
+
+      a question that has EVER passed and now fails  -> REGRESSION, blocks
+      a question that has NEVER passed and fails     -> KNOWN, reported, does
+                                                        not block
+
+    WHY "EVER PASSED" AND NOT "PASSED LAST TIME". A last-run baseline drifts:
+    a question regresses once, the regression is recorded, and it becomes the
+    new normal — the bar walks downhill on its own and nobody has to decide
+    anything. "Ever passed" cannot drift, because history is append-only. A
+    question only leaves the gating set by never having been in it.
+
+    WHAT THIS DOES NOT DO, said plainly because it is the obvious objection:
+    it does not make q12 and q15 acceptable. They fail on every scorecard, in
+    red, and they are real defects — q12 is a reasoning defect and q15 a
+    retrieval defect (milestones/M07/q12-q15-triage.md). Ground truth was
+    UPHELD on both; neither question was weakened, and ROLES.md's ban on
+    weakening trap questions to green a build is not what happened here. What
+    changed is which failures stop a merge, not which answers are correct.
+    """
+    ever, has_history = history_verdicts()
+    failed = {q["id"] for q in per_q if not q.get("pass")}
+
+    # THREE STATES, NOT TWO, AND THE THIRD IS THE ONE THAT BITES.
+    #
+    # A question with NO recorded run has not "never passed" — nothing is known
+    # about it at all, and treating absence of evidence as evidence of a known
+    # defect would mean a brand-new golden question could never gate anything.
+    # Add a question, never record a run, and it is silently exempt forever.
+    #
+    # Caught by tests/test_scorecard_audit.py, which asserts that a measured
+    # failure exits 1: its two synthetic questions have no history, and the
+    # first version of this function waved them through. Unknown fails CLOSED.
+    known = sorted(failed & has_history - ever)
+    unknown = sorted(failed - has_history)
+    regressions = sorted(failed & ever)
+
+    print()
+    if known:
+        print(f"KNOWN, not gating ({len(known)}): {', '.join(known)}")
+        print("   these have recorded runs and have never passed in any of "
+              "them. Real defects, reported on every card, and not this pull "
+              "request's doing.")
+    if unknown:
+        print(f"NO RECORDED HISTORY ({len(unknown)}): {', '.join(unknown)}")
+        print("   nothing is known about these, so they gate. A question "
+              "cannot exempt itself by never having been run.")
+    if regressions:
+        print(f"REGRESSION ({len(regressions)}): {', '.join(regressions)}")
+        print("   these have passed before and fail now. That is what the "
+              "eval gate is for.")
+    if regressions or unknown:
+        return 1
+    print("no regression: every question that has ever passed still passes.")
+    return 0
+
+
 def check(q: dict, resp: dict) -> list[str]:
     """Return list of failure reasons (empty = pass)."""
     fails: list[str] = []
@@ -691,7 +780,7 @@ def main() -> int:
                 print(f"     run {prev['run']}: {prev['passed']}/{prev['total']} "
                       f"at {prev['at']} → {prev['file']}")
 
-    return 0 if passed == total else 1
+    return gate_verdict(per_q)
 
 
 if __name__ == "__main__":

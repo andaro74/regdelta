@@ -2,6 +2,19 @@
 # Runs the golden set on every PR; posts the scorecard as a PR comment;
 # fails the check on regression.
 #
+# `golden-set` IS A REQUIRED CHECK, AND WHEN IT RUNS AND FAILS THE MERGE IS
+# REFUSED. Measured 2026-08-22 on PR #17, not asserted: golden-set FAILURE with
+# `unit` and `ruling-cited` both SUCCESS gave mergeStateStatus BLOCKED
+# (milestones/M07/eval-gate-live.txt).
+#
+# THE SENTENCE STOPS THERE, and the missing half is the point. A SKIPPED
+# required check reads CLEAN and does NOT block — also measured, on PR #16
+# (milestones/M07/skipped-check.txt). This job skips on fork pull requests and
+# whenever EVAL_GATE_ENABLED is false, and on those pull requests it is not a
+# gate at all. "Regresses ground-truth answers physically cannot merge" was the
+# old wording and it is still wrong, because it is silent about when this job
+# does not run.
+#
 # WHAT THIS HEADER USED TO CLAIM, AND WHY IT NO LONGER DOES. It said
 # `golden-set` is 'marked "required" in branch protection, so a PR that
 # regresses ground-truth answers physically cannot merge'. The live ruleset
@@ -16,6 +29,24 @@
 # BARE JOB NAME, `golden-set` and not `eval-gate / golden-set`, which is
 # ADR-0005's finding and a debt owed since M04. This header gets its sentence
 # back when that lands and is verified, and not before.
+#
+# LANDED 2026-08-22, and the sentence came back at the TOP of this file once it
+# had been exercised — not when the ruleset changed. Adding `golden-set` to the
+# ruleset changed nothing on its own: with the flag false this job SKIPS, and a
+# SKIPPED required check reads CLEAN and does not block — measured on PR #16
+# (milestones/M07/skipped-check.txt). "Required" and "gating" are different
+# properties and this repo has now paid to learn the difference twice.
+#
+# TWO CONDITIONS make the claim true, and they are both about this job RUNNING
+# rather than about the ruleset: `EVAL_GATE_ENABLED` must be true, and the run
+# must be one where the `if:` below does not skip. Both held on PR #17, the job
+# failed 18/20, and the merge was refused.
+#
+# THE FORK CLAUSE IS PERMANENTLY ONE OF THOSE SKIPS. A fork PR skips this job
+# and therefore reads CLEAN with no eval gate having run. The clause is still
+# right — see its own note below — but whatever sentence goes back in this
+# header must not describe `golden-set` as gating fork pull requests, because
+# it does not and cannot.
 name: eval-gate
 on:
   pull_request:
@@ -180,6 +211,39 @@ jobs:
       # The runtime manifest, not a bare `pip install boto3` — this job talks to
       # the deployed API and must not drift from what that API was built against.
       - run: pip install -r requirements.txt
+      # TEMPORARY DIAGNOSTIC — REMOVE ONCE THE ROLE ASSUMES.
+      #
+      # The first ever run of this job (PR #17, 2026-08-22) died on
+      # "Not authorized to perform sts:AssumeRoleWithWebIdentity" with the
+      # provider, the audience and the repository_id all verified correct
+      # against live IAM. That leaves the `sub` claim, and the repository
+      # reports sub_claim_prefix `repo:andaro74@3157440/regdelta@1322516232`
+      # — the IMMUTABLE form with numeric ids — while the role's trust pins the
+      # classic `repo:andaro74/regdelta:pull_request`. Guessing between those
+      # costs a cycle per guess, so this reads the claim instead.
+      #
+      # IT PRINTS CLAIMS, NEVER THE TOKEN. The JWT is a bearer credential for
+      # ~5 minutes and this is a public repository; the payload fields below
+      # are identifiers, not secrets. The request URL and request token come
+      # from the runner and are masked by Actions. Do not add the raw token to
+      # this list, and delete this whole step once the trust policy matches.
+      - name: Read the OIDC subject claim (temporary)
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64, json, os, urllib.request
+          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"] + "&audience=sts.amazonaws.com"
+          req = urllib.request.Request(url, headers={
+              "Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]})
+          tok = json.load(urllib.request.urlopen(req))["value"]
+          payload = tok.split(".")[1]
+          payload += "=" * (-len(payload) % 4)
+          claims = json.loads(base64.urlsafe_b64decode(payload))
+          for k in ("sub", "aud", "repository", "repository_id",
+                    "repository_owner", "repository_owner_id",
+                    "job_workflow_ref", "event_name", "ref"):
+              print(f"{k:22} {claims.get(k)!r}")
+          PY
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_EVAL_ROLE_ARN }}   # OIDC role, read-only

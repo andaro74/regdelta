@@ -12,9 +12,32 @@ The separation-of-roles demo is executable end-to-end on GitHub. See
 docs/governance/ROLES.md, ADR-0003.
 
 ## Build / configure
-1. GitHub: teams or seat accounts per docs/governance/branch-protection.md;
-   branch protection with CODEOWNERS review + eval-gate required check;
-   Actions variables (EVAL_GATE_ENABLED, STAGING_API_URL, AWS_EVAL_ROLE_ARN).
+1. GitHub: branch protection with the eval gate as a required status check,
+   by **bare job name**; Actions config for `EVAL_GATE_ENABLED`,
+   `STAGING_API_URL`, `AWS_EVAL_ROLE_ARN`, `REGISTRY_TABLE`.
+
+   **The eval gate fails on a REGRESSION, not on an absolute score.** A
+   question that has ever passed in `evals/history/` and fails now blocks the
+   merge; a question that has never passed is reported on every scorecard and
+   does not block.
+
+   *Amended 2026-08-22 by PM-seat ruling
+   (`milestones/M07/eval-gate-bar-ruling.md`), on the first day `golden-set`
+   ever ran. Three clauses of the original were wrong or unimplementable:*
+
+   - *"teams or seat accounts" and "CODEOWNERS review" — there is one human
+     here, `required_approving_review_count` is 0 and
+     `require_code_owner_review` is false. CODEOWNERS routes, it does not
+     enforce (ADR-0005). What enforces the SME boundary is
+     `ground-truth-gate / ruling-cited`.*
+   - *"Actions variables" for `STAGING_API_URL` and `AWS_EVAL_ROLE_ARN` — those
+     are **secrets**, because a `vars` value is unmasked in a public repo's
+     logs. Only `EVAL_GATE_ENABLED` and `REGISTRY_TABLE` are variables.*
+   - *The bar was `passed == total` in `run_evals.py` and had never been
+     satisfied in any recorded run, so the gate was un-satisfiable rather than
+     strict the moment it became required. No golden question was weakened to
+     fix that: ground truth was upheld on both current failures
+     (`milestones/M07/q12-q15-triage.md`).*
 2. AWS: regdelta-ci-eval OIDC role (trust = this repo; permissions = read the
    registry table for the corpus fingerprint, and nothing else) — add to
    infra/core as a construct. **The staging API is unauthenticated and needs no

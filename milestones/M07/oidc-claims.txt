@@ -1,0 +1,74 @@
+The OIDC token claims GitHub actually issues for this repository
+                              read on 2026-08-22, PR #17, run 32580922477
+
+From the temporary diagnostic step in .github/workflows/evals.yml, which
+requests the token and prints selected claims. It never prints the token.
+
+  sub                    'repo:andaro74@3157440/regdelta@1322516232:pull_request'
+  aud                    'sts.amazonaws.com'
+  repository             'andaro74/regdelta'
+  repository_owner       'andaro74'
+  job_workflow_ref       'andaro74/regdelta/.github/workflows/evals.yml@refs/pull/17/merge'
+  event_name             'pull_request'
+  ref                    'refs/pull/17/merge'
+
+==========================================================================
+THE FINDING
+
+`sub` is the IMMUTABLE form. It carries the numeric OWNER id (3157440) and
+REPO id (1322516232), not the path `andaro74/regdelta`.
+
+The role's trust policy pinned `repo:andaro74/regdelta:pull_request` — the form
+used by the AWS documentation, by GitHub's own documentation examples, and by
+every published example this project consulted. With that pin the role could
+not be assumed at all. The error was:
+
+    Not authorized to perform sts:AssumeRoleWithWebIdentity
+
+which names no claim, no expected value and no actual value. There is nothing
+in it to act on.
+
+THE GITHUB API DOES NOT TELL YOU THIS, AND ONE OF ITS FIELDS IS WRONG.
+`repos/andaro74/regdelta/actions/oidc/customization/sub` returns:
+
+    {"use_default": true,
+     "use_immutable_subject": false,
+     "sub_claim_prefix": "repo:andaro74@3157440/regdelta@1322516232"}
+
+`use_immutable_subject` is **false** while `sub_claim_prefix` is the
+**immutable** prefix. The two fields contradict each other, and the issued
+token agrees with `sub_claim_prefix`. So the endpoint that exists to answer
+this question answers it wrongly, and only the token decides. Anyone debugging
+this later: decode the token, do not read the API.
+
+WHY IT WAS CHEAP TO FIND. The role deliberately did not pin `job_workflow_ref`
+yet — `milestones/M07/README.md` recorded that as "deliberate, so the first
+AccessDenied is not ambiguous about which claim was wrong". Four of the five
+first-run variables were ruled out against live AWS before anything was
+changed (provider ClientIDList, repository_id, aud, region), leaving one
+suspect and one diagnostic. Guessing would have cost a cycle per guess.
+
+SPEND: $0 across both failed runs. `Run golden set vs staging` is downstream of
+the credentials step and was SKIPPED both times, so no Bedrock was ever
+invoked.
+
+==========================================================================
+TWO CONSEQUENCES
+
+1. SECURITY-REVIEWER M07 L1 IS RESOLVED BY THE PLATFORM, not by us. That
+   finding was that `andaro74/regdelta` is a NAME: rename the account or delete
+   the repo, and whoever registers that owner/name mints a byte-identical `sub`
+   and assumes the role. The immutable subject embeds both numeric ids, which
+   cannot be re-registered, so the subject is no longer name-bound.
+
+   The `repository_id` condition is KEPT anyway. The subject format is
+   GitHub's to change and it changed under this repo once already, silently and
+   against what its own API reports. If it ever reverts to the name form, that
+   condition is what still binds the trust to an id nobody can re-register.
+
+2. `job_workflow_ref` CAN NOW BE PINNED, and its exact rendering is above —
+   this is the value the README said had "never been observed". Note the
+   `@refs/pull/17/merge` suffix is per-pull-request, so a pin needs StringLike
+   on `andaro74/regdelta/.github/workflows/evals.yml@*`. NOT DONE YET: the
+   README's condition is to add it "after the first successful assumption",
+   and there has not been one.
