@@ -1,0 +1,110 @@
+M07 CLOSE — STEP 1 VERIFICATION, AND ONE SUBSTITUTION DECLARED
+2026-08-22, at commit a483297 on m07-pr-f (PR #22 merged as 06e6382).
+
+close-milestone step 1 is "run the milestone's Done-when command(s) from
+SPEC/07, then `make evals` (full set)". What was run, and what was not.
+
+--------------------------------------------------------------------------
+SPEC/07 DONE-WHEN, ITEM 5 CRITERIA 2-4 — ALL RUN AT CLOSE, ALL $0
+--------------------------------------------------------------------------
+
+Criterion 4, the unadmitted state recorded beside the gating one:
+
+  python evals/replay_history.py --no-admissions    exit 1
+  python evals/replay_history.py                    exit 0
+
+  Exactly the designed pair. Without the ruled admission the history gate is
+  RED; with it, green. The admission is doing work and is visible doing it.
+  q03 still classifies FRAGILE, failing at 1f46b92 on "forbidden text
+  present: 'TTB requires'".
+
+Criteria 2 and 3, every refusal run and the survivor count equal to zero:
+
+  admission_mutations.py            0 survivor(s) out of 13   exit 0
+  ground_truth_gate_mutations.py    0 survivor(s) out of 13   exit 0
+  workflow_guard_mutations.py       0 survivor(s) out of 11   exit 0
+  ci_eval_role_mutations.py         0 survivor(s) out of  5   exit 0
+
+  All four restore their target byte-for-byte and say so.
+
+--------------------------------------------------------------------------
+AND ONE OF THEM WAS STALE. FOUND BY RE-RUNNING IT AT CLOSE.
+--------------------------------------------------------------------------
+
+`ci_eval_role_mutations.py` did NOT report 0/5 on the first run at close. It
+reported:
+
+  1 survivor(s) out of 5: sub widened to repo:andaro74/regdelta:*
+                          — any ref in this repo (anchor matched 0x)
+
+The mutation could not find the text it mutates. `ci-eval-role-mutations.txt`
+had been recorded when the OIDC trust policy pinned
+
+  "token.actions.githubusercontent.com:sub": "repo:andaro74/regdelta:pull_request"
+
+and that string stopped existing hours later, when PR #17 measured the claim
+GitHub actually issues and the subject was re-pinned to the IMMUTABLE form:
+
+  "repo:andaro74@3157440/regdelta@1322516232" ":pull_request"
+
+The artifact was never re-run afterwards. So the evidence pack was carrying
+"0 survivors out of 5" about a file that no longer contained what the probe
+mutates — a verified-looking claim about code that had changed underneath it.
+
+  THE PROPERTY WAS NEVER UNDEFENDED. `test_the_subject_claim_is_scoped_to_
+  the_event_not_just_the_repo` asserts the exact expected subject, that it
+  still ends `:pull_request`, that no `*` appears in it, and that no
+  StringLike sneaks a wildcard in the back door. All of that held throughout.
+  What was missing was the PROOF that the test would notice if it stopped
+  holding. That is the entire purpose of a mutation suite, and for those
+  hours the suite was asserting it about text that was not there.
+
+Fixed by re-anchoring the mutation on the current two-line form and re-running:
+5/5 applied, 0 survivors, core_stack.py restored byte-for-byte.
+`ci-eval-role-mutations.txt` re-recorded.
+
+  IT WAS CATCHABLE ONLY BECAUSE THE RUNNER DISTINGUISHES "NOT APPLIED" FROM
+  "KILLED". A suite that counted an un-applied mutation as a pass would have
+  reported 0/5 and been wrong, silently, for as long as anyone cared to look.
+  That distinction was built into this runner in response to the CRLF defect
+  documented at the top of the same file — where five multi-line anchors
+  matched 0x after an in-place rewrite. It has now paid for itself twice, for
+  two unrelated causes.
+
+  The general shape is M07's own: a measurement that was true when taken, and
+  an artifact that goes on asserting it after the thing measured has moved.
+  Same family as `unit` being "green" on this laptop only, and as the eval
+  gate's three wrong diagnoses. The countermeasure is the same one every time
+  — re-run it where it matters, and build instruments that can say "I did not
+  actually check" instead of returning a pass.
+
+--------------------------------------------------------------------------
+`make evals` — SUBSTITUTED, DECLARED, NOT SKIPPED
+--------------------------------------------------------------------------
+
+Step 1's full-set run was NOT executed locally at close. Substituted with the
+CI `golden-set` job that ran the identical command against the identical
+staging endpoint seven minutes before the merge:
+
+  run     32594231310, job 97082791861
+  commit  fc45a08 — the commit that merged as 06e6382
+  when    2026-08-22 19:38-19:43Z
+  result  18/20 passed (90%)
+          KNOWN, not gating (2): q12, q15
+          "no regression: every question that has ever passed still passes."
+
+Why the substitution is sound: `golden-set` runs `python evals/run_evals.py`
+with no subset argument — the same full set `make evals` runs — against
+`$REGDELTA_API_URL`, the same deployed staging API a local run would hit. It
+ran on the exact tree being closed. A local re-run would measure the same
+system a few minutes later and cost another ~$0.20.
+
+Why it is declared rather than assumed: it is not the same COMMAND, and the
+one thing CI cannot do is prove a local operator can reproduce it. The
+authorising decision was taken explicitly with the cost on the table, and is
+recorded here so nobody later reads "make evals passed at close" into a line
+that does not say it.
+
+  q05 PASSED in that run, at 788 output tokens — after declining twice at 764
+  on the two runs before it. See q05-mechanism.txt; it is why the length
+  hypothesis in section 5 of that file is falsified in section 7.

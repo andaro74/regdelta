@@ -163,6 +163,11 @@ is a guess with a shape, not a measurement, and the next person should treat
 it exactly the way this document's first three framings deserved to be
 treated.
 
+  AND IT IS WRONG. Falsified the same day, one run later — see section 7.
+  Left standing above rather than deleted, because the guess and its
+  refutation are two hours apart and the pattern is the whole point of this
+  file.
+
 --------------------------------------------------------------------------
 6. THE INSTRUMENT THAT WOULD HAVE SAID SO ALREADY EXISTS AND IS NOT READ
 --------------------------------------------------------------------------
@@ -195,3 +200,38 @@ It also means the prediction in that comment was HALF right. It named the
 max_tokens cut-off. This is its sibling: a COMPLETE reply that does not parse.
 `stop_reason` distinguishes the two. `truncated` alone would have read False
 here and sent the reader back to the beginning.
+
+--------------------------------------------------------------------------
+7. THE LENGTH HYPOTHESIS IS FALSIFIED — NINTH OBSERVATION
+--------------------------------------------------------------------------
+
+PR #22 re-run after the sections above were written: run 32594231310,
+19:38-19:43Z, 18/20, "no regression: every question that has ever passed
+still passes". q05 PASSED.
+
+  19:40:13  CI run C  input 7083  output 788  confidence 0.93  Citations 2.0
+                      VerdictRows 1.0  ok
+
+788 output tokens. That is LONGER than the 764 that failed twice, and it
+parsed. Section 5's leading candidate — that the parse failure follows the
+longest completions, because a longer prose answer is a likelier place for a
+raw control character — predicted the opposite of what happened.
+
+So length is not the discriminator, and the mechanism behind the parse failure
+is once again NOT established. What IS established is unchanged and is now
+carried by nine observations rather than eight:
+
+  input 7083 tokens in ALL NINE — three CI runs and six probe calls. The
+  prompt is invariant. The completion is not. One of them did not parse.
+
+The honest state: `_json_object` returning `{}` on a complete reply is
+observed, reproducible in the sense that it happened twice, and unexplained.
+It cannot be explained without the raw text, and the raw text is still logged
+nowhere. Section 6 is therefore not a nice-to-have. It is the precondition for
+ever closing this.
+
+  Count of framings of this failure that have now been wrong: four.
+  q03 -> non-determinism -> load -> completion length.
+  Every one of them was the nearest available explanation to whoever held the
+  pen. The instrument that would end the sequence was built at M05 and is
+  still read by nobody.

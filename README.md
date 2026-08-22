@@ -15,7 +15,7 @@ question set, and journaled — the repo history IS the demo.
 | 04 | API + demo UI | `m04` | 4/4 | 90% **** | ✅ |
 | 05 | Deploy + lifecycle | `m05` | – | – | ⬜ |
 | 06 | Load + observability | `m06` | 4/4 | 90% \*\*\*\*\* | ✅ |
-| 07 | Governance layer (three doors) | `m07` | – | – | ⬜ |
+| 07 | Governance layer (three doors) | `m07` | 4/4 | 90% \*\*\*\*\*\* | ✅ |
 
 Fill each row at milestone close (see .claude/skills/close-milestone).
 
@@ -109,15 +109,58 @@ The intended arc: baseline fails the trap questions → retrieval fixes
 recall → the agent graph fixes the traps → the rest makes it production-
 shaped. Evidence lives in milestones/M*/ and evals/history/.
 
+\*\*\*\*\*\* **M07's 90% is the same 18/20 as M06's and M04's, and that is
+the correct result.** M07 is a governance milestone: it added a ground-truth
+gate, made `golden-set` and `ruling-cited` required, and removed the admin
+bypass. It changed no retrieval code, no prompt and no ground truth except the
+six q12 accept tokens an SME-seat ruling deleted for admitting the answer the
+question excludes (`milestones/M07/q12-token-ruling.md`) — a change that makes
+the set STRICTER. **A governance milestone reporting a score improvement would
+be reporting either a coincidence or a gate that had started grading itself.**
+
+The two misses are `q12` and `q15`. Both were triaged from the SME seat and
+**ground truth was upheld on both** (`milestones/M07/q12-q15-triage.md`): q12's
+answer-composition layer inverts a verdict sentence it has already reasoned
+correctly, and q15's retrieval embeds one raw query at `NAIVE_TOP_K = 8` with
+no decomposition. Real defects, each owed its own milestone. Neither gates,
+because neither has ever passed in any recorded run — which is what the
+regression bar ruled at M07 means (`milestones/M07/eval-gate-bar-ruling.md`).
+
+What M07 actually decided is that **the repository owner is subject to the
+rules**: `bypass_actors` is `[]` and `current_user_can_bypass` is `never`, so a
+red required check has no override and the only recourse is a fix or a re-run.
+That was demonstrated three times against real pull requests — Door 1 (#20)
+blocked, Door 3 (#21) blocked by review AND by tests, Door 2 (#17 → #18)
+merged clean by doing it properly. Evidence:
+`milestones/M07/doors/`, `ruleset-after-bypass-removal.json`.
+
+And it decided one thing it did not set out to: **the gate caught a defect in
+this milestone's own work.** `golden-set` blocked a documentation-only pull
+request twice on q05. That was diagnosed as flake, then as non-determinism,
+then as Bedrock load, then as completion length — all four wrong. The metrics
+say the verdict call SUCCEEDED both times and `_json_object` could not parse a
+complete reply, so the answer collapsed to empty at confidence 0.00. The gate
+was right; the product was not. `milestones/M07/q05-mechanism.txt`.
+
 ## Governance (separation of roles, from the start)
 The org chart is encoded in the repo: CODEOWNERS maps files to role seats
 (PM owns SPEC/**, the compliance SME owns golden ground truth, Security
-owns tool policy + infra, the lead owns CLAUDE.md/ADRs), branch protection
-makes those reviews mandatory, the eval-gate workflow blocks any PR that
-regresses the golden set, and role subagents (.claude/agents/) run
-first-pass review from each seat. Start here: docs/governance/ROLES.md ·
-demo script: docs/governance/demo-script.md · setup:
-docs/governance/branch-protection.md.
+owns tool policy + infra, the lead owns CLAUDE.md/ADRs), and role subagents
+(.claude/agents/) run first-pass review from each seat.
+
+**CODEOWNERS routes; it does not enforce.** Measured on the live ruleset:
+`required_approving_review_count` is 0 and `require_code_owner_review` is
+false. What IS mechanically enforced is narrower and is listed in
+docs/governance/ROLES.md — a pull request touching an SME-owned eval path
+fails `ground-truth-gate / ruling-cited` unless it cites a ruling already on
+`main`, and `unit` and `golden-set` are required checks. Since 2026-08-22 the
+admin bypass is removed, so those bind the repository owner too. This
+paragraph said "branch protection makes those reviews mandatory" until M07
+went and read the ruleset (lead+PM ruling,
+milestones/M07/roles-amendment-draft.md).
+
+Start here: docs/governance/ROLES.md · demo script:
+docs/governance/demo-script.md · setup: docs/governance/branch-protection.md.
 
 ## Traceability rules
 - One milestone = one branch (`mNN-<slug>`) = one tag at close (`mNN`).
