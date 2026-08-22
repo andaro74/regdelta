@@ -1,0 +1,8 @@
+secret   AWS_EVAL_ROLE_ARN    <- CiEvalRoleArn        sha256:5936d4ca3a4a (47 chars)
+secret   STAGING_API_URL      <- ApiUrl               sha256:d898302d9c57 (58 chars)
+variable REGISTRY_TABLE       <- RegistryTableName    regdelta-core-RegistryTableF2430F90-2FKHSM738R7Y
+
+secrets now set: ['AWS_EVAL_ROLE_ARN', 'STAGING_API_URL']
+variables now set:
+  EVAL_GATE_ENABLED = false
+  REGISTRY_TABLE = regdelta-core-RegistryTableF2430F90-2FKHSM738R7Y

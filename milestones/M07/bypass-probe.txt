@@ -1,0 +1,28 @@
+BEFORE - the ruleset as it stands
+    bypass_actors           : [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}]
+    current_user_can_bypass : 'always'
+    enforcement             : 'active'
+    required checks         : ['unit']
+
+AFTER  - bypass_actors emptied
+    bypass_actors           : []
+    current_user_can_bypass : 'never'
+    enforcement             : 'active'
+    required checks         : ['unit']
+
+FINDING: GitHub reports the repository owner as BOUND (current_user_can_bypass='never').
+  the four rules survived the update: True
+
+  WHAT THIS DOES NOT ESTABLISH: that a merge is actually refused.
+  This is GitHub's own report of a capability, which is the same
+  KIND of claim that was wrong about `eval-gate / unit` matching
+  a check context. Only a real blocked pull request settles it,
+  and that pull request is Door 1.
+
+RESTORED
+    bypass_actors           : [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}]
+    current_user_can_bypass : 'always'
+    enforcement             : 'active'
+    required checks         : ['unit']
+
+restored to the original ruleset, rules included: True
