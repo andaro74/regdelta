@@ -68,13 +68,12 @@ import argparse
 import hashlib
 import itertools
 import json
-import ntpath
-import pathlib
 import sys
 from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ruling_paths import resolves_in_tree
 from run_evals import check, flatten_answer
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -123,25 +122,15 @@ def cites_ruling(entry: dict) -> bool:
     fails rather than proceeding on an uncitable override.
 
     THE FIRST VERSION WAS `(ROOT / ruling).exists()` AND WAS BYPASSABLE BY ANY
-    ABSOLUTE PATH. `pathlib` lets an absolute right-hand operand replace the
-    root entirely: `ROOT / "/etc/passwd"` is `/etc/passwd`, which exists on the
-    runner, so `"ruling": "/etc/passwd"` satisfied the check and the override
-    became usable while citing nothing a reader of this repo could open. `../`
-    escapes worked the same way wherever the target existed.
-    (security-reviewer, M07 M1.) So the path must be relative, must stay inside
-    the tree after resolution, and must be a Markdown document — a ruling is
-    something someone reads.
+    ABSOLUTE PATH — `pathlib` lets an absolute right-hand operand replace the
+    root entirely, so `ROOT / "/etc/passwd"` is `/etc/passwd`, which exists on
+    the runner. security-reviewer, M07 M1.
+
+    The rule moved to `ruling_paths` when `check_ground_truth_ruling` had to
+    make the identical decision: two copies of a security check are two chances
+    to get it wrong and one place anyone remembers to fix.
     """
-    ruling = entry.get("ruling")
-    if not ruling or not isinstance(ruling, str):
-        return False
-    candidate = pathlib.PurePosixPath(ruling)
-    if candidate.is_absolute() or ntpath.isabs(ruling) or ".." in candidate.parts:
-        return False
-    if candidate.suffix.lower() != ".md":
-        return False
-    resolved = (ROOT / ruling).resolve()
-    return resolved.is_relative_to(ROOT.resolve()) and resolved.is_file()
+    return resolves_in_tree(entry.get("ruling"), ROOT)
 
 
 def admission_for(admissions: list[dict], qid: str, run: dict,

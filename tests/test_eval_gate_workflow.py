@@ -31,10 +31,20 @@ the parsed YAML rather than the diff, which is what this now does on every PR.
 import re
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).parent.parent
-WORKFLOW = ROOT / ".github" / "workflows" / "evals.yml"
+WORKFLOWS_DIR = ROOT / ".github" / "workflows"
+WORKFLOW = WORKFLOWS_DIR / "evals.yml"
+
+# EVERY workflow, not just this one. The permissions tests below were written
+# against evals.yml when it was the only file; the moment a second landed
+# (ground-truth-gate.yml, M07) a guard that names one file would have covered
+# half the surface while reading as though it covered all of it. Discovered by
+# adding the second workflow, which is the cheap way to find it.
+ALL_WORKFLOWS = sorted(WORKFLOWS_DIR.glob("*.yml")) + \
+    sorted(WORKFLOWS_DIR.glob("*.yaml"))
 
 # What a step's presence ENTITLES its job to. Derived from the action, not from
 # the job's own declaration — otherwise the test reads the answer off the thing
@@ -48,10 +58,17 @@ GITHUB_SCRIPT = "actions/github-script"
 COMMENT_CALL = "issues.createComment"
 
 
-def workflow() -> dict:
+def workflow(path: Path | None = None) -> dict:
     # `on:` parses as the boolean True under YAML 1.1, which is why nothing here
     # indexes it by name.
-    return yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    return yaml.safe_load((path or WORKFLOW).read_text(encoding="utf-8"))
+
+
+def test_there_is_at_least_one_workflow_to_check():
+    """Guards the guard. `ALL_WORKFLOWS` is a glob, and a glob that matches
+    nothing turns every parametrised test below into zero tests that report as
+    passing — a green suite asserting nothing at all."""
+    assert ALL_WORKFLOWS, f"no workflows found under {WORKFLOWS_DIR}"
 
 
 def required_permissions(job: dict) -> dict:
@@ -67,25 +84,28 @@ def required_permissions(job: dict) -> dict:
     return need
 
 
-def test_the_workflow_level_grant_is_the_floor():
+@pytest.mark.parametrize("path", ALL_WORKFLOWS, ids=lambda p: p.name)
+def test_the_workflow_level_grant_is_the_floor(path):
     """`contents: read` and nothing else. Everything wider is per job, next to
     the one step that spends it."""
-    assert workflow()["permissions"] == {"contents": "read"}
+    assert workflow(path)["permissions"] == {"contents": "read"}
 
 
-def test_every_job_declares_its_own_permissions():
+@pytest.mark.parametrize("path", ALL_WORKFLOWS, ids=lambda p: p.name)
+def test_every_job_declares_its_own_permissions(path):
     """THE DEFECT THIS FILE EXISTS FOR. A job-level block REPLACES the
     workflow-level one; it does not merge. A job that omits it does not inherit
     `contents: read` plus its own additions — it gets the default token, and
     which default depends on repository settings, so the answer is not even
     visible in this file."""
-    for name, job in workflow()["jobs"].items():
+    for name, job in workflow(path)["jobs"].items():
         assert "permissions" in job, (
             f"job {name!r} declares no permissions block. It does not inherit "
             f"the workflow-level one — that block is replaced, not merged.")
 
 
-def test_each_job_holds_exactly_what_its_steps_need():
+@pytest.mark.parametrize("path", ALL_WORKFLOWS, ids=lambda p: p.name)
+def test_each_job_holds_exactly_what_its_steps_need(path):
     """Exactly: no missing grant, and no spare one.
 
     The missing direction breaks OIDC or the PR comment. The spare direction is
@@ -93,7 +113,7 @@ def test_each_job_holds_exactly_what_its_steps_need():
     installs tens of MB of vendored JavaScript through aws-cdk-lib, on every PR
     including forks. That is acceptable only while it holds a read-only token
     and no secrets."""
-    for name, job in workflow()["jobs"].items():
+    for name, job in workflow(path)["jobs"].items():
         need = required_permissions(job)
         held = job["permissions"]
         assert held == need, (
@@ -190,12 +210,13 @@ def test_the_account_id_and_the_api_host_are_secrets_not_variables():
             f"{name} is read as a variable; variables are not masked in logs"
 
 
-def test_no_stray_actions_expression_in_a_script_body():
+@pytest.mark.parametrize("path", ALL_WORKFLOWS, ids=lambda p: p.name)
+def test_no_stray_actions_expression_in_a_script_body(path):
     """A `script:` body is a YAML VALUE, not a comment, so Actions expression
     syntax written there — even inside a // JavaScript comment — is parsed and
     evaluated, and an empty one is a workflow syntax error. Caught while
     writing the L4 fix, by an editor rather than by a failed run."""
-    for job in workflow()["jobs"].values():
+    for job in workflow(path)["jobs"].values():
         for step in job.get("steps", []):
             script = (step.get("with") or {}).get("script", "")
             for expr in re.findall(r"\$\{\{(.*?)\}\}", script, re.DOTALL):
