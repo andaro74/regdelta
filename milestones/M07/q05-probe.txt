@@ -1,0 +1,24 @@
+--- call 1 ---
+  status     : ok
+  confidence : 0.95
+  review     : 
+  tier       : s3vectors | cache: bypass | fallback: None
+  citations  : ['89 FR 106064', '90 FR 10592', '2024-29957', '2025-03118']
+  answer len : 1519
+  answer[:200]: Under the updated 'healthy' nutrient content claim rule (89 FR 106064, codified at 21 CFR 101.65(d)), a food that does not qualify for one of the automatic exemptions (e.g., single-ingredient foods fr
+--- call 2 ---
+  status     : ok
+  confidence : 0.93
+  review     : 
+  tier       : s3vectors | cache: bypass | fallback: None
+  citations  : ['89 FR 106064', '90 FR 10592']
+  answer len : 1649
+  answer[:200]: Under the updated 'healthy' nutrient content claim rule (89 FR 106064, codified at 21 CFR 101.65(d)), a food that does not qualify for one of the automatic exemptions (e.g., single-ingredient foods fr
+--- call 3 ---
+  status     : ok
+  confidence : 0.93
+  review     : 
+  tier       : s3vectors | cache: bypass | fallback: None
+  citations  : ['89 FR 106064', '90 FR 10592']
+  answer len : 1649
+  answer[:200]: Under the updated 'healthy' nutrient content claim rule (89 FR 106064, codified at 21 CFR 101.65(d)), a food that does not qualify for one of the automatic exemptions (e.g., single-ingredient foods fr

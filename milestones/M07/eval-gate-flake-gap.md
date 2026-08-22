@@ -91,6 +91,57 @@ until it goes green" behaviour `run_evals.py` prints a warning about at record
 time. **The gate currently makes the repository's own anti-pattern the only way
 to merge.**
 
+## THIRD observation, and it moves the diagnosis again
+
+PR #22 was re-run after the document above was widened. **q05 declined a second
+time, identically** — `confidence 0.00`, `pending_review`. Two consecutive CI
+runs, same question, same reason. That is not what non-determinism looks like,
+so "flake" was the wrong word too.
+
+### The probe that separates the hypotheses, for ~$0.03
+
+q05 asked directly against the same staging endpoint, cache bypassed both ways
+exactly as `run_evals.ask()` does, three times:
+
+```
+call 1   status ok   confidence 0.95   citations ['89 FR 106064','90 FR 10592','2024-29957','2025-03118']
+call 2   status ok   confidence 0.93   citations ['89 FR 106064','90 FR 10592']
+call 3   status ok   confidence 0.93   citations ['89 FR 106064','90 FR 10592','2024-29957','2025-03118']
+```
+
+**3/3 answered, high confidence, correct citations, tier `s3vectors`,
+`cache: bypass`.** The same question that declined twice inside a 20-question CI
+run answers reliably when asked on its own.
+
+### What that establishes, and what it does NOT
+
+**Established:** q05 is not broken, and the golden set's expectation for it is
+not wrong. The decline is a property of *the run*, not of the question, the
+corpus, or the ground truth. So this is not a case for touching
+`golden_questions.json` — and it would have been very easy to "fix" q05 by
+weakening it, which would have been the ROLES.md prohibition exactly.
+
+**NOT established: the mechanism.** The obvious hypothesis is load — twenty
+questions in sequence hitting a Bedrock throttle or timeout, one of them losing,
+which question varies. That is a *hypothesis*. What supports it: the single-shot
+probe passes; the failures move between questions (q03 on PR #20, q05 twice on
+PR #22); and `confidence 0.00` is distinct from the ordinary HITL declines in
+CloudWatch, which sit at 0.20-0.30 with a real answer attached. **0.00 with an
+empty answer looks like something failing, not like the model being unsure.**
+
+What has NOT been done: no throttling metric has been read, no correlation
+between position-in-run and failure has been measured, and the query Lambda's
+logs were searched only coarsely. **Anyone continuing this should start there
+rather than from my hypothesis.**
+
+### Why this document has been renamed twice
+
+It was filed as "the q03 gap", widened to "run-to-run non-determinism", and both
+names were wrong in the same direction: they described the symptom nearest to
+hand. It is recorded here rather than tidied away, because a document that has
+been wrong twice about its own subject should say so to the person reading it
+third.
+
 ## Why it is not fixed here
 
 Three reasons, in order of weight.
