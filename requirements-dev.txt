@@ -24,6 +24,27 @@ pytest==9.1.1
 # CI. That is the drift this file was created at M03 to end.
 httpx==0.28.1
 
+# Parses .github/workflows/evals.yml for tests/test_eval_gate_workflow.py, which
+# asserts each job holds exactly the permissions its steps need. TEST-ONLY:
+# nothing in src/ or infra/ reads YAML.
+#
+# ALREADY PRESENT, AND THAT IS THE REASON TO PIN IT RATHER THAN NOT TO.
+# `langgraph -> langchain-core -> pyyaml<7.0.0,>=5.3.0` resolves it to 6.0.3 in
+# CI today, so the guard would import and pass with nothing declared — which is
+# exactly how httpx and aws-cdk-lib got here. Both were ambient until CI and the
+# laptop diverged, and this file's whole premise is that a test passing in one
+# place and failing in the other is a version drift rather than a finding.
+#
+# A langchain-core release dropping pyyaml would otherwise take the eval gate's
+# own permissions guard down for a reason nothing in this repo names.
+#
+# Worth stating plainly: evals.yml declined this guard in 2026-08 partly because
+# "PyYAML is not transitive from boto3, langgraph, fastapi, starlette, mangum or
+# ruff, so it would have had to become a dependency." That was wrong — it is
+# transitive from langgraph — and the pin is here anyway, because being
+# transitive is a property of this week's resolve and not a declaration.
+pyyaml==6.0.3
+
 # The infra tests. `tests/test_search_stack_access.py` opens with
 # `pytest.importorskip("aws_cdk")`, and aws-cdk-lib lived only in
 # infra/requirements.txt — which the eval gate's unit job does not install. So

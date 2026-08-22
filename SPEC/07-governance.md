@@ -15,11 +15,19 @@ docs/governance/ROLES.md, ADR-0003.
 1. GitHub: teams or seat accounts per docs/governance/branch-protection.md;
    branch protection with CODEOWNERS review + eval-gate required check;
    Actions variables (EVAL_GATE_ENABLED, STAGING_API_URL, AWS_EVAL_ROLE_ARN).
-2. AWS: regdelta-ci-eval OIDC role (trust = this repo; permissions =
-   invoke staging API only) — add to infra/core as a construct.
-   *An amendment to this item's permission clause is proposed and NOT ruled
-   on; it lives in `milestones/M07/spec07-oidc-amendment.md`. Until the PM seat
-   rules, the text above governs.*
+2. AWS: regdelta-ci-eval OIDC role (trust = this repo; permissions = read the
+   registry table for the corpus fingerprint, and nothing else) — add to
+   infra/core as a construct. **The staging API is unauthenticated and needs no
+   grant at all**, which is stated rather than left as an apparent omission: a
+   reader who expects an invoke permission and finds none should learn why from
+   this line.
+
+   *Amended 2026-08-21 by PM-seat ruling. The original clause read "permissions
+   = invoke staging API only", which is not implementable — `apigw.HttpApi` is
+   created with no authorizer and `run_evals.ask()` sends an unsigned POST, so
+   there is nothing to grant and a role satisfying it literally would hold an
+   empty policy. Reasoning and the ruling in
+   `milestones/M07/spec07-oidc-amendment.md`.*
 3. Stage Door 3: branch `demo/door3-iam-widening` containing a plausible
    diff that widens an IAM policy to resources:["*"] amid a real fix.
 4. Verify all four subagents run clean against representative diffs.

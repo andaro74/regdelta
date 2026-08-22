@@ -1,6 +1,15 @@
 # PROPOSED AMENDMENT to SPEC/07 item 2 — the OIDC role's permissions
 
-**Status: proposed, NOT ruled on. SPEC/07 item 2 as written still governs.**
+**Status: ADOPTED by the PM seat, 2026-08-21. SPEC/07 item 2 now carries the
+replacement text below.**
+
+The seat chose "adopt the replacement text". The second question in §"What the
+PM seat is asked to rule" was answered by that choice: the unauthenticated-API
+statement goes into SPEC/07 as scope. It is **not** thereby settled as a
+security matter — SPEC/07 says only *why the role is small*. Whether a public
+unauthenticated `/query` endpoint is acceptable is a security-seat question
+about the API, it is not this milestone's subject, and it is recorded as open
+in the M07 journal rather than treated as ruled on here.
 
 Raised in the engineering seat, 2026-08-21, for the PM seat. Moved here out of
 `SPEC/07-governance.md` on `pm-spec-reviewer`'s finding 9: an un-ruled
