@@ -1,0 +1,38 @@
+    q01  74822d4:agent=PASS 74822d4:naive=FAIL 2cea737:agent=PASS 2cea737:naive=FAIL e26d8ef:agent=PASS a7bd28c:agent=PASS 4296f04:agent=PASS e9ba788:agent=PASS 8a0cdea:agent=PASS ec0e049:agent=PASS aeacab0:agent=PASS 1fa942a:agent=PASS 1fa942a:agent=PASS 6fad8f6:naive=FAIL 1f46b92:agent=PASS 1f46b92:agent=PASS 95235d9:agent=PASS 95235d9:agent=PASS
+    q02  74822d4:agent=PASS 74822d4:naive=PASS 2cea737:agent=PASS 2cea737:naive=PASS e26d8ef:agent=PASS a7bd28c:agent=PASS 4296f04:agent=PASS 1fa942a:agent=PASS 1fa942a:agent=PASS 6fad8f6:naive=FAIL 1f46b92:agent=PASS 1f46b92:agent=PASS 95235d9:agent=PASS 95235d9:agent=PASS
+ !! q03  74822d4:agent=PASS 74822d4:naive=FAIL 2cea737:agent=PASS 2cea737:naive=FAIL e26d8ef:agent=PASS a7bd28c:agent=PASS 4296f04:agent=PASS 1fa942a:agent=PASS 1fa942a:agent=PASS 6fad8f6:naive=FAIL 1f46b92:agent=FAIL 1f46b92:agent=PASS 95235d9:agent=PASS 95235d9:agent=PASS
+    q04  74822d4:agent=PASS 74822d4:naive=FAIL 2cea737:agent=PASS 2cea737:naive=PASS e26d8ef:agent=PASS a7bd28c:agent=PASS 4296f04:agent=PASS 1fa942a:agent=PASS 1fa942a:agent=PASS 6fad8f6:naive=FAIL 1f46b92:agent=PASS 1f46b92:agent=PASS 95235d9:agent=PASS 95235d9:agent=PASS
+    q05  74822d4:agent=PASS 74822d4:naive=FAIL 2cea737:agent=PASS 2cea737:naive=FAIL e26d8ef:agent=PASS a7bd28c:agent=PASS 4296f04:agent=PASS e9ba788:agent=PASS 8a0cdea:agent=PASS ec0e049:agent=PASS 1fa942a:agent=PASS 1fa942a:agent=PASS 6fad8f6:naive=FAIL 1f46b92:agent=PASS 1f46b92:agent=PASS 95235d9:agent=PASS 95235d9:agent=PASS
+    q06  74822d4:agent=PASS 74822d4:naive=PASS 2cea737:agent=PASS 2cea737:naive=PASS e26d8ef:agent=PASS a7bd28c:agent=PASS 4296f04:agent=PASS e9ba788:agent=PASS 8a0cdea:agent=PASS ec0e049:agent=PASS aeacab0:agent=PASS 1fa942a:agent=PASS 1fa942a:agent=PASS 6fad8f6:naive=PASS 1f46b92:agent=PASS 1f46b92:agent=PASS 95235d9:agent=PASS 95235d9:agent=PASS
+    q07  74822d4:agent=PASS 74822d4:naive=FAIL 2cea737:agent=PASS 2cea737:naive=FAIL e26d8ef:agent=PASS a7bd28c:agent=PASS 4296f04:agent=PASS 1fa942a:agent=PASS 1fa942a:agent=PASS 6fad8f6:naive=FAIL 1f46b92:agent=PASS 1f46b92:agent=PASS 95235d9:agent=PASS 95235d9:agent=PASS
+    q08  74822d4:agent=PASS 74822d4:naive=FAIL 2cea737:agent=PASS 2cea737:naive=FAIL e26d8ef:agent=PASS a7bd28c:agent=PASS 4296f04:agent=PASS 1fa942a:agent=PASS 1fa942a:agent=PASS 6fad8f6:naive=FAIL 1f46b92:agent=PASS 1f46b92:agent=PASS 95235d9:agent=PASS 95235d9:agent=PASS
+    q09  74822d4:agent=PASS 74822d4:naive=PASS 2cea737:agent=PASS 2cea737:naive=FAIL e26d8ef:agent=PASS a7bd28c:agent=PASS 4296f04:agent=PASS 1fa942a:agent=PASS 1fa942a:agent=PASS 6fad8f6:naive=PASS 1f46b92:agent=PASS 1f46b92:agent=PASS 95235d9:agent=PASS 95235d9:agent=PASS
+    q10  74822d4:agent=PASS 74822d4:naive=FAIL 2cea737:agent=PASS 2cea737:naive=FAIL e26d8ef:agent=PASS a7bd28c:agent=PASS 4296f04:agent=PASS 1fa942a:agent=PASS 1fa942a:agent=PASS 6fad8f6:naive=FAIL 1f46b92:agent=PASS 1f46b92:agent=PASS 95235d9:agent=PASS 95235d9:agent=PASS
+    q11  2cea737:agent=PASS 2cea737:naive=PASS e26d8ef:agent=PASS a7bd28c:agent=PASS 4296f04:agent=PASS 1fa942a:agent=PASS 1fa942a:agent=PASS 6fad8f6:naive=PASS 1f46b92:agent=PASS 1f46b92:agent=PASS 95235d9:agent=PASS 95235d9:agent=PASS
+    q12  2cea737:agent=FAIL 2cea737:naive=FAIL e26d8ef:agent=FAIL a7bd28c:agent=FAIL 4296f04:agent=FAIL 1fa942a:agent=FAIL 1fa942a:agent=FAIL 6fad8f6:naive=FAIL 1f46b92:agent=FAIL 1f46b92:agent=FAIL 95235d9:agent=FAIL 95235d9:agent=FAIL
+    q13  2cea737:agent=PASS 2cea737:naive=FAIL e26d8ef:agent=PASS a7bd28c:agent=PASS 4296f04:agent=PASS e9ba788:agent=PASS 8a0cdea:agent=PASS ec0e049:agent=PASS aeacab0:agent=PASS 1fa942a:agent=PASS 1fa942a:agent=PASS 6fad8f6:naive=FAIL 1f46b92:agent=PASS 1f46b92:agent=PASS 95235d9:agent=PASS 95235d9:agent=PASS
+ ++ q14  2cea737:agent=FAIL 2cea737:naive=FAIL e26d8ef:agent=FAIL a7bd28c:agent=PASS 4296f04:agent=PASS e9ba788:agent=PASS 8a0cdea:agent=PASS ec0e049:agent=PASS aeacab0:agent=PASS 1fa942a:agent=PASS 1fa942a:agent=PASS 6fad8f6:naive=FAIL 1f46b92:agent=PASS 1f46b92:agent=PASS 95235d9:agent=PASS 95235d9:agent=PASS
+    q15  2cea737:agent=FAIL 2cea737:naive=FAIL e26d8ef:agent=FAIL a7bd28c:agent=FAIL 4296f04:agent=FAIL 1fa942a:agent=FAIL 1fa942a:agent=FAIL 6fad8f6:naive=FAIL 1f46b92:agent=FAIL 1f46b92:agent=FAIL 95235d9:agent=FAIL 95235d9:agent=FAIL
+    q16  2cea737:agent=PASS 2cea737:naive=FAIL e26d8ef:agent=PASS a7bd28c:agent=PASS 4296f04:agent=PASS 1fa942a:agent=PASS 1fa942a:agent=PASS 6fad8f6:naive=FAIL 1f46b92:agent=PASS 1f46b92:agent=PASS 95235d9:agent=PASS 95235d9:agent=PASS
+    q17  2cea737:agent=PASS 2cea737:naive=FAIL e26d8ef:agent=PASS a7bd28c:agent=PASS 4296f04:agent=PASS 1fa942a:agent=PASS 1fa942a:agent=PASS 6fad8f6:naive=FAIL 1f46b92:agent=PASS 1f46b92:agent=PASS 95235d9:agent=PASS 95235d9:agent=PASS
+    q18  2cea737:agent=PASS 2cea737:naive=FAIL e26d8ef:agent=PASS a7bd28c:agent=PASS 4296f04:agent=PASS 1fa942a:agent=PASS 1fa942a:agent=PASS 6fad8f6:naive=FAIL 1f46b92:agent=PASS 1f46b92:agent=PASS 95235d9:agent=PASS 95235d9:agent=PASS
+    q19  2cea737:agent=PASS 2cea737:naive=FAIL e26d8ef:agent=PASS a7bd28c:agent=PASS 4296f04:agent=PASS 1fa942a:agent=PASS 1fa942a:agent=PASS 6fad8f6:naive=FAIL 1f46b92:agent=PASS 1f46b92:agent=PASS 95235d9:agent=PASS 95235d9:agent=PASS
+    q20  2cea737:agent=PASS 2cea737:naive=PASS e26d8ef:agent=PASS a7bd28c:agent=PASS 4296f04:agent=PASS 1fa942a:agent=PASS 1fa942a:agent=PASS 6fad8f6:naive=PASS 1f46b92:agent=PASS 1f46b92:agent=PASS 95235d9:agent=PASS 95235d9:agent=PASS
+
+--------------------------------------------------------------------------
+FRAGILE   q03: agent answers disagree across runs — 74822d4=PASS 2cea737=PASS e26d8ef=PASS a7bd28c=PASS 4296f04=PASS 1fa942a=PASS 1fa942a=PASS 1f46b92=FAIL 1f46b92=PASS 95235d9=PASS 95235d9=PASS
+          1f46b92 failed on: forbidden text present: 'TTB requires'
+IMPROVED  q14: fails earlier, passes later, never the other way — 2cea737=FAIL e26d8ef=FAIL a7bd28c=PASS 4296f04=PASS e9ba788=PASS 8a0cdea=PASS ec0e049=PASS aeacab0=PASS 1fa942a=PASS 1fa942a=PASS 1f46b92=PASS 1f46b92=PASS 95235d9=PASS 95235d9=PASS
+          REPORTED, not gated: the question changed verdict, and the direction is the one you want.
+ADMITTED  q02: the NAIVE control's answer at 74822d4 passes. ADR-0002 makes that a question worth re-reading.
+ADMITTED  q02: the NAIVE control's answer at 2cea737 passes. ADR-0002 makes that a question worth re-reading.
+ADMITTED  q04: the NAIVE control's answer at 2cea737 passes. ADR-0002 makes that a question worth re-reading.
+ADMITTED  q06: the NAIVE control's answer at 74822d4 passes. ADR-0002 makes that a question worth re-reading.
+ADMITTED  q06: the NAIVE control's answer at 2cea737 passes. ADR-0002 makes that a question worth re-reading.
+ADMITTED  q06: the NAIVE control's answer at 6fad8f6 passes. ADR-0002 makes that a question worth re-reading.
+ADMITTED  q09: the NAIVE control's answer at 74822d4 passes. ADR-0002 makes that a question worth re-reading.
+ADMITTED  q09: the NAIVE control's answer at 6fad8f6 passes. ADR-0002 makes that a question worth re-reading.
+ADMITTED  q11: the NAIVE control's answer at 2cea737 passes. ADR-0002 makes that a question worth re-reading.
+ADMITTED  q11: the NAIVE control's answer at 6fad8f6 passes. ADR-0002 makes that a question worth re-reading.
+ADMITTED  q20: the NAIVE control's answer at 2cea737 passes. ADR-0002 makes that a question worth re-reading.
+ADMITTED  q20: the NAIVE control's answer at 6fad8f6 passes. ADR-0002 makes that a question worth re-reading.
