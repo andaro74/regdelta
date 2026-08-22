@@ -42,13 +42,26 @@ OIDC_HOST = "token.actions.githubusercontent.com"
 
 @pytest.fixture(scope="module")
 def template():
+    """The core stack's TEMPLATE, synthesised with the layer stubbed.
+
+    The stub is not optional convenience. Without it these tests read
+    build/lambda-layer, a `make layer` artifact that is not committed: they
+    passed on the machine that wrote them and produced nine
+    "build/lambda-layer does not exist" errors the first time CI ran them, on
+    2026-08-22, after the milestone had been calling the suite green. Nothing
+    here asserts anything about the layer's contents — only the shape of an IAM
+    role — so the artifact must not be reachable at all. See tests/conftest.py.
+    """
+    from conftest import stub_layer
+
     from core.core_stack import RegDeltaCoreStack
 
-    app = cdk.App()
-    stack = RegDeltaCoreStack(
-        app, "regdelta-core",
-        env=cdk.Environment(account="111111111111", region="us-west-2"))
-    return Template.from_stack(stack)
+    with stub_layer():
+        app = cdk.App()
+        stack = RegDeltaCoreStack(
+            app, "regdelta-core",
+            env=cdk.Environment(account="111111111111", region="us-west-2"))
+        return Template.from_stack(stack)
 
 
 @pytest.fixture(scope="module")
