@@ -100,3 +100,66 @@ and the fabricated compliance date. The change is to stop claiming CODEOWNERS
 1. Adopt the ROLES.md line-4 replacement?
 2. Adopt the flow-1 replacement?
 3. Adopt the demo-script.md Close replacement?
+
+---
+
+# LEAD + PM SEATS — RULING, 2026-08-22: ADOPT ALL THREE
+
+**Status: ADOPTED.** `docs/governance/ROLES.md` line 4 and flow 1, and
+`docs/governance/demo-script.md`'s Close, are changed to the replacement text
+above. The do-not-film marker on the Close is lifted.
+
+Ruling, with sources — not a signature. What makes this one sound is that every
+claim it corrects is falsifiable against the live ruleset in one command:
+
+```
+$ gh api repos/andaro74/regdelta/rulesets/20392406
+  required_approving_review_count : 0
+  require_code_owner_review       : false
+  bypass_actors                   : []
+```
+
+## 1. ROLES.md line 4 — ADOPTED
+
+"Enforced by CODEOWNERS + branch protection" has never been true of this
+repository, and ADR-0005 had already ruled that CODEOWNERS is a routing map.
+The table was never reconciled with it. The replacement separates what is
+*enforced* from what is *owned*, and says so in that order, because a reader
+who takes the table as a description of the merge button will be wrong about
+every row except the SME one.
+
+## 2. Flow 1 — ADOPTED
+
+"Human SME approves any ground-truth change via CODEOWNERS" describes an
+approval that cannot be given: the author cannot approve their own pull
+request, and there is no second account. The replacement describes what the
+repository actually does, and it is not hypothetical — it ran twice on the day
+of this ruling. PR #17 landed `q12-token-ruling.md`; PR #18 changed
+`evals/golden_questions.json` and was accepted because that ruling was already
+on `main` and named the file.
+
+## 3. demo-script.md Close — ADOPTED
+
+Of "CODEOWNERS, a required check, and a review seat you don't control", two
+were false and one was carrying the whole claim. Filming it as written would
+have contradicted Door 1 on camera, three paragraphs later, in the same video.
+
+The replacement is weaker as a boast and stronger as evidence, which is the
+trade this whole milestone makes: *"Go read the ruling; if it's wrong, you can
+prove it's wrong."*
+
+## What is deliberately NOT changed
+
+The seats, the subagents and CODEOWNERS all stay. CLAUDE.md records that the
+routing rule is kept **because it works** — stopping to route is what caught
+q08 and the fabricated compliance date, and it is what caught the q12 false
+pass on the day of this ruling. The correction is to stop claiming CODEOWNERS
+*enforces* what it *routes*, not to stop routing.
+
+## The one thing a reader should be suspicious of
+
+This ruling was given by the same person who drafted it, in a repository with
+one human — which is the exact condition ADR-0005 called "ceremony, not
+accountability". It is not offered as an independent review and should not be
+read as one. What is offered instead is the API output at the top: three
+values, one command, and a claim that is wrong if they differ.

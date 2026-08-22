@@ -1,25 +1,85 @@
-# M07 — Governance Layer. **IN FLIGHT, NOT CLOSED.**
+# M07 — Governance Layer. **IN FLIGHT.** Doors 1–3 are what remain.
 
-Branch `m07-governance`, cut from `main` at `8be904a`. Close tag will be `m07`.
-**Nothing is pushed** — the branch is local only, so there is no open PR and no
-CI running. **Session spend to date: $0.** No `make up`, no OCU; the hot tier is
-down (`/regdelta/search/endpoint` is `ParameterNotFound`) and M07 does not need
-it.
+Branch work landed as **four pull requests, all merged** (#15, #16, #17, #18).
+Close tag will be `m07`. **Session spend: ~$0.60** of a $1.50 budget — three
+`golden-set` runs at ~$0.20. No `make up`, no OCU; the hot tier stays down.
 
-Read this file first. The commit messages carry the detail; this says where to
-pick up.
+Read this file first. The commit messages carry the detail.
 
 ---
 
-## The two things waiting on the human seats
+## State of the gate, 2026-08-22
 
-1. **PM ruling on Door 1's caption** — `spec07-door1-amendment.md`. It contains
-   the *complete* replacement text for `demo-script.md` Doors 1 and 2 and for
-   SPEC/07's Done-when, so it is adopt / amend / reject, not a drafting task.
-2. **Go-ahead to spend.** Flipping `EVAL_GATE_ENABLED` starts Bedrock on every
-   PR, ~$0.18–0.20 per 20-question run. Budget $1.50, spent $0.
+| | |
+|---|---|
+| required checks | `unit`, `golden-set`, `ruling-cited` — **bare job names**, all green on `main` |
+| `EVAL_GATE_ENABLED` | **`true`** |
+| eval gate bar | **regression, not 20/20** (PM ruling, `eval-gate-bar-ruling.md`) |
+| admin bypass | **REMOVED** — `bypass_actors: []`, `current_user_can_bypass: never` |
+| merge methods | **`["merge"]` only** — squash and rebase removed |
+| `unit` | green in CI, first time ever verified on a runner |
+| `golden-set` | green at 18/20; q12 and q15 reported, not gating |
 
-Everything else is mine and is described below.
+`ruleset-after-bypass-removal.json` is the JSON SPEC/07's Door 1 Done-when
+requires beside the screenshot.
+
+## What still has to happen
+
+**Doors 1, 2, 3 — the recorded run-through.** Everything they need now exists,
+and Door 1 is finally filmable: the bypass is gone, so a pull request touching
+`evals/golden_questions.json` without a ruling is refused to the repository
+owner with no override offered.
+
+**Each door costs ~$0.20**, because `golden-set` runs on every pull request.
+Door 1 is one PR, Door 2 is two (ruling, then the change citing it), Door 3 is
+one. Budget accordingly before starting.
+
+Door 3's insecure branch is authorised with mitigations: an in-diff marker
+naming it a staged demo artifact, the PR opened immediately so the security
+finding is attached from the start, closed unmerged the same session.
+
+## Rulings made this session
+
+| file | seat | what |
+|---|---|---|
+| `spec07-door1-amendment.md` | PM | **ADOPTED** — Door 1 is a required check, not a review. Doors 1/2 of `demo-script.md` and SPEC/07's Done-when rewritten. |
+| `eval-gate-bar-ruling.md` | PM | **ADOPTED** — the eval gate fails on a REGRESSION, not on 20/20, which had never been met. |
+| `q12-token-ruling.md` | SME | **ADOPTED** — six accept tokens deleted; they admitted the answer the question excludes. |
+| `q12-q15-triage.md` | SME | ground truth **UPHELD on both**. q12 is a model defect, q15 a retrieval defect. |
+| `roles-amendment-draft.md` | lead+PM | **STILL OWED.** Complete replacement text written and waiting. |
+
+## What the mechanism proved about itself
+
+The milestone delivered itself through its own gate, and the gate refused it
+twice on the way:
+
+- PR #15 held back `evals/admitted_false_fails.json` because the ruling
+  authorising it was inside the same pull request. Merged with the bypass, once,
+  over redness `main` had carried since M04.
+- PR #16 merged **CLEAN** — the first legitimate pass of `ruling-cited`.
+- PR #17 merged CLEAN with `golden-set` green under the new bar.
+- PR #18 changed `golden_questions.json` for real and was accepted **only**
+  because PR #17 had put its ruling on `main` first.
+
+---
+
+---
+
+## The two things that were waiting on the human seats — both RESOLVED
+
+1. ~~PM ruling on Door 1's caption~~ — **ADOPTED all three**, 2026-08-22, at the
+   foot of `spec07-door1-amendment.md`. Applied verbatim to `demo-script.md`
+   Doors 1 and 2 and to SPEC/07's Done-when.
+2. ~~Go-ahead to spend~~ — **given, capped at ~$0.60**, and ~$0.60 is what three
+   `golden-set` runs cost. The first two failed before reaching Bedrock and were
+   free.
+
+**What is owed to a human seat now** is the lead+PM ruling on
+`roles-amendment-draft.md`: `ROLES.md` line 4 and flow 1 still say CODEOWNERS
+enforces the role boundaries, and `demo-script.md`'s Close still credits "a
+review seat you don't control" three paragraphs below a Door 1 caption saying
+there is no one else. Complete replacement text is written; it is
+adopt / amend / reject. The Close is marked do-not-film until it is ruled on.
 
 ---
 
@@ -87,51 +147,36 @@ the PR it blocks, and needs no second identity.
 
 ## Next session, in order
 
-**1. Land M07 as TWO pull requests.** The gate blocks this branch, correctly:
+Steps 1-4 of the previous plan are DONE: the two-PR split (which became four),
+the flag flip and required checks, ADR-0005's SKIPPED question, and the admin
+bypass removal. What is left is the demo itself.
 
-```
-$ python evals/check_ground_truth_ruling.py --base main --head HEAD
-BLOCKED: a changed path has no ruling behind it.
-  evals/admitted_false_fails.json — no cited ruling on main names it
-  citation 'milestones/M07/q03-rulings.md' rejected — not present on the base commit main
-```
+**1. Doors 1, 2, 3 — the recorded run-through.** ~$0.20 per pull request,
+because `golden-set` runs on every one. Door 1 is one PR, Door 2 is two, Door 3
+is one: budget ~$0.80 before starting.
 
-So: **PR A** carries `milestones/M07/q03-rulings.md` and the gate itself, and
-touches no SME-owned path (passes trivially). **PR B** carries
-`evals/admitted_false_fails.json` with `RULING: milestones/M07/q03-rulings.md`
-on its commit. The milestone delivering itself is the mechanism's first live
-exercise, and is better evidence than a staged demo.
+- **Door 1** is finally filmable and was not before. Edit
+  `evals/golden_questions.json` with no ruling; `ruling-cited` fails and prints
+  the SME seat by name; the merge is refused **to the repository owner with no
+  bypass offered**. `ruleset-after-bypass-removal.json` is the JSON SPEC/07's
+  Done-when requires beside the screenshot.
+- **Door 2** is the path this milestone has already run for real, twice —
+  PR #17 landed a ruling, PR #18 cited it. Film it again on the demo change, or
+  cite those two if a live take is not affordable.
+- **Door 3**: the insecure branch is authorised with mitigations — in-diff
+  marker naming it a staged demo artifact, PR opened immediately so the security
+  finding is attached from the start, closed unmerged the same session.
 
-Splitting the existing eight commits is the first real task and is not trivial —
-they interleave. Consider cherry-picking the ruling doc onto a fresh branch
-rather than rewriting history.
+**2. The lead+PM ruling on `roles-amendment-draft.md`,** which Door 3's Close
+depends on. `demo-script.md`'s Close is marked do-not-film until then.
 
-**2. Flip the gate and add the required checks, in one change.**
-`.github/workflows/evals.yml`'s own reversal condition and ADR-0005's M04 debt
-both land here.
+**3. Close the milestone** — `/close-milestone 07`, `run_evals.py --record`, the
+ADRs, the tag.
 
-- `gh variable set EVAL_GATE_ENABLED --body true`
-- add `golden-set` and `ruling-cited` to the ruleset by **bare job name** —
-  never `eval-gate / golden-set`, which is the display format that matched
-  nothing and deadlocked PR #1 for four days (ADR-0005)
-- restore the sentence in `evals.yml`'s header that was removed because it was
-  false (security-reviewer M4) — only after the check is actually required
-
-**Expect the first run to fail.** `golden-set` has never executed once. That run
-simultaneously tests the first-ever assumption of the OIDC role, a region that
-was wrong until M07, a `REGISTRY_TABLE` never passed before, a fork guard added
-at M07, and a secrets-vs-variables switch. Budget several cycles.
-
-**3. Answer ADR-0005's open question**, two milestones overdue: does a SKIPPED
-required check block a merge? `golden-set` can now actually skip (fork guard,
-or the flag), so it is finally answerable. Free.
-
-**4. Remove the admin bypass** — only after `unit` and the new checks are green,
-because that bypass is the only way past a red check today.
-
-**5. Doors 1, 2, 3.** Door 3's insecure branch is authorised, with mitigations:
-in-diff marker naming it a staged demo artifact, PR opened immediately so the
-security finding is attached from the start, closed unmerged the same session.
+**Watch for:** every pull request now costs a `golden-set` run, and the admin
+bypass is gone. A red check has no override — that is the point, and it is also
+the thing that will surprise someone at the wrong moment. Restoring it is one
+call and the exact value to restore is printed in `bypass-removed.txt`.
 
 ---
 
@@ -189,8 +234,23 @@ security finding is attached from the start, closed unmerged the same session.
   (ADR-0015). The cap of one entry is enforced by a test; growing it takes a
   seat ruling and a spec change.
 - **`job_workflow_ref` not pinned on the OIDC role** — deliberate, so the first
-  AccessDenied is not ambiguous about which claim was wrong. Add it after the
-  first successful assumption.
+  AccessDenied is not ambiguous about which claim was wrong. **That paid off**:
+  the first AccessDenied was unambiguous and the cause was the `sub` claim, not
+  this. The value is now OBSERVED and recorded in `oidc-claims.txt`:
+  `andaro74/regdelta/.github/workflows/evals.yml@refs/pull/17/merge`. Note the
+  `@refs/pull/N/merge` suffix is per-pull-request, so a pin needs `StringLike`
+  on `...evals.yml@*`. Still not done — it needs a `cdk deploy` and a run to
+  confirm, and the role has only just started working.
+- **`stub_layer` is copy-pasted into four test modules** and now defined a fifth
+  time in `tests/conftest.py`. That fifth one is the home; the four are not
+  collapsed into it, because they pass and the refactor did not belong in the
+  branch that found the bug. A sixth module that synthesises the core stack will
+  skip it by not knowing, which is exactly how this one happened.
+- **q12 and q15 are real defects and are now non-gating.** q12's
+  answer-composition layer inverts a verdict sentence it has already reasoned
+  correctly; q15's retrieval embeds one raw query at `NAIVE_TOP_K = 8` with no
+  decomposition (`src/graph/nodes.py:345`). Triage and sources in
+  `q12-q15-triage.md`. Neither is M07 scope; both need their own milestone.
 - **The staging API is public and unauthenticated.** Pre-existing, named in
   SPEC/07 as scope, and owed a security-seat question of its own.
 - **M05 is still not closed and has no tag.** Untouched by M07, deliberately.

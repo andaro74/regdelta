@@ -1,0 +1,23 @@
+BEFORE
+  bypass_actors        : [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}]
+  current_user_can_bypass: 'always'
+  required checks      : ['golden-set', 'ruling-cited', 'unit']
+  rules                : ['deletion', 'non_fast_forward', 'pull_request', 'required_status_checks']
+
+TO REVERSE THIS, restore exactly:
+  bypass_actors = [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}]
+
+AFTER
+  bypass_actors        : [] OK
+  current_user_can_bypass: 'never' OK
+  required checks      : ['golden-set', 'ruling-cited', 'unit'] unchanged
+  name unchanged: True
+  target unchanged: True
+  enforcement unchanged: True
+  conditions unchanged: True
+  the four rules survived: True
+
+RESULT: OK
+
+This says GitHub now reports the owner as unable to bypass. Whether
+a merge is actually refused is settled by Door 1, not by this.
