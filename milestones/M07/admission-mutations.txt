@@ -1,0 +1,15 @@
+mutation                                                       exit gates?  marker
+------------------------------------------------------------------------------------------------------------
+baseline: the entry as ruled                                   0    no      ok
+sha changed — names an observation that is not the ruled one   1    YES     ok
+question changed — the seat ruled on q03, not q18              1    YES     ok
+digest changed by ONE character — a different answer           1    YES     ok
+admits_fails carries an EXTRA reason the answer does not have  1    YES     ok
+admits_fails carries a DIFFERENT reason                        1    YES     ok
+admits_fails empty — an entry that admits nothing              1    YES     ok
+register emptied — no seat has ruled on anything               1    YES     ok
+a second, unruled entry alongside the good one                 1    YES     ok
+register file absent — a checkout without one                  1    YES     ok
+
+register restored byte-for-byte: True
+0 survivor(s) out of 10

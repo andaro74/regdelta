@@ -1,0 +1,152 @@
+
+q01  The effective date of the new 'healthy' claim rule was delayed. Did the compliance deadl
+     no, only the effective date moved                    want=PASS got=PASS
+     phrased around the negated verb                      want=PASS got=PASS
+     says YES, then names the right date                  want=FAIL got=FAIL
+     conflates the two dates outright                     want=FAIL got=FAIL
+  [~] concessive yes that names the right date             scores PASS — known limitation, documented in the question's note
+  [~] terse yes/no plus the date — a yes/no answer is unscorable scores FAIL — known limitation, documented in the question's note
+
+q02  We make a strawberry frosting containing FD&C Red No. 3. When exactly must we stop using
+     safe harbour for product already made                want=PASS got=PASS
+     inverts the grandfather clause                       want=FAIL got=FAIL
+     asserts a recall in fresh vocabulary                 want=FAIL got=FAIL
+     safe harbour via the certificate mechanism           want=PASS got=PASS
+  [~] inversion that ALSO mentions product made before     scores PASS — known limitation, documented in the question's note
+
+q03  Our fruit-flavored cocktail mixer contains Red No. 3 and its formula is on file with ano
+     declines the unsourced obligation                    want=PASS got=PASS
+     no hedge at all; 'not in' matches incidentally       want=FAIL got=FAIL
+     asserts the TTB obligation in fresh words            want=FAIL got=FAIL
+     hedges without the word 'confirm'                    want=PASS got=PASS
+  [~] the hedged interrogative q03 wants and the scorer fails scores FAIL — known limitation, documented in the question's note
+     bare assertion of the same banned phrase             want=FAIL got=FAIL
+     cue present, no `whether` between it and the token   want=FAIL got=FAIL
+     hedges once, then asserts once — one bare mention is enough want=FAIL got=FAIL
+  [~] hedges about sources AND asserts the obligation anyway scores PASS — known limitation, documented in the question's note
+
+q04  HHS asked manufacturers to phase out Red No. 3 sooner than 2027. Is that binding on us?
+     distinguishes request from rule                      want=PASS got=PASS
+     treats the request as binding                        want=FAIL got=FAIL
+     hedges the wrong way                                 want=FAIL got=FAIL
+     terse denial                                         want=PASS got=PASS
+     'voluntary' phrasing only                            want=PASS got=PASS
+
+q05  What are the two main criteria a food must meet to use the 'healthy' claim under the upd
+     both criteria                                        want=PASS got=PASS
+     the LIVE phrasing at e26d8ef — quantity phrase in the gap want=PASS got=PASS
+     states both criteria INVERTED                        want=FAIL got=FAIL
+     fabricates a front-of-package requirement            want=FAIL got=FAIL
+     'not exceed' phrasing                                want=PASS got=PASS
+     'at least one' plus 'below the limits'               want=PASS got=PASS
+     one criterion right, one inverted                    want=FAIL got=FAIL
+
+q06  Which CFR section governs the 'healthy' implied nutrient content claim?
+     names the section                                    want=PASS got=PASS
+  [~] names the wrong section, mentions the right one      scores PASS — known limitation, documented in the question's note
+     TERSE — the ideal answer; why q06 was NOT tightened  want=PASS got=PASS
+
+q07  We have $8M in annual food sales and we make a granola bar labeled 'healthy'. Some label
+     no size-based extension                              want=PASS got=PASS
+     grants the extension, avoids the year 2029           want=FAIL got=FAIL
+     grants the extension while conceding the rule applies to all want=FAIL got=FAIL
+     names the fabricated tier year                       want=FAIL got=FAIL
+     'no small-business extension' phrasing               want=PASS got=PASS
+
+q08  List publication, effective, and compliance dates for the Red No. 3 revocation as they a
+     three dates, no compliance date stated               want=PASS got=PASS
+     invents a food compliance date                       want=FAIL got=FAIL
+     applies the drug date to food                        want=FAIL got=FAIL
+  [~] correctly explains what January 15, 2025 was         scores FAIL — known limitation, documented in the question's note
+     names the drug date in order to distinguish it       want=PASS got=PASS
+     'achieve compliance by' the derived deadline         want=PASS got=PASS
+
+q09  Does the new 'healthy' rule change anything for our dog treat product line?
+     human food only                                      want=PASS got=PASS
+     applies it to dog treats; 'outside' matches incidentally want=FAIL got=FAIL
+     applies it via the phrase 'human food'               want=FAIL got=FAIL
+     terse 'human food only'                              want=PASS got=PASS
+
+q10  Are we affected by the healthy-claim changes?
+     gate fires, nothing asserted                         want=PASS got=PASS
+     answers confidently without a profile                want=FAIL got=FAIL
+  [~] gate fires but the answer asserts a deadline anyway  scores PASS — known limitation, documented in the question's note
+
+q11  A colleague says our Red No. 3 deadline moved because the order was suspended for about 
+     denies via the stem's own verb                       want=PASS got=PASS
+     negation-only phrasing, no 'unchanged'               want=PASS got=PASS
+     tolling, states a new date                           want=FAIL got=FAIL
+     tolling, avoids every banned verb                    want=FAIL got=FAIL
+     right date, unaware a stay ever existed              want=FAIL got=FAIL
+     'confirmed' about the stay, not the dates            want=FAIL got=FAIL
+
+q12  In mid-2025 we were told the Red No. 3 removal was not final and might never take effect
+     holds both time-indexed states                       want=PASS got=PASS
+     says 'never took effect' of the stay period          want=PASS got=PASS
+     denies the 'fair then' half                          want=FAIL got=FAIL
+     still stayed                                         want=FAIL got=FAIL
+     no point-in-time reasoning at all                    want=FAIL got=FAIL
+
+q13  Which CFR provisions does the Red No. 3 order change, what does it do to each, and do th
+     'do not share the same effective date'               want=PASS got=PASS
+     terse 'not all on the same day'                      want=PASS got=PASS
+     collapses both to the food date                      want=FAIL got=FAIL
+     swaps food and drug provisions                       want=FAIL got=FAIL
+     food date only, drug provision dropped               want=FAIL got=FAIL
+
+q14  Beyond the criteria in the 'healthy' rule itself, which other CFR section's general requ
+     states the carve-out                                 want=PASS got=PASS
+     never names 101.65                                   want=PASS got=PASS
+     the exact negation — 'nothing is carved out'         want=FAIL got=FAIL
+     negation via 'not carved out'                        want=FAIL got=FAIL
+     negation via the other accept token                  want=FAIL got=FAIL
+     asserts full application, no carve vocabulary        want=FAIL got=FAIL
+
+q15  We make a strawberry-frosted granola bar that is labeled 'healthy' and coloured with FD&
+     two rows, correctly attributed                       want=PASS got=PASS
+     collapses to one deadline                            want=FAIL got=FAIL
+     swaps the deadlines between the rules                want=FAIL got=FAIL
+  [~] swap phrased without the banned adjacency            scores PASS — known limitation, documented in the question's note
+
+q16  Do we have to put a nutrition summary on the front of our package, and by when?
+     grounded: 'only in passing', no requirement          want=PASS got=PASS
+     flat refusal naming the absent rule                  want=PASS got=PASS
+     fabricates a requirement and a date                  want=FAIL got=FAIL
+     priors, hedged: 'you do not have to'                 want=FAIL got=FAIL
+     true in the world, ungrounded in the corpus          want=FAIL got=FAIL
+
+q17  Give the publication, effective, and compliance dates for the 'healthy' rule, including 
+     attributes the delay to the effective date           want=PASS got=PASS
+     terse, uses 'not delayed'                            want=PASS got=PASS
+     bare participle evades 'was delayed'                 want=FAIL got=FAIL
+     swaps effective and compliance                       want=FAIL got=FAIL
+     omits the second document entirely                   want=FAIL got=FAIL
+
+q18  We sell a shelf-stable lentil soup labeled 'healthy'. Are we affected by the healthy-cla
+     affirms applicability                                want=PASS got=PASS
+     phrased as 'applies to you'                          want=PASS got=PASS
+     denies applicability — the substring trap            want=FAIL got=FAIL
+     gate fires when it should not                        want=FAIL got=FAIL
+     PRODUCT as subject — the phrasing that failed live at 2cea737 want=PASS got=PASS
+     subject-negation: 'nothing is affected'              want=FAIL got=FAIL
+     subject-negation: flat 'no product is affected'      want=FAIL got=FAIL
+  [~] hedge: recites the rule, never applies it to this product scores FAIL — known limitation, documented in the question's note
+     declines via a `whether` belonging to another clause want=FAIL got=FAIL
+     demands a revenue figure                             want=FAIL got=FAIL
+
+q19  Our supplier says the Red No. 3 order sets no compliance date, so there is no hard deadl
+     concedes the true half, refutes the inference        want=PASS got=PASS
+     derives without quoting the supplier                 want=PASS got=PASS
+     endorses the inference                               want=FAIL got=FAIL
+     agrees without the banned phrasing                   want=FAIL got=FAIL
+  [~] quotes the full inference in order to reject it      scores FAIL — known limitation, documented in the question's note
+
+q20  What date was the Red No. 3 revocation published in the Federal Register? Our compliance
+     negates the anchor                                   want=PASS got=PASS
+     corrects the memo directly                           want=PASS got=PASS
+     accepts the anchor                                   want=FAIL got=FAIL
+     accepts the anchor while naming the 16th             want=FAIL got=FAIL
+
+------------------------------------------------------------------------
+108 specimens over 20 questions · 11 documented limitations
+OK — every question distinguishes a correct answer from a wrong one.

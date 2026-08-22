@@ -1,11 +1,28 @@
-# DRAFT — two rulings owed the human seats on q03
+# Two rulings on q03 — SME seat and PM seat, 2026-08-21
 
-<!-- DRAFT. Written in the engineering seat, for the SME seat (§A) and the PM
-     seat (§B) to rule on, amend or reject. Nothing here has been implemented.
-     `evals/golden_questions.json` has not been edited and is not proposed for
-     edit by the recommended option. -->
+**Status: RULED AND IMPLEMENTED.**
 
-**Status: awaiting rulings. Not adopted.**
+| seat | question | ruling |
+|---|---|---|
+| SME | how should q03 be scored, given that all three candidate instruments fail? | **§A.3 option A** — admit the one examined observation, via a per-artifact register |
+| PM | which SPEC owns a change to what blocks a merge? | **SPEC/07**, absorbed into its Done-when |
+
+Implemented as `evals/admitted_false_fails.json` + `evals/replay_history.py`,
+with `tests/test_admitted_false_fails.py` and
+`milestones/M07/admission_mutations.py` (10 refusals exercised, 0 survivors).
+`evals/golden_questions.json` was not edited at any point, and option A does
+not edit it. `evals/run_evals.py` is untouched, so `make evals` still scores
+the admitted answer as failing — the register reaches the merge gate only.
+
+ADR-0015 records the assurance cost.
+
+<!-- §A and §B below are the drafts the rulings were made against, written in
+     the engineering seat and left as written so the rulings can be read
+     against what was actually put to the seats rather than a tidied version. -->
+
+---
+
+## The drafts the seats ruled on
 
 M05 open thread 7 proposed the fix: *"score the structure, not the characters
 — the defect is a TTB proposition carrying a Red No. 3 citation, and the
