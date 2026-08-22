@@ -1,0 +1,197 @@
+q05's DECLINE — THE MECHANISM, READ FROM CLOUDWATCH RATHER THAN GUESSED
+2026-08-22. Zero dollars of Bedrock spent: every number below is a metric or a
+log line that already existed.
+
+The two CI runs under examination:
+
+  run 32588109622   golden-set job 17:35:45 -> 17:40:36Z
+                    runner step   17:35:59.79 -> 17:40:33.83Z
+  run 32590313314   golden-set job 18:19:47 -> 18:24:37Z
+
+Both on branch m07-pr-f, PR #22, a documentation-only diff.
+
+--------------------------------------------------------------------------
+1. THE LOAD HYPOTHESIS IS REFUTED, NOT MERELY UNSUPPORTED
+--------------------------------------------------------------------------
+
+AWS/Bedrock, us-west-2, 5-minute bins covering both windows:
+
+  InvocationThrottles      NO DATAPOINTS. The metric does not appear in
+                           `list-metrics` for this account and region at
+                           all, for any ModelId. Bedrock emits it only when
+                           it is non-zero, so there has been no throttle.
+  InvocationClientErrors   no datapoints in either window
+  InvocationServerErrors   no datapoints in either window
+
+Per-model invocation counts, both runs, identical:
+
+  ModelId                          run A   run B   max latency
+  us.anthropic.claude-opus-4-6-v1  20      20      16568 / 16150 ms
+  us.anthropic.claude-sonnet-4-6   20      20       2168 /  1504 ms
+  amazon.titan-embed-text-v2:0     20      20        111 /   116 ms
+
+Twenty questions, exactly twenty calls per model, both runs. `retry()` never
+fired — a retried call would have made twenty-one. Nothing was slow: the
+verdict model's worst call in either run was 16.6 s against a 120 s client
+timeout in `run_evals.ask()`.
+
+  ANOMALY, RECORDED RATHER THAN EXPLAINED. The UNDIMENSIONED AWS/Bedrock
+  InvocationLatency rolls up the same 60 calls — its Invocations Sum is 60,
+  which is 20+20+20 — but reports Maximum 215,199 ms and 250,301 ms for the
+  two windows. Every per-ModelId maximum is 16.6 s, and no Lambda invocation
+  exceeded 18.4 s. The undimensioned bucket is therefore not measuring what
+  its name says. Nothing below depends on it; it is written down so the next
+  reader is not startled by it, and so that nobody quotes it as evidence of
+  the load story it superficially supports.
+
+--------------------------------------------------------------------------
+2. NO POSITION-IN-RUN CORRELATION
+--------------------------------------------------------------------------
+
+/aws/lambda/regdelta-core-QueryFnB2E9AD3D-hjcFpUj3WSqT, run A REPORT lines in
+order. One invocation per question, strictly sequential, one cold start:
+
+   1  17:36:14.603  12837 ms  (init 1119 ms)      11  17:38:30.007  12240 ms
+   2  17:36:27.064  12192 ms                      12  17:38:48.517  18231 ms
+   3  17:36:42.849  15444 ms                      13  17:39:04.108  15252 ms
+   4  17:36:54.086  10969 ms                      14  17:39:15.169  10753 ms
+   5  17:37:11.737  17374 ms   <-- q05            15  17:39:30.047  14549 ms
+   6  17:37:24.823  12727 ms                      16  17:39:40.042   9729 ms
+   7  17:37:38.863  13703 ms                      17  17:39:50.887  10572 ms
+   8  17:37:50.715  11521 ms                      18  17:40:07.787  16601 ms
+   9  17:38:02.500  11447 ms                      19  17:40:26.446  18388 ms
+  10  17:38:17.427  14585 ms                      20  17:40:32.934   6154 ms
+
+No error, no timeout, no throttle, no retry, no second cold start. q05 is
+question FIVE of twenty — early. The two longest invocations in the run are
+questions 19 and 12, and both passed. There is no accumulation to blame.
+
+Question order verified against evals/golden_questions.json, and independently:
+invocation 4's GraphInterrupt log line quotes q04's text back.
+
+--------------------------------------------------------------------------
+3. THE VERDICT CALL SUCCEEDED. BOTH TIMES.
+--------------------------------------------------------------------------
+
+RegDelta EMF, node="verdict", question 5:
+
+  run A  17:37:11.643  input 7083  output 764  Confidence 0.0  Citations 0.0
+                       VerdictRows 0.0  NodeLatency 15230.7 ms
+  run B  18:21:15.701  input 7083  output 764  Confidence 0.0  Citations 0.0
+                       VerdictRows 0.0  NodeLatency 14574.6 ms
+
+Bedrock was asked, Bedrock answered, and 764 output tokens were generated and
+billed. max_tokens is 2000 (nodes.py, the verdict call site), so this is NOT
+the truncation the comment at nodes.py:126 predicted. The model produced a
+complete reply.
+
+The HITL interrupt that followed, verbatim from run A's log:
+
+  {"node": "hitl_gate", "error": "GraphInterrupt: (Interrupt(value={
+     'status': 'pending_review',
+     'reason': 'confidence 0.00 below 0.70',
+     'question': "What are the two main criteria a food must meet to use
+                  the 'healthy' claim under the updated rule?",
+     'needs': 'reviewer_decision',
+     'draft_answer': '',
+     'confidence': 0.0}, ...
+
+`draft_answer` is the empty string. Not a short answer — nothing at all.
+
+Confidence 0.0 AND Citations 0.0 AND VerdictRows 0.0 AND DroppedCitations 0.0
+AND answer "" together are the signature of exactly one thing in `verdict()`:
+`_json_object(raw)` returned `{}`. `_confidence({})` is 0.0, `_rows(None)` is
+empty, and `kept` and `dropped_citations` are BOTH empty because `claimed` is
+empty. A model that had answered and cited badly would have left something in
+`dropped_citations`; a model that had answered and declined would have left
+prose. Nothing survived the parse.
+
+--------------------------------------------------------------------------
+4. THE PROMPT WAS IDENTICAL TO THE ONE THE PROBE ANSWERED SIX TIMES
+--------------------------------------------------------------------------
+
+verdict-node input tokens for q05, every observation on 2026-08-22:
+
+  17:37:11  CI run A     input 7083  output 764  confidence 0.00  DECLINED
+  18:21:15  CI run B     input 7083  output 764  confidence 0.00  DECLINED
+  18:27:08  probe run 1  input 7083  output 686  confidence 0.95  ok
+  18:27:24  probe run 1  input 7083  output 749  confidence 0.93  ok
+  18:27:40  probe run 1  input 7083  output 726  confidence 0.93  ok
+  18:30:20  probe run 2  input 7083  output 686  confidence 0.95  ok
+  18:30:36  probe run 2  input 7083  output 749  confidence 0.93  ok
+  18:30:51  probe run 2  input 7083  output 749  confidence 0.93  ok
+
+q05_probe.py was run TWICE, not once. q05-probe.txt records the 18:30 run: its
+three answer lengths, 1519/1649/1649 chars, match outputs 686/749/749. So the
+probe's real score is 6/6, not 3/3.
+
+7083 input tokens in all eight observations. cacheRead and cacheWrite are 0.0
+in all eight, so prompt caching is not a differentiator. `_converse` sends
+temperature 0. Retrieval returned ChunksRetrieved 8.0 every time.
+
+And the prompt is deterministic across the whole set, not just q05: the twenty
+verdict-node input token counts are IDENTICAL question-for-question between
+run A and run B —
+
+  6930 3762 4080 3445 7083 3794 6761 3971 7655 7431
+  4135 4105 4031 7451 3665 3530 5243 7987 5621 4098
+
+So retrieval, the timeline graph, the crossref append and prompt assembly are
+all reproducible run to run. The only thing that varies between a pass and a
+decline is which completion Bedrock returns for a byte-identical request at
+temperature 0.
+
+--------------------------------------------------------------------------
+5. WHAT THIS ESTABLISHES
+--------------------------------------------------------------------------
+
+ESTABLISHED. q05's decline is a PARSE FAILURE IN `verdict()`. It is not a
+throttle, not a timeout, not load, not concurrency, not position in the run,
+not the corpus, not the question, and not the ground truth. `_json_object`
+could not parse a complete 764-token model reply, returned `{}`, and every
+downstream field collapsed to its empty value. The HITL gate then did its job
+correctly on an empty answer, and `run_evals.py` then reported a regression
+correctly. BOTH GATES BEHAVED AS DESIGNED. The system under them did not.
+
+STILL A HYPOTHESIS, and labelled as one. WHY that reply did not parse is not
+established, because the raw text is logged nowhere and cannot be recovered
+after the fact. The leading candidate is that `json.loads` is strict about
+literal control characters inside strings, and 764 tokens is the LONGEST q05
+completion observed — longer than all six that parsed. A longer prose answer
+is a likelier place for a raw newline to land inside the "answer" string. That
+is a guess with a shape, not a measurement, and the next person should treat
+it exactly the way this document's first three framings deserved to be
+treated.
+
+--------------------------------------------------------------------------
+6. THE INSTRUMENT THAT WOULD HAVE SAID SO ALREADY EXISTS AND IS NOT READ
+--------------------------------------------------------------------------
+
+nodes.py:126-131 predicted this failure class in writing:
+
+  "`_json_object` returns {} when it cannot find a closing brace, so a
+   max_tokens cut-off mid-object produces an EMPTY ANSWER with status "ok"
+   — the pause-shaped failure, indistinguishable from a model that had
+   nothing to say. The stop reason is the field that tells those apart."
+
+M05 and ADR-0013 built that field. `verdict()` returns `stop_reason` and
+`truncated`; `instrument.py` carries both; `api.py` puts them in the response
+body. And then:
+
+  - `run_evals.py` never prints either one on a failure, so the scorecard
+    that blocked two pull requests could not say the model had stopped
+    normally.
+  - `q05_probe.py` never printed either one, so the probe could not say it
+    either — and the probe was written specifically to separate hypotheses.
+  - Nothing writes the raw completion anywhere, so the one artifact that
+    would settle section 5 is gone.
+
+The instrument was built for precisely this and is pointed at nothing. That is
+why three successive framings of the gap document named a symptom: the reading
+that separates them was sitting in the response body the whole time and no
+consumer looked at it.
+
+It also means the prediction in that comment was HALF right. It named the
+max_tokens cut-off. This is its sibling: a COMPLETE reply that does not parse.
+`stop_reason` distinguishes the two. `truncated` alone would have read False
+here and sent the reader back to the beginning.

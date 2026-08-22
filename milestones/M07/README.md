@@ -159,10 +159,21 @@ real pull requests with CI verdicts, and the run-through is written up in
 | 2 | [#17](https://github.com/andaro74/regdelta/pull/17) -> [#18](https://github.com/andaro74/regdelta/pull/18) | MERGED CLEAN. Not staged — the milestone delivering itself. |
 | 3 | [#21](https://github.com/andaro74/regdelta/pull/21) | BLOCKED, two HIGH findings, `unit` red too. Closed unmerged. |
 
-**1. Rule on `eval-gate-flake-gap.md` — read it BEFORE closing, and before
-opening any pull request.** The eval gate blocks on run-to-run
-non-determinism. Observed **twice, on consecutive pull requests, on different
-questions, for different reasons, neither caused by the PR**:
+**1. `eval-gate-flake-gap.md` — CAUSE ESTABLISHED, ruling drafted.** Read it
+and `q05-mechanism.txt` before closing. **The gate was right.** The metrics
+refute the load hypothesis outright — no throttle in either window (the metric
+does not exist for this account), no timeout, no retry, no error, and q05 is
+question five of twenty. The verdict call **succeeded** both times, 7083 in and
+764 out against a `max_tokens` of 2000, on a prompt byte-identical to the one
+the probe answered 6/6. `_json_object` could not parse the reply, returned
+`{}`, and every downstream field collapsed. **q05 is a parse defect in
+`verdict()`, not noise** — same layer as q12, and it belongs in that milestone.
+All three candidate fixes the gap document proposed would have hidden it; one
+would have made it permanently invisible. What remains open is one policy
+question, not a gate-theory question.
+
+The history below is left as filed, because the diagnosis was wrong three
+times in the same direction and that is the useful part:
 
 - PR #20 — q03 regressed. `unit` was green on the same commit because
   `replay_history` honoured the ruled admission; `golden-set` failed because
@@ -238,13 +249,23 @@ exact value is in `bypass-removed.txt`.
 
 ## Still open, carried not closed
 
-- **THE EVAL GATE IGNORES THE ADMISSION REGISTER** (`eval-gate-flake-gap.md`). The
-  biggest one, and it is a defect in this milestone's own PM ruling. `unit`
-  admits a ruled q03 observation; `golden-set` does not, because
-  `gate_verdict()` never consults `evals/admitted_false_fails.json`. Found by
-  Door 1's run, hours after the ruling. Not a missing function call — the
-  register is keyed per recorded artifact and a live run has none, so a fix has
-  to decide what an admission MEANS for an answer nobody has seen.
+- **THE EVAL GATE IGNORES THE ADMISSION REGISTER** (`eval-gate-flake-gap.md`).
+  Still true and still open: `unit` admits a ruled q03 observation; `golden-set`
+  does not, because `gate_verdict()` never consults
+  `evals/admitted_false_fails.json`. The register is keyed per recorded artifact
+  and a live run has none, so a fix has to decide what an admission MEANS for an
+  answer nobody has seen. **It is no longer the biggest one, and it was never
+  q05's cause** — that was a parse defect in `verdict()`, measured in
+  `q05-mechanism.txt`. This is q03's problem only.
+
+- **`_json_object` SWALLOWS AN UNPARSEABLE MODEL REPLY** and reports it as
+  confidence 0.00 with an empty answer (`q05-mechanism.txt`). Blocked PR #22
+  twice. The instrument that identifies it — `stop_reason`, built by M05 and
+  ADR-0013 — is in the API response body and is read by no consumer:
+  `run_evals.py` does not print it on a failure and neither did `q05_probe.py`,
+  and nothing records the raw completion. **The next occurrence will cost
+  another session of archaeology until that changes.** Product defect, same
+  layer as q12, and it belongs in that milestone rather than this one.
 
 - **SPEC/07 items 1–4 carry no Done-when observables at all** while item 5
   carries the strictest in the file (pm-spec-reviewer 12). A Done-when change,
