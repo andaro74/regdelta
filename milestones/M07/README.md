@@ -1,12 +1,102 @@
-# M07 — Governance Layer. **IN FLIGHT.** Doors 1-3 are RUN; close is what remains.
+# M07 — Governance Layer (three doors). **CLOSED.**
 
-Branch work landed as **five pull requests, all merged** (#15-#19), plus two
-staged demo PRs opened and closed unmerged (#20 Door 1, #21 Door 3). Close tag
-will be `m07`. **Session spend: ~$1.00** of a $1.50 budget — five `golden-set`
-runs at ~$0.20. Two earlier runs failed upstream of Bedrock and were free, and
-Door 3's skipped behind a red `unit`. No `make up`, no OCU; the hot tier is down.
+- Git tag: `m07`          Scorecard commit: `652d475`   Branch: `m07-pr-f`
+- Spec: SPEC/07-governance.md
+- ADRs touched: ADR-0015 (`proposed`), ADR-0013 (invoked, not amended).
+  ADR-0014 carried from M06, still `proposed`. **Neither 0014 nor 0015 has
+  been accepted by a human seat, and closing M07 does not accept them.**
+- Sessions: 3 Claude Code sessions. Six pull requests merged (#15-#19, #22),
+  two staged demo PRs opened and closed unmerged (#20 Door 1, #21 Door 3).
 
-Read this file first. The commit messages carry the detail.
+## Scorecard
+
+| run | tier | subset | pass | total | mode |
+|-----|------|--------|------|-------|------|
+| `652d475` | s3vectors | full | 18 | 20 | agent |
+
+`evals/history/652d475-s3vectors-full.json`, recorded at close on the
+always-on tier. No `make up`, no OCU; the hot tier stayed down for the whole
+milestone, so there is no Tier B row and M07 touches no retrieval code.
+
+**Delta vs baseline (M00b): traps q01-q04 1/4 → 4/4, overall 30% → 90%.**
+Unchanged from M06 — as it should be. **M07 is a governance milestone and
+moved no answer-quality number.** A milestone that adds gates and reports a
+score improvement would be reporting a coincidence, or a gate that had
+started grading itself.
+
+The two misses are `q12` and `q15`, both reported on every card and gating
+nothing: they have recorded runs and have never passed in any of them. Both
+were triaged from the SME seat this milestone (`q12-q15-triage.md`) and
+**ground truth was upheld on both**. They are real product defects and each
+needs its own milestone.
+
+## What you can demo at this point (2-3 min)
+
+1. **Open PR [#20](https://github.com/andaro74/regdelta/pull/20).** One line
+   added to `evals/golden_questions.json` — an accept token that makes a
+   failing question pass. `ruling-cited` FAILS with a message naming the SME
+   seat; `unit` is GREEN on the same commit, so the block is attributable to
+   the governance check and nothing else. Then open the merge box:
+   `bypass_actors` is `[]` and the repository owner is offered **no override**.
+2. **Follow it with [#17](https://github.com/andaro74/regdelta/pull/17) →
+   [#18](https://github.com/andaro74/regdelta/pull/18).** The same change made
+   the way the gate demands: the ruling lands first, in its own pull request,
+   and the ground-truth edit then cites it. Both CLEAN. The triage is the part
+   worth reading — `sme-eval-triage` upheld ground truth on both questions and
+   moved no expected answer.
+3. **Close on [#21](https://github.com/andaro74/regdelta/pull/21) and then on
+   `eval-gate-flake-gap.md`.** #21 hides `resources=["*"]` inside a plausible
+   pagination fix; `security-reviewer` returned two HIGH findings and also
+   established that **the plausible fix does not exist** — the file it claims
+   to fix already paginates on `main`. Then the honest ending: the gate caught
+   a defect in this milestone's own work, was misdiagnosed four times, and the
+   instrument that would have settled it was built at M05 and read by nobody.
+
+## Evidence artifacts
+
+- `evals/history/652d475-s3vectors-full.json` — the close scorecard
+- `doors/` — all three doors as real pull requests with CI verdicts
+- `close-verification.txt` — Done-when run at close, and the one substitution
+  declared rather than assumed
+- `q05-mechanism.txt` — the CloudWatch read that ended the flake story
+- `ruleset-after-bypass-removal.json`, `bypass-removed.txt` — the live gate
+- cost: **~$1.83** across three sessions (nine `golden-set` runs at ~$0.20;
+  several early ones failed upstream of Bedrock and were free). No OCU spend.
+
+## What broke / what I'd redo
+
+**1. `unit` was called green for a whole milestone on the strength of a
+laptop.** Its first CI run produced nine errors from a `make layer` artifact
+the runner never builds. The measurement was real; the inference from it was
+not.
+
+**2. `stub_layer` was copy-pasted into four test modules with no home.** That
+is why a fifth module omitted it by not knowing it existed. It now lives in
+`tests/conftest.py` and the four copies are still there — a sixth module will
+repeat this.
+
+**3. The eval gate's failure was diagnosed wrong four times running** — q03,
+then non-determinism, then load, then completion length — because
+`stop_reason`, built at M05 precisely to tell these apart, is in the API
+response body and read by no consumer. The instrument existed and pointed at
+nothing.
+
+**4. The OIDC mutation suite spent hours asserting "0 survivors out of 5"
+about a string that no longer existed in `core_stack.py`.** Caught only
+because the runner distinguishes NOT APPLIED from KILLED. The property was
+never undefended; the *proof* that it was defended had quietly stopped being
+run.
+
+**5. Three of the five above are the same defect.** An artifact that was true
+when written, still being read as current after the thing it measured moved.
+That is what this milestone is about, and it kept happening inside the
+milestone.
+
+---
+
+# Session record
+
+What follows is the working journal, left as written.
 
 ---
 
@@ -25,7 +115,10 @@ Read this file first. The commit messages carry the detail.
 `ruleset-after-bypass-removal.json` is the JSON SPEC/07's Door 1 Done-when
 requires beside the screenshot.
 
-## What still has to happen
+## What still had to happen — ALL DONE
+
+*(Left as written. Every item below happened: the doors ran as PRs #20, #17 ->
+#18 and #21, and are written up in `doors/`.)*
 
 **Doors 1, 2, 3 — the recorded run-through.** Everything they need now exists,
 and Door 1 is finally filmable: the bypass is gone, so a pull request touching
@@ -48,7 +141,7 @@ finding is attached from the start, closed unmerged the same session.
 | `eval-gate-bar-ruling.md` | PM | **ADOPTED** — the eval gate fails on a REGRESSION, not on 20/20, which had never been met. |
 | `q12-token-ruling.md` | SME | **ADOPTED** — six accept tokens deleted; they admitted the answer the question excludes. |
 | `q12-q15-triage.md` | SME | ground truth **UPHELD on both**. q12 is a model defect, q15 a retrieval defect. |
-| `roles-amendment-draft.md` | lead+PM | **STILL OWED.** Complete replacement text written and waiting. |
+| `roles-amendment-draft.md` | lead+PM | **ADOPTED** — applied to `docs/governance/ROLES.md` line 4 and flow 1, and at close to the root `README.md` Governance section, which had carried the same CODEOWNERS-enforces claim. |
 
 ## What the mechanism proved about itself
 
@@ -87,16 +180,24 @@ adopt / amend / reject. The Close is marked do-not-film until it is ruled on.
 
 ## What changed, and what it cost
 
+> **SUPERSEDED, AND KEPT.** The four rows marked below were true when written
+> and are false now — `EVAL_GATE_ENABLED` is `true`, all three checks are
+> required, and the admin bypass is gone. **The State of the gate table at the
+> top of this file is authoritative.** This one is left standing because a
+> journal that quietly rewrites its own earlier state is exactly the artifact
+> this milestone spent itself learning not to trust. Read it as a snapshot
+> with a date on it, not as current.
+
 | | state |
 |---|---|
-| `unit` | **GREEN LOCALLY ONLY, and that was the wrong claim** — see below. |
+| `unit` | ~~GREEN LOCALLY ONLY~~ **SUPERSEDED — green in CI on a runner** (the wrong claim is dissected below, and is worth reading) |
 | q03 FRAGILE gate | resolved by the admitted-false-fail register (ADR-0015) |
 | `regdelta-ci-eval` OIDC role | **deployed**, verified against live IAM |
 | Actions secrets / variables | `AWS_EVAL_ROLE_ARN`, `STAGING_API_URL` (secrets), `REGISTRY_TABLE` (variable) |
-| `EVAL_GATE_ENABLED` | **still `false`** — the spend line |
+| `EVAL_GATE_ENABLED` | ~~still `false`~~ **SUPERSEDED — now `true`** |
 | Door 1 mechanism | built as a required check, not a review. No second account. |
-| Required status checks | still only `unit`. `golden-set` and `ruling-cited` NOT yet added. |
-| Admin bypass | still `always`. Probed and restored; not yet removed for real. |
+| Required status checks | ~~still only `unit`~~ **SUPERSEDED — all three required and green** |
+| Admin bypass | ~~still `always`~~ **SUPERSEDED — REMOVED, `bypass_actors: []`** |
 
 ### Correction, 2026-08-22: `unit` had never run green in CI
 
@@ -147,7 +248,7 @@ the PR it blocks, and needs no second identity.
 
 ---
 
-## Next session, in order
+## Next session, in order — DONE, and what it found
 
 **Everything SPEC/07's Done-when asks for now exists.** All three doors ran as
 real pull requests with CI verdicts, and the run-through is written up in
@@ -195,7 +296,12 @@ recourse is re-running at ~$0.20 a time — the "repeat until green" behaviour
 own anti-pattern the only way to merge.**
 
 **2. Close the milestone** — `/close-milestone 07`: evidence pack,
-`run_evals.py --record`, the ADRs, tag `m07`.
+`run_evals.py --record`, the ADRs, tag `m07`. **DONE, 2026-08-22.** Step 1 is
+recorded in `close-verification.txt`, including the one substitution declared
+and the stale mutation suite it caught. Step 2 recorded 18/20 at `652d475`.
+Step 4: no new ADR — the bypass removal and Door 1's shape are already PM-seat
+rulings in this pack, and ADR-0005 already rules that the seat is what counts.
+ADR-0014 and ADR-0015 stay `proposed`; closing M07 does not accept them.
 
 **Watch for:** every pull request costs a ~$0.20 `golden-set` run, and there is
 no admin bypass. A red check has no override — that is the point, and it is also
