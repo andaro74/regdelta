@@ -14,7 +14,7 @@ question set, and journaled — the repo history IS the demo.
 | 03 | Agent graph + HITL | `m03` | 4/4 | 100% *** | ✅ |
 | 04 | API + demo UI | `m04` | 4/4 | 90% **** | ✅ |
 | 05 | Deploy + lifecycle | `m05` | – | – | ⬜ |
-| 06 | Load + observability | `m06` | – | – | ⬜ |
+| 06 | Load + observability | `m06` | 4/4 | 90% \*\*\*\*\* | ✅ |
 | 07 | Governance layer (three doors) | `m07` | – | – | ⬜ |
 
 Fill each row at milestone close (see .claude/skills/close-milestone).
@@ -84,6 +84,26 @@ stable: it scored 4/8 on the traps subset at `2cea737` and 2/8 here, on the same
 frozen code. The `q01-q04` column reads 0/4 both times. A control that varies
 run to run is a control whose single-run delta is worth less than the direction
 it shows — recorded rather than smoothed over.
+
+\*\*\*\*\* **M06's 90% is the same 18/20 as M04's, and that is the point** — this
+milestone measured infrastructure, not answers. Both tiers score 18/20 at
+`95235d9` on the same corpus fingerprint `35a293e17117`, failing the same
+deferred `q12` and `q15`. Evidence:
+`evals/history/95235d9-{aoss,s3vectors}-full.json`.
+
+Two things this row does not say on its own. **S3 Vectors reads 17/20 → 18/20
+against M05 and that is not progress**: M05's third failure was `q03`, which
+landed PASS this time — the same non-determinism the SME seat ruled on at M05,
+resolving the other way. And **the suite is red at close by seat decision** —
+three q03 FRAGILE tests, as at M05; `replay_history` reports exactly one FRAGILE
+and zero REGRESSED.
+
+What M06 actually decided is **Tier B's disposition: KEPT**, on the bar ADR-0012
+fixed before any M06 number existed — AOSS p95 185.9 ms against S3 Vectors'
+281.4 ms at 50 calls/s. The verdict is bounded to 10–50 calls/s and says nothing
+about the 11.4–25.8 in-flight band the real workload applies; M07 measures that.
+See ADR-0014 and `milestones/M06/tier-disposition-f651aea.json`, judged at
+`f651aea` (tag `m06-disposition`, because the squash does not preserve it).
 
 The intended arc: baseline fails the trap questions → retrieval fixes
 recall → the agent graph fixes the traps → the rest makes it production-

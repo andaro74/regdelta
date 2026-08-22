@@ -1185,3 +1185,40 @@ would not have covered them.
 **Both reviews and this draft got `ADR-0012`'s corpus-size citation wrong** —
 v2 said `:110-112`, the second review said `:113-114`; it is **`:111-112`**.
 Recorded because this document's own argument is that citations must be checked.
+
+**Applied to `SPEC/06` on 2026-08-21, and three corrections the application
+forced.** Until then this document existed only as a proposal and `SPEC/06`
+still carried the pre-M06 text — so `main` held a spec contradicting the code,
+the artifacts and the adopted rulings at once. Applying it surfaced three
+places where THIS DOCUMENT is now wrong and the spec is right; recorded here so
+a reader diffing the two does not conclude the spec drifted.
+
+(29) Part III says "**one run per tier**" and then, in its next sentence, "run
+to completion three times per tier" — and its own Vocabulary paragraph defines
+an *attempt* as exactly those three. `SPEC/06` says **one attempt per tier**,
+which is what `Makefile` runs and what the artifact records
+(`attempts_per_tier: {aoss: 1, s3vectors: 1}`).
+
+(30) Part III says the **run** is repeated once after a failed measurement;
+the Vocabulary paragraph says the floor permits one repeated **campaign**.
+`SPEC/06` says campaign.
+
+(31) Part III defines the error rate over "retrieval calls **issued** to that
+tier". `SPEC/06` says **OFFERED**, and that is a real change rather than a
+synonym: `issued` was implemented as `errors / returned`, which at an
+ineligible step diverges — the 75/s S3 Vectors entry published its rate over
+8,757 survivors rather than the 9,000 offered. Dividing by what came back makes
+an error rate out of the survivors. For an eligible step the two agree, so no
+dispositive number moves. `eng-code-reviewer` found it; `loadtest/retrieval_load.py`
+and `SPEC/06` now agree and this document is the one that was wrong.
+
+**And one thing this document ruled that the first application of it missed.**
+The chaos test was DEFERRED by the seat — both halves, `loadtest/DEFERRED.md`
+§3 — but the appendix here was drafted assuming the affordable Titan half would
+run, and the first pass at `SPEC/06` transcribed the appendix without applying
+the later deferral on top of it. The spec briefly required a chaos test, in the
+present indicative, and claimed "the half that is covered" when no half is.
+`pm-spec-reviewer` caught it before the milestone closed against it. Two adopted
+things conflicted and the transcription resolved toward the earlier one, which
+is the failure mode Part III's five-address warning exists to prevent — on a
+clause that warning did not name.
