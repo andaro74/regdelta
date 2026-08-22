@@ -1,8 +1,10 @@
-# M07 — Governance Layer. **IN FLIGHT.** Doors 1–3 are what remain.
+# M07 — Governance Layer. **IN FLIGHT.** Doors 1-3 are RUN; close is what remains.
 
-Branch work landed as **four pull requests, all merged** (#15, #16, #17, #18).
-Close tag will be `m07`. **Session spend: ~$0.60** of a $1.50 budget — three
-`golden-set` runs at ~$0.20. No `make up`, no OCU; the hot tier stays down.
+Branch work landed as **five pull requests, all merged** (#15-#19), plus two
+staged demo PRs opened and closed unmerged (#20 Door 1, #21 Door 3). Close tag
+will be `m07`. **Session spend: ~$1.00** of a $1.50 budget — five `golden-set`
+runs at ~$0.20. Two earlier runs failed upstream of Bedrock and were free, and
+Door 3's skipped behind a red `unit`. No `make up`, no OCU; the hot tier is down.
 
 Read this file first. The commit messages carry the detail.
 
@@ -147,36 +149,32 @@ the PR it blocks, and needs no second identity.
 
 ## Next session, in order
 
-Steps 1-4 of the previous plan are DONE: the two-PR split (which became four),
-the flag flip and required checks, ADR-0005's SKIPPED question, and the admin
-bypass removal. What is left is the demo itself.
+**Everything SPEC/07's Done-when asks for now exists.** All three doors ran as
+real pull requests with CI verdicts, and the run-through is written up in
+`milestones/M07/doors/` with the three PR URLs.
 
-**1. Doors 1, 2, 3 — the recorded run-through.** ~$0.20 per pull request,
-because `golden-set` runs on every one. Door 1 is one PR, Door 2 is two, Door 3
-is one: budget ~$0.80 before starting.
+| door | PR | outcome |
+|---|---|---|
+| 1 | [#20](https://github.com/andaro74/regdelta/pull/20) | BLOCKED by `ruling-cited`, `unit` green, bypass empty. Closed unmerged. |
+| 2 | [#17](https://github.com/andaro74/regdelta/pull/17) -> [#18](https://github.com/andaro74/regdelta/pull/18) | MERGED CLEAN. Not staged — the milestone delivering itself. |
+| 3 | [#21](https://github.com/andaro74/regdelta/pull/21) | BLOCKED, two HIGH findings, `unit` red too. Closed unmerged. |
 
-- **Door 1** is finally filmable and was not before. Edit
-  `evals/golden_questions.json` with no ruling; `ruling-cited` fails and prints
-  the SME seat by name; the merge is refused **to the repository owner with no
-  bypass offered**. `ruleset-after-bypass-removal.json` is the JSON SPEC/07's
-  Done-when requires beside the screenshot.
-- **Door 2** is the path this milestone has already run for real, twice —
-  PR #17 landed a ruling, PR #18 cited it. Film it again on the demo change, or
-  cite those two if a live take is not affordable.
-- **Door 3**: the insecure branch is authorised with mitigations — in-diff
-  marker naming it a staged demo artifact, PR opened immediately so the security
-  finding is attached from the start, closed unmerged the same session.
+**1. Rule on `q03-gate-gap.md` — read it BEFORE closing.** Door 1's run found
+that `run_evals.gate_verdict()` does not consult the admitted-false-fail
+register, so a ruled q03 admission is honoured by `unit` and ignored by
+`golden-set` **on the same commit**. `golden-set` will intermittently block
+merges on q03 until this is settled, and the bypass is gone. It is a defect in a
+ruling this milestone made, found by this milestone's own demo, and it is
+deliberately left open rather than patched by its author at the end of the
+session that created it.
 
-**2. The lead+PM ruling on `roles-amendment-draft.md`,** which Door 3's Close
-depends on. `demo-script.md`'s Close is marked do-not-film until then.
+**2. Close the milestone** — `/close-milestone 07`: evidence pack,
+`run_evals.py --record`, the ADRs, tag `m07`.
 
-**3. Close the milestone** — `/close-milestone 07`, `run_evals.py --record`, the
-ADRs, the tag.
-
-**Watch for:** every pull request now costs a `golden-set` run, and the admin
-bypass is gone. A red check has no override — that is the point, and it is also
-the thing that will surprise someone at the wrong moment. Restoring it is one
-call and the exact value to restore is printed in `bypass-removed.txt`.
+**Watch for:** every pull request costs a ~$0.20 `golden-set` run, and there is
+no admin bypass. A red check has no override — that is the point, and it is also
+what will surprise someone at the wrong moment. Restoring it is one call and the
+exact value is in `bypass-removed.txt`.
 
 ---
 
@@ -224,6 +222,14 @@ call and the exact value to restore is printed in `bypass-removed.txt`.
 | `unit-green/` | the green `unit`, and `replay_history --no-admissions` showing the unadmitted truth beside it |
 
 ## Still open, carried not closed
+
+- **THE EVAL GATE IGNORES THE ADMISSION REGISTER** (`q03-gate-gap.md`). The
+  biggest one, and it is a defect in this milestone's own PM ruling. `unit`
+  admits a ruled q03 observation; `golden-set` does not, because
+  `gate_verdict()` never consults `evals/admitted_false_fails.json`. Found by
+  Door 1's run, hours after the ruling. Not a missing function call — the
+  register is keyed per recorded artifact and a live run has none, so a fix has
+  to decide what an admission MEANS for an answer nobody has seen.
 
 - **SPEC/07 items 1–4 carry no Done-when observables at all** while item 5
   carries the strictest in the file (pm-spec-reviewer 12). A Done-when change,

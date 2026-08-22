@@ -1,0 +1,14 @@
+This pull request changes what CORRECT means:
+
+  evals/golden_questions.json
+
+BLOCKED: no ruling cited.
+
+  Add a `RULING: <path>` trailer to the commit that makes
+  the change, naming a ruling document that is ALREADY on
+  main. Register entries cite theirs in their own `ruling`
+  field instead.
+
+  Engineering may not decide what correct means (ROLES.md,
+  CLAUDE.md). Route the question through sme-eval-triage and
+  land the ruling first, in its own pull request.

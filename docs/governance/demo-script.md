@@ -11,11 +11,31 @@ Setup: RegDelta deployed; branch protection on; the three seats exist.
 Premise on screen: "FDA amends the rule — q01's expected answer must
 change. Watch the org chart, encoded in the repo, decide what happens."
 
+<!-- PREMISE CORRECTED 2026-08-22, under the Door 1 ruling at
+     milestones/M07/spec07-door1-amendment.md rather than as a new ruling.
+
+     The adopted text opened "unit is red on q03". That was true when the
+     amendment was written and M07 ITSELF made it false: the admitted-false-fail
+     register turned q03 green the same milestone. Filming it would have
+     reproduced the precise defect the amendment exists to remove — a caption
+     its own screen contradicts.
+
+     The replacement premise is live and was filmed: PR #20, where the token
+     addition made q12 pass and ruling-cited refused the merge anyway. Evidence
+     in milestones/M07/doors/. Only the premise sentence changed; the SHOW and
+     LINE blocks the PM seat adopted are untouched. -->
+
 ## Door 1 — Engineer tries to fix ground truth directly (2 min)
 
-As engineering: `unit` is red on q03. Do the obvious thing — edit
-`evals/golden_questions.json` to drop the token that is failing. Push, open
-the PR.
+As engineering: `golden-set` reports q12 failing on its accept group. Do the
+obvious thing — the model's answer contains the words "a fair reading", so add
+`"fair reading"` to the group. One token, one line, green build. Push, open the
+PR.
+
+(It is also the exact false pass the SME seat closed hours earlier: the answer
+reads "No, that was **not** a fair reading", and `"fair reading"` is a substring
+of it. That is what makes it a realistic thing for an engineer to do rather than
+a strawman.)
 
 SHOW: `ground-truth-gate / ruling-cited` fails, and says why in its own
 words:

@@ -1,0 +1,1 @@
+{"checks":[{"conclusion":"FAILURE","name":"unit"},{"conclusion":"SUCCESS","name":"ruling-cited"},{"conclusion":"SKIPPED","name":"golden-set"}],"mergeStateStatus":"BLOCKED","pr":21,"title":"[DEMO — DO NOT MERGE] Door 3: IAM widened to resources:[*] inside a real fix","url":"https://github.com/andaro74/regdelta/pull/21"}
