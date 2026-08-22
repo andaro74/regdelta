@@ -62,14 +62,26 @@ LINE: "The engineer owns every line the AI wrote — and the system is
 built assuming some of those lines will be wrong."
 
 ## Close (1 min)
-Show docs/governance/ROLES.md table + the PR timeline of all three doors.
-"Accountability isn't a slide. It's CODEOWNERS, a required check, and a
-review seat you don't control."
+Show docs/governance/ROLES.md and the PR timeline of all three doors.
 
-<!-- RAISED, NOT RULED ON (2026-08-22). This line still credits CODEOWNERS and
-     "a review seat you don't control", which Door 1 above now explicitly says
-     does not exist here. Same defect as docs/governance/ROLES.md's CODEOWNERS
-     claim, and it belongs to the same lead+PM co-owned ruling — the Door 1
-     amendment raised that one rather than folding it in, and this follows it.
-     Do not film the Close with this caption until it is ruled on.
-     Tracked in milestones/M07/README.md. -->
+LINE: "Accountability isn't a slide, and it isn't a signature either — there
+is one person here and no seat I don't control. It's a required check that
+demands a document I cannot write inside the pull request it's blocking. Go
+read the ruling; if it's wrong, you can prove it's wrong."
+
+<!-- RULED 2026-08-22, lead+PM seats
+     (milestones/M07/roles-amendment-draft.md). The do-not-film marker that
+     stood here is lifted.
+
+     The original Close read: "Accountability isn't a slide. It's CODEOWNERS, a
+     required check, and a review seat you don't control." Two of those three
+     were false. CODEOWNERS routes a review request and does not require one —
+     required_approving_review_count is 0 and require_code_owner_review is
+     false on the live ruleset — and there is no review seat the one human here
+     does not control, which is what Door 1 above now says out loud. Only "a
+     required check" survived, and it is doing all of the work.
+
+     The replacement claims less and can be checked: a required check that
+     demands a document which cannot be written inside the pull request it
+     blocks. docs/governance/ROLES.md line 4 and flow 1 were corrected in the
+     same ruling. -->
