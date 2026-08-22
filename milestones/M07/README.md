@@ -27,7 +27,7 @@ Everything else is mine and is described below.
 
 | | state |
 |---|---|
-| `unit` | **GREEN** — 1273 passed, 0 failed. First green since M04. |
+| `unit` | **GREEN LOCALLY ONLY, and that was the wrong claim** — see below. |
 | q03 FRAGILE gate | resolved by the admitted-false-fail register (ADR-0015) |
 | `regdelta-ci-eval` OIDC role | **deployed**, verified against live IAM |
 | Actions secrets / variables | `AWS_EVAL_ROLE_ARN`, `STAGING_API_URL` (secrets), `REGISTRY_TABLE` (variable) |
@@ -35,6 +35,37 @@ Everything else is mine and is described below.
 | Door 1 mechanism | built as a required check, not a review. No second account. |
 | Required status checks | still only `unit`. `golden-set` and `ruling-cited` NOT yet added. |
 | Admin bypass | still `always`. Probed and restored; not yet removed for real. |
+
+### Correction, 2026-08-22: `unit` had never run green in CI
+
+This file said "GREEN — 1273 passed, 0 failed. First green since M04." That
+number was real and was measured **on this laptop only**. The first time the
+branch reached GitHub, `unit` produced **nine errors** nobody here could have
+seen:
+
+```
+FileNotFoundError: build/lambda-layer does not exist — run `make layer` first
+```
+
+`tests/test_ci_eval_role.py` synthesises the core stack to read the OIDC role
+off the template, and the stack refuses to synth without the ~101MB `make
+layer` artifact, which is not committed. This machine ran `make layer` months
+ago. The runner never has.
+
+The root cause is not the missing stub, it is that `stub_layer` was already
+copy-pasted into **four** modules with no shared home, so a fifth module omits
+it by not knowing it exists. It now lives once in `tests/conftest.py`, beside
+the AWS-profile block that exists for exactly this class of defect. The four
+copies are left alone and carried as open.
+
+Same shape as the defect this milestone opened by finding: a measurement that
+was true, and an inference from it that was not. CI is the falsifier here, and
+nothing on this branch had been shown to it.
+
+**In CI, on PR #15, after the fix: 3 failed, 1245 passed — exactly the three
+`tests/test_replay_exit_codes.py` failures `main` carries today.** PR A adds no
+new redness, and that sentence is now measured where it matters rather than
+here.
 
 ## The two decisions that shaped it
 

@@ -1,0 +1,47 @@
+$ python milestones/M07/add_required_checks.py --apply
+                                              2026-08-22, ruleset 20392406
+
+BEFORE  required checks: ['unit']
+        rules: ['deletion', 'non_fast_forward', 'pull_request', 'required_status_checks']
+        bypass_actors: [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}]
+AFTER   required checks (intended): ['golden-set', 'ruling-cited', 'unit']
+
+READ BACK
+  required checks: ['golden-set', 'ruling-cited', 'unit'] OK
+  name unchanged: True
+  target unchanged: True
+  enforcement unchanged: True
+  conditions unchanged: True
+  bypass_actors unchanged: True
+  the four rules survived: True
+
+RESULT: OK
+
+--------------------------------------------------------------------------
+WHAT THIS PAID OFF, AND WHAT IT DID NOT
+
+BARE JOB NAMES. 'golden-set' and 'ruling-cited', not 'eval-gate / golden-set'
+and 'ground-truth-gate / ruling-cited'. The prefixed form is the DISPLAY
+string GitHub shows in the checks list; the required-checks API matches the
+job name alone. ADR-0005 records a required check written in display format
+that matched nothing, sat pending forever, and deadlocked PR #1 for four days.
+The readback above is how you know which one this repo now holds — 'unit' has
+worked for months in the same bare form, which is the control.
+
+THE FOUR RULES SURVIVED. PUT replaces, it does not merge. A body carrying only
+the key being edited drops 'rules' and DELETES branch protection. This script
+reads the live object, edits one list inside it, and sends the whole thing
+back — and then re-reads and compares every top-level field, because "it
+returned 200" is not the same claim as "nothing else moved".
+
+BYPASS_ACTORS UNCHANGED is deliberate, not an oversight. The admin bypass is
+still 'always' at this point, and it has to be: 'unit' is red on main today
+(3 failures in tests/test_replay_exit_codes.py, red since M04) and the bypass
+is the only way past a red required check. It comes off after PR B turns
+'unit' green — milestones/M07/README.md step 4, and SPEC/07's Done-when for
+Door 1 now depends on it being empty.
+
+WHAT IS NOT ESTABLISHED HERE. That a required check actually refuses a merge.
+This records what GitHub's API reports about its own configuration, which is
+the same narrow claim bypass-probe.txt makes and stops at. Whether the merge
+button is refused is settled by a blocked pull request, and that is Door 1.
