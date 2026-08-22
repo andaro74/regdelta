@@ -1041,7 +1041,27 @@ class RegDeltaCoreStack(cdk.Stack):
                         # authorise, not something to inherit.
                         "token.actions.githubusercontent.com:sub":
                             "repo:andaro74/regdelta:pull_request",
+                        # THE sub CLAIM IS NAME-BOUND; THIS ONE IS NOT.
+                        # `andaro74/regdelta` is a personal-account path. If the
+                        # account is renamed or the repo deleted, whoever
+                        # registers that owner/name mints tokens with a
+                        # byte-identical `sub` and `aud` and assumes this role.
+                        # The numeric id cannot be re-registered.
+                        # security-reviewer, M07 L1.
+                        "token.actions.githubusercontent.com:repository_id":
+                            "1322516232",
                     },
+                    # `job_workflow_ref` WAS CONSIDERED AND DEFERRED, not
+                    # missed. It would stop a future workflow in this repo
+                    # inheriting the role silently, and it needs `StringLike`
+                    # on a claim whose exact rendering
+                    # (`OWNER/REPO/.github/workflows/FILE@REF`) this repo has
+                    # never observed — the role has never been assumed. Two
+                    # unverified claim pins on the same first run make an
+                    # AccessDenied ambiguous about which one was wrong, and
+                    # single-variable change is the discipline ADR-0005 was
+                    # written to enforce. Add it after the first successful
+                    # assumption, when the real claim can be read off the run.
                 }),
         )
         # `dynamodb:Scan` ONLY, and on the table ARN only.

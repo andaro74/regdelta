@@ -26,7 +26,17 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 STACK = ROOT / "infra" / "core" / "core_stack.py"
 TESTS = ROOT / "tests" / "test_ci_eval_role.py"
 ORIGINAL = STACK.read_bytes()
-TEXT = ORIGINAL.decode("utf-8")
+# ANCHORS BELOW ARE WRITTEN WITH LF. The working tree is CRLF on Windows
+# (git stores LF), and .read_bytes() skips newline translation — so after
+# one in-place rewrite of the target, every multi-line anchor silently
+# matched 0 times and five mutations reported as NOT APPLIED.
+#
+# They reported as not-applied rather than as killed, which is the only
+# reason that run was legible: a probe unable to apply its own mutation
+# must never be indistinguishable from a guard doing its job. That
+# distinction was built in deliberately and it is what caught this.
+# Normalised here; the restore still writes ORIGINAL bytes verbatim.
+TEXT = ORIGINAL.decode("utf-8").replace("\r\n", "\n")
 
 MUTATIONS = [
     ("aud condition dropped — any GitHub repo in the world may assume it",
@@ -47,6 +57,12 @@ MUTATIONS = [
      "            resources=[self.registry_table.table_arn]))",
      "        self.registry_table.grant_read_data(ci_eval)",
      "test_it_holds_exactly_one_statement_granting_exactly_one_action"),
+
+    ("repository_id dropped — the sub claim alone survives a rename (L1)",
+     '                        "token.actions.githubusercontent.com:repository_id":\n'
+     '                            "1322516232",\n',
+     "",
+     "test_the_repository_is_pinned_by_id_and_not_only_by_name"),
 
     ("an execute-api grant added to 'fix' the role",
      "        cdk.CfnOutput(self, \"CiEvalRoleArn\", value=ci_eval.role_arn,",
@@ -84,7 +100,7 @@ try:
             survivors.append(f"{label} (anchor matched {hits}x)")
             print(f"{label:66} {'NO':8} -- not attributable")
             continue
-        STACK.write_text(TEXT.replace(find, repl), encoding="utf-8")
+        STACK.write_bytes(TEXT.replace(find, repl).encode("utf-8"))
         red = run_test(test) != 0
         survivors += [] if red else [label]
         print(f"{label:66} {'yes':8} "

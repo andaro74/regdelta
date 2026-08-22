@@ -68,6 +68,8 @@ import argparse
 import hashlib
 import itertools
 import json
+import ntpath
+import pathlib
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -119,9 +121,27 @@ def cites_ruling(entry: dict) -> bool:
     cannot be falsified by a reader — which is precisely what ADR-0005 says
     makes a seat ruling sound. So it does not admit anything, and the run
     fails rather than proceeding on an uncitable override.
+
+    THE FIRST VERSION WAS `(ROOT / ruling).exists()` AND WAS BYPASSABLE BY ANY
+    ABSOLUTE PATH. `pathlib` lets an absolute right-hand operand replace the
+    root entirely: `ROOT / "/etc/passwd"` is `/etc/passwd`, which exists on the
+    runner, so `"ruling": "/etc/passwd"` satisfied the check and the override
+    became usable while citing nothing a reader of this repo could open. `../`
+    escapes worked the same way wherever the target existed.
+    (security-reviewer, M07 M1.) So the path must be relative, must stay inside
+    the tree after resolution, and must be a Markdown document — a ruling is
+    something someone reads.
     """
     ruling = entry.get("ruling")
-    return bool(ruling) and (ROOT / ruling).exists()
+    if not ruling or not isinstance(ruling, str):
+        return False
+    candidate = pathlib.PurePosixPath(ruling)
+    if candidate.is_absolute() or ntpath.isabs(ruling) or ".." in candidate.parts:
+        return False
+    if candidate.suffix.lower() != ".md":
+        return False
+    resolved = (ROOT / ruling).resolve()
+    return resolved.is_relative_to(ROOT.resolve()) and resolved.is_file()
 
 
 def admission_for(admissions: list[dict], qid: str, run: dict,

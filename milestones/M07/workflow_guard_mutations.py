@@ -25,7 +25,17 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 WF = ROOT / ".github" / "workflows" / "evals.yml"
 TESTS = ROOT / "tests" / "test_eval_gate_workflow.py"
 ORIGINAL = WF.read_bytes()
-TEXT = ORIGINAL.decode("utf-8")
+# ANCHORS BELOW ARE WRITTEN WITH LF. The working tree is CRLF on Windows
+# (git stores LF), and .read_bytes() skips newline translation — so after
+# one in-place rewrite of the target, every multi-line anchor silently
+# matched 0 times and five mutations reported as NOT APPLIED.
+#
+# They reported as not-applied rather than as killed, which is the only
+# reason that run was legible: a probe unable to apply its own mutation
+# must never be indistinguishable from a guard doing its job. That
+# distinction was built in deliberately and it is what caught this.
+# Normalised here; the restore still writes ORIGINAL bytes verbatim.
+TEXT = ORIGINAL.decode("utf-8").replace("\r\n", "\n")
 
 # label -> (find, replace, test that must go red)
 MUTATIONS = [
@@ -72,6 +82,23 @@ MUTATIONS = [
      '          exit "$EVAL_RC"',
      "          exit ${{ steps.evals.outputs.exit }}",
      "test_the_enforce_step_still_fails_closed"),
+
+    # ---- Added after security-reviewer, M07.
+    ("the fork clause dropped — golden-set runs on outside PRs (M3)",
+     "    if: >-\n      vars.EVAL_GATE_ENABLED == 'true' &&\n"
+     "      github.event.pull_request.head.repo.full_name == github.repository",
+     "    if: vars.EVAL_GATE_ENABLED == 'true'",
+     "test_the_gate_does_not_run_on_fork_pull_requests"),
+
+    ("the role ARN read as an unmasked variable, leaking the account id",
+     "${{ secrets.AWS_EVAL_ROLE_ARN }}",
+     "${{ vars.AWS_EVAL_ROLE_ARN }}",
+     "test_the_account_id_and_the_api_host_are_secrets_not_variables"),
+
+    ("the API host read as an unmasked variable — HIGH, it is unauthenticated",
+     "${{ secrets.STAGING_API_URL }}",
+     "${{ vars.STAGING_API_URL }}",
+     "test_the_account_id_and_the_api_host_are_secrets_not_variables"),
 ]
 
 
@@ -102,7 +129,7 @@ try:
             survivors.append(f"{label} (anchor matched {hits}x, not applied)")
             print(f"{label:64} {'NO (' + str(hits) + 'x)':8} {'-- not attributable':22}")
             continue
-        WF.write_text(TEXT.replace(find, repl), encoding="utf-8")
+        WF.write_bytes(TEXT.replace(find, repl).encode("utf-8"))
         red = run_test(test) != 0
         survivors += [] if red else [label]
         print(f"{label:64} {'yes':8} "

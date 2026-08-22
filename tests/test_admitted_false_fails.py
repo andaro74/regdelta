@@ -22,6 +22,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).parent.parent
 SCRIPT = ROOT / "evals" / "replay_history.py"
 REGISTER = ROOT / "evals" / "admitted_false_fails.json"
@@ -248,6 +250,35 @@ def test_an_entry_citing_an_absent_document_does_not_admit(tmp_path, monkeypatch
                      [entry(ruling="milestones/M07/does-not-exist.md")])
     assert rc == 1
     assert "UNCITED ADMISSION" in out
+
+
+@pytest.mark.parametrize("ruling", [
+    "/etc/passwd",                       # POSIX absolute — the runner is ubuntu
+    "C:/Windows/win.ini",                # Windows absolute — the laptop
+    "\\\\server\\share\\ruling.md",      # UNC
+    "../../../etc/hostname",             # traversal to something that exists
+    "milestones/../milestones/M07/../../etc/passwd",  # traversal mid-path
+    "evals/run_evals.py",                # in the tree, but not a document
+    "milestones/M07",                    # a directory, not a file
+])
+def test_a_ruling_path_cannot_escape_the_tree(tmp_path, monkeypatch, ruling):
+    """FOUND BY security-reviewer, M07 M1. The first version was
+    `(ROOT / ruling).exists()`, and `pathlib` lets an absolute right-hand
+    operand replace the root: `ROOT / "/etc/passwd"` is `/etc/passwd`, which
+    exists on the runner. So an override could cite a file no reader of this
+    repo can open and still count as cited — defeating the one property the
+    whole mechanism rests on."""
+    fragile_history(tmp_path)
+    rc, out = replay(tmp_path, monkeypatch, [entry(ruling=ruling)])
+    assert rc == 1, f"{ruling!r} was accepted as a ruling reference"
+    assert "UNCITED ADMISSION" in out
+
+
+def test_a_real_relative_markdown_ruling_is_accepted():
+    """The other direction, so the tightening above is not simply "reject
+    everything" — which would pass every test in this file and admit nothing."""
+    assert replay_history.cites_ruling(
+        {"ruling": "milestones/M07/q03-rulings.md"})
 
 
 def test_an_uncited_entry_is_not_also_reported_stale(tmp_path, monkeypatch):

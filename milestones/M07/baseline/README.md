@@ -127,7 +127,7 @@ M07.
 
 1. **The gate would run in the wrong region.** `golden-set` pins
    `aws-region: us-east-1`. The stack is `us-west-2`
-   (`ApiUrl: https://7o8mote0q6.execute-api.us-west-2.amazonaws.com/api`), and
+   (`ApiUrl: https://<api-id>.execute-api.us-west-2.amazonaws.com/api`), and
    `run_evals.resolve_api_url` falls back to `boto3.client("cloudformation")`
    with no region.
 2. **Every posted scorecard would be corpus-blind.** `corpus_fingerprint()`
@@ -188,3 +188,23 @@ ceiling $1.50, zero OCU.**
 | `pytest.txt` | 3 failed, 1187 passed — the `unit` redness |
 | `replay-history.txt` | the q03 FRAGILE finding those three tests read |
 | `workflow-runs.json` | every eval-gate run failing since 2026-08-20 |
+
+## Redaction, and a warning about repeating this capture
+
+**The `execute-api` hostname is redacted above** (`security-reviewer`, M07, HIGH).
+That host reaches the API directly, bypassing CloudFront and everything attached
+to it; the API has no authorizer and `/query` spends a Bedrock call per request.
+The rate limit (`rate_limit=20, burst_limit=40`) bounds requests per second, not
+dollars. The endpoint being unauthenticated is a pre-existing accepted risk
+(SPEC/04, and `spec07-oidc-amendment.md` records it as an open security-seat
+question); **publishing its address on a public repo is not**, because obscurity
+was the whole of the control. The sentence above is making a point about region,
+and loses nothing to the redaction.
+
+**Do not re-run the capture verbatim at M07 close.**
+`gh api /repos/.../actions/variables` returns variable **values**, not just
+names — unlike the secrets endpoint, which returns names only, which is why
+`actions-secrets.json` is safe by construction. Today the only variable is
+`EVAL_GATE_ENABLED=false` and nothing leaks. Once `AWS_EVAL_ROLE_ARN` and
+`STAGING_API_URL` are populated, the same command writes the AWS account id and
+the API host into this public repo. Redact both, or capture names only.

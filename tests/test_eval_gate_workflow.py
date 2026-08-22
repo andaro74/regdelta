@@ -155,6 +155,54 @@ def test_the_gate_can_fingerprint_the_corpus():
         "will carry corpus: {'available': false}")
 
 
+def test_the_gate_does_not_run_on_fork_pull_requests():
+    """The OIDC trust policy CANNOT tell a fork from an owner PR — the `sub`
+    claim is `repo:andaro74/regdelta:pull_request` for both, because GitHub's
+    token carries no fork claim. What isolates a fork today is that fork-PR
+    token permissions cap at read and `id-token` has no read level, so it
+    resolves to `none`. That is real and it is PLATFORM behaviour, invisible
+    to a reader of this repo.
+
+    It is also the operational fix: without the clause an outside
+    contributor's PR carries a permanently red `golden-set` reading
+    "Credentials could not be loaded" — not their fault and not fixable by
+    them. security-reviewer, M07 M3."""
+    condition = workflow()["jobs"]["golden-set"]["if"]
+    assert "github.event.pull_request.head.repo.full_name" in condition
+    assert "github.repository" in condition
+    assert "vars.EVAL_GATE_ENABLED" in condition
+
+
+def test_the_account_id_and_the_api_host_are_secrets_not_variables():
+    """Actions variables are NOT masked in logs, and on a public repo those
+    logs are world-readable. A `with:` input is echoed into the step log
+    BEFORE the action runs, so configure-aws-credentials' `mask-aws-account-id`
+    cannot help — masking is registered by the action, after the echo.
+
+    STAGING_API_URL is the one that matters: it names an API with no
+    authorizer where every /query spends a Bedrock call, reachable directly
+    past CloudFront. security-reviewer, M07 HIGH and the vars question.
+    See docs/governance/branch-protection.md."""
+    text = WORKFLOW.read_text(encoding="utf-8")
+    for name in ("AWS_EVAL_ROLE_ARN", "STAGING_API_URL"):
+        assert f"secrets.{name}" in text, f"{name} must be a secret"
+        assert f"vars.{name}" not in text, \
+            f"{name} is read as a variable; variables are not masked in logs"
+
+
+def test_no_stray_actions_expression_in_a_script_body():
+    """A `script:` body is a YAML VALUE, not a comment, so Actions expression
+    syntax written there — even inside a // JavaScript comment — is parsed and
+    evaluated, and an empty one is a workflow syntax error. Caught while
+    writing the L4 fix, by an editor rather than by a failed run."""
+    for job in workflow()["jobs"].values():
+        for step in job.get("steps", []):
+            script = (step.get("with") or {}).get("script", "")
+            for expr in re.findall(r"\$\{\{(.*?)\}\}", script, re.DOTALL):
+                assert expr.strip(), \
+                    "empty Actions expression in a script body: syntax error"
+
+
 def test_the_enforce_step_still_fails_closed():
     """Pinned because it has been broken twice: once by a pipe that made `$?`
     tee's exit status, once by an empty interpolation rendering to a bare

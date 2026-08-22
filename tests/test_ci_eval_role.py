@@ -91,8 +91,23 @@ def test_the_subject_claim_is_scoped_to_the_event_not_just_the_repo(role):
     sub = cond["StringEquals"][f"{OIDC_HOST}:sub"]
     assert sub == "repo:andaro74/regdelta:pull_request", sub
     assert "*" not in sub, "a wildcard subject admits every ref in the repo"
-    assert "StringLike" not in cond, \
-        "StringLike on a sub claim is how a wildcard gets in by the back door"
+    # NARROWED to the sub key. It read `"StringLike" not in cond`, which would
+    # have blocked adding a legitimate StringLike on `job_workflow_ref` — a
+    # test forbidding a tightening. security-reviewer, M07 L1.
+    assert f"{OIDC_HOST}:sub" not in cond.get("StringLike", {}), \
+        "StringLike on the sub claim is how a wildcard gets in by the back door"
+
+
+def test_the_repository_is_pinned_by_id_and_not_only_by_name(role):
+    """`andaro74/regdelta` is a personal-account path. If the account is
+    renamed or the repo deleted, whoever registers that owner/name mints a
+    token with a byte-identical `sub` and `aud`. The numeric id cannot be
+    re-registered. security-reviewer, M07 L1."""
+    cond = role["Properties"]["AssumeRolePolicyDocument"]["Statement"][0]["Condition"]
+    repo_id = cond["StringEquals"].get(f"{OIDC_HOST}:repository_id")
+    assert repo_id == "1322516232", (
+        f"repository_id is {repo_id!r}; the sub claim alone is name-bound and "
+        f"survives a rename by someone else")
 
 
 def test_the_trust_names_this_accounts_provider(role):

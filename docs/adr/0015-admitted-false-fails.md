@@ -184,6 +184,24 @@ does not edit it.
 + FRAGILE keeps its teeth on everything it was built for: any new
   disagreement, on any answer that is not byte-identical to a ruled one.
 
+- **An entry can currently be born with its own justification.** `unit` is the
+  only required check, approvals are zero and code-owner review is off
+  (`milestones/M07/baseline/ruleset-20392406.json`), so one pull request can add
+  both an entry and the ruling document it cites — and the entry is usable in
+  the commit that introduces it. `cites_ruling` cannot close this: it can only
+  ask whether the document is in the tree, and in that PR it is.
+  `security-reviewer`, M07 M2.
+
+  What closes it is a **code-owner review requirement** on the register's path,
+  because the seat that must approve is then not the seat that wrote it.
+  `.github/CODEOWNERS` now routes `/evals/admitted_false_fails.json` to the SME
+  seat for exactly that reason. **That is not enforcement today** — with one
+  collaborator, CODEOWNERS enforces nothing (ADR-0005) — so this is recorded as
+  an open hole that Door 1 closes, not as a fix. A merge-base check
+  (`git cat-file -e origin/main:<path>`) was considered and rejected: `actions/
+  checkout` fetches at depth 1, so `origin/main` is often absent on the runner,
+  and a control that silently degrades to fail-open is worse than a named hole.
+
 - **This is an override list, and override lists get used.** A future operator
   in a hurry can examine an answer carelessly, write an entry, point `ruling`
   at a document that exists, and green the build. **This is a real reduction in

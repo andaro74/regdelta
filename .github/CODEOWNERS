@@ -33,6 +33,24 @@
 # demonstrates, so it wants the same stop-and-decide treatment as ground truth.
 # Placed after the golden-set line because last match wins.
 /evals/scenarios.json           @andaro74
+# The admitted-false-fail register (SPEC/07 item 5, ADR-0015). Each entry is an
+# SME-seat ruling that one recorded answer's failure is a false fail, and an
+# entry suppresses a failure in `unit` — the check that gates merge. So it is
+# SME-owned for the same reason ground truth is, and placed after the lines
+# above because last match wins.
+#
+# THIS LINE IS THE FIX FOR A REAL HOLE, not a formality. security-reviewer
+# (M07 M2) observed that one PR can add both an entry AND the ruling document
+# it cites, so the entry becomes usable in the commit that introduces it and
+# the falsifiability control has no mechanical backing. `cites_ruling` cannot
+# close that — it can only ask whether the document is in the tree, and in
+# that PR it is. A code-owner review requirement on this path can, because the
+# seat that must approve is not the seat that wrote it.
+#
+# It is NOT closed today: with `require_code_owner_review: false` and one
+# collaborator, this file enforces nothing (ADR-0005). It closes when Door 1
+# lands. Recorded in ADR-0015 as an open hole rather than claimed as a fix.
+/evals/admitted_false_fails.json @andaro74
 /.claude/skills/regulatory-domain/  @andaro74
 
 # Security owns what the tooling and infrastructure MAY DO

@@ -1,8 +1,21 @@
 # Eval gate — the merge button's conscience.
 # Runs the golden set on every PR; posts the scorecard as a PR comment;
-# fails the check on regression. Marked "required" in branch protection,
-# so a PR that regresses ground-truth answers physically cannot merge,
-# regardless of who — or what — wrote the code.
+# fails the check on regression.
+#
+# WHAT THIS HEADER USED TO CLAIM, AND WHY IT NO LONGER DOES. It said
+# `golden-set` is 'marked "required" in branch protection, so a PR that
+# regresses ground-truth answers physically cannot merge'. The live ruleset
+# required exactly one check — `unit` — with zero approvals and an admin
+# bypass of "always" (milestones/M07/baseline/ruleset-20392406.json). So the
+# sentence was false for as long as it has been here, and flipping
+# EVAL_GATE_ENABLED does not make it true: it produces a gate that COMMENTS
+# and does not GATE. security-reviewer, M07 M4.
+#
+# SPEC/07 item 1 requires the eval gate to be a required check, so M07 adds
+# `golden-set` to the ruleset in the same change that flips the flag — by the
+# BARE JOB NAME, `golden-set` and not `eval-gate / golden-set`, which is
+# ADR-0005's finding and a debt owed since M04. This header gets its sentence
+# back when that lands and is verified, and not before.
 name: eval-gate
 on:
   pull_request:
@@ -112,19 +125,20 @@ jobs:
     # workflow level was lowered and this block was not added in the same
     # commit. Caught by reading the parsed YAML rather than the diff.
     #
-    # A TEST GUARDING THIS WAS CONSIDERED AND DECLINED, 2026-08-16. It would
-    # parse this file and assert each job holds exactly the permissions its
-    # steps need, which needs a YAML parser; PyYAML is not transitive from
-    # boto3, langgraph, fastapi, starlette, mangum or ruff, so it would have had
-    # to become a dependency. Declined because the guard protects a job that
-    # currently never runs — `if: vars.EVAL_GATE_ENABLED` is false — and a guard
-    # for a job nobody runs is a guard against a hypothetical. The comment above
-    # is the control instead.
+    # THE GUARD DECLINED HERE ON 2026-08-16 NOW EXISTS:
+    # tests/test_eval_gate_workflow.py. Its reversal condition was "when
+    # EVAL_GATE_ENABLED goes true … add the guard then, in the same change that
+    # flips the flag", and M07 is that change.
     #
-    # REVERSAL CONDITION, so this is a decision rather than a shrug: when
-    # EVAL_GATE_ENABLED goes true, this job starts running and a silent
-    # permissions regression becomes a live failure with a misleading cause.
-    # Add the guard then, in the same change that flips the flag.
+    # The other half of the declining reason was simply WRONG, and it is worth
+    # leaving on the record rather than deleting. It read: "PyYAML is not
+    # transitive from boto3, langgraph, fastapi, starlette, mangum or ruff, so
+    # it would have had to become a dependency." It is transitive —
+    # `langgraph -> langchain-core -> pyyaml<7.0.0,>=5.3.0` — and had already
+    # been installed in CI by this very job for as long as langgraph has been in
+    # requirements.txt. A cost was asserted, never checked, and used to decline
+    # a control. It is pinned explicitly now (requirements-dev.txt), because
+    # being transitive is a property of one week's resolve.
     permissions:
       contents: read
       pull-requests: write
@@ -141,7 +155,24 @@ jobs:
     # BOTH repo variables below are populated — AWS_EVAL_ROLE_ARN and
     # STAGING_API_URL are read unguarded and an empty value fails the job
     # rather than skipping it.
-    if: vars.EVAL_GATE_ENABLED == 'true'
+    # THE FORK CLAUSE IS NOT BELT-AND-BRACES, it is the boundary stated in the
+    # file that owns it. Without it this job runs on a fork PR, and the OIDC
+    # trust policy cannot tell a fork from an owner PR: the `sub` claim is
+    # `repo:andaro74/regdelta:pull_request` for both, because GitHub's token
+    # carries no fork claim. What actually isolates a fork today is that
+    # fork-PR token permissions cap at read and `id-token` has no read level,
+    # so it resolves to `none` and configure-aws-credentials cannot mint a
+    # token. That is real, and it is PLATFORM behaviour rather than anything
+    # configured here — invisible to a reader of this repo.
+    #
+    # It is also an operational fix. Without the clause an outside
+    # contributor's PR carries a permanently red `golden-set` reading
+    # "Credentials could not be loaded" — not their fault, not fixable by
+    # them, and a misleading cause. With it, the job skips and says why.
+    # security-reviewer, M07 M3.
+    if: >-
+      vars.EVAL_GATE_ENABLED == 'true' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -151,7 +182,7 @@ jobs:
       - run: pip install -r requirements.txt
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_EVAL_ROLE_ARN }}   # OIDC role, read-only
+          role-to-assume: ${{ secrets.AWS_EVAL_ROLE_ARN }}   # OIDC role, read-only
           # WAS us-east-1, AGAINST A us-west-2 STACK. Nothing had ever run this
           # job — `if: vars.EVAL_GATE_ENABLED` has been false since 2026-08-08 —
           # so the mismatch sat here unexercised, which is this file's own
@@ -170,7 +201,7 @@ jobs:
       - name: Run golden set vs staging
         id: evals
         env:
-          REGDELTA_API_URL: ${{ vars.STAGING_API_URL }}
+          REGDELTA_API_URL: ${{ secrets.STAGING_API_URL }}
           # WITHOUT THIS THE POSTED SCORECARD IS CORPUS-BLIND, and blind in the
           # silent direction. `shared.corpus.fingerprint()` returns
           # `{"available": false, "reason": "REGISTRY_TABLE unset"}` and the card
@@ -205,8 +236,26 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const body = "### 🧪 Eval gate — golden set\n```\n" +
-              fs.readFileSync('scorecard.txt','utf8').slice(-3000) + "\n```" +
+            // FENCED WITH TILDES, NOT BACKTICKS. scorecard.txt holds model
+            // answers derived from Federal Register / eCFR text this repo does
+            // not control, and a backtick fence occurring inside an answer
+            // escapes a backtick fence and renders as markdown in a comment
+            // posted with `pull-requests: write`.
+            //
+            // Not a script injection, and the distinction matters: the file is
+            // read with readFileSync at runtime and never interpolated through
+            // an Actions expression, so the EVAL_RC lesson below was applied
+            // correctly here. The exposure is what a rendered PR comment can do
+            // to the humans and agents reading the thread.
+            //
+            // NOTE FOR ANYONE EDITING THIS BLOCK: a `script:` body is a YAML
+            // VALUE, not a YAML comment, so Actions expression syntax written
+            // here — even inside a // JavaScript comment — is parsed and
+            // evaluated. An empty one is a workflow syntax error. That is why
+            // the sentence above spells the name out instead of showing it.
+            // security-reviewer, M07 L4.
+            const body = "### 🧪 Eval gate — golden set\n~~~~\n" +
+              fs.readFileSync('scorecard.txt','utf8').slice(-3000) + "\n~~~~" +
               "\n_Ground truth owned by @regdelta-sme (CODEOWNERS). " +
               "A failing gate blocks merge by branch protection._";
             await github.rest.issues.createComment({

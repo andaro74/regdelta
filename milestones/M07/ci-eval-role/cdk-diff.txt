@@ -1,0 +1,32 @@
+start: Building regdelta-core Template
+success: Built regdelta-core Template
+start: Publishing regdelta-core Template (581208540944-us-west-2-5b1eb675)
+success: Published regdelta-core Template (581208540944-us-west-2-5b1eb675)
+Hold on while we create a read-only change set to get a diff with accurate replacement information (use --method=template to use a less accurate but faster template-only diff)
+
+Stack regdelta-core
+IAM Statement Changes
+┌───┬──────────────────────┬────────┬───────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────┬────────────────────────────────────────────────────────────────────────────────────┐
+│   │ Resource             │ Effect │ Action                        │ Principal                                                                             │ Condition                                                                          │
+├───┼──────────────────────┼────────┼───────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+│ + │ ${CiEvalRole.Arn}    │ Allow  │ sts:AssumeRoleWithWebIdentity │ Federated:arn:aws:iam::581208540944:oidc-provider/token.actions.githubusercontent.com │ "StringEquals": {                                                                  │
+│   │                      │        │                               │                                                                                       │   "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",                  │
+│   │                      │        │                               │                                                                                       │   "token.actions.githubusercontent.com:sub": "repo:andaro74/regdelta:pull_request" │
+│   │                      │        │                               │                                                                                       │ }                                                                                  │
+├───┼──────────────────────┼────────┼───────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────┤
+│ + │ ${RegistryTable.Arn} │ Allow  │ dynamodb:Scan                 │ AWS:${CiEvalRole}                                                                     │                                                                                    │
+└───┴──────────────────────┴────────┴───────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────┘
+(NOTE: There may be security-related changes not in this list. See https://github.com/aws/aws-cdk/issues/1299)
+
+Resources
+[+] AWS::IAM::Role CiEvalRole CiEvalRoleE37A09AF
+[+] AWS::IAM::Policy CiEvalRole/DefaultPolicy CiEvalRoleDefaultPolicyA7352372
+
+Outputs
+[+] Output CiEvalRoleArn CiEvalRoleArn: {"Description":"Set as the AWS_EVAL_ROLE_ARN Actions variable","Value":{"Fn::GetAtt":["CiEvalRoleE37A09AF","Arn"]}}
+[+] Output RegistryTableName RegistryTableName: {"Description":"Set as the REGISTRY_TABLE Actions variable","Value":{"Ref":"RegistryTableF2430F90"}}
+
+
+
+✨  Number of stacks with differences: 1
+
