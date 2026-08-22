@@ -44,6 +44,15 @@ jobs:
     # never answered. So the job always runs and reports; when the diff touches
     # no SME-owned path it passes and says so. The gate must not depend on an
     # unanswered question about GitHub's own semantics.
+    #
+    # THE QUESTION IS NOW ANSWERED, and it makes this clause load-bearing
+    # rather than merely careful: a SKIPPED required check reads CLEAN and does
+    # NOT block (2026-08-22, PR #16 — milestones/M07/skipped-check.txt). An
+    # `if:` here would therefore not make this gate conditional; it would make
+    # it a NO-OP for every pull request that made the condition false, and the
+    # merge button would show no difference between "the ruling was cited" and
+    # "the gate did not run". Do not add one. If this job ever needs to not
+    # apply to some PR, it must still RUN and decide to pass.
     steps:
       - uses: actions/checkout@v4
         with:

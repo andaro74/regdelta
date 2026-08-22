@@ -65,6 +65,26 @@ Two consequences worth carrying:
   never isolated, and this record no longer claims otherwise. That question
   has to be answered at M04, when there is a job that can actually skip.
 
+  **ANSWERED 2026-08-22 at M07, two milestones late: it does NOT block.**
+  PR #16, `mergeStateStatus: CLEAN`, with `golden-set` SKIPPED and both other
+  required checks — `unit` and `ruling-cited` — SUCCESS on the same commit.
+  Isolated the way this correction demands: the probe
+  (`milestones/M07/skipped_check_probe.py`) refuses to report an answer unless
+  every other required check reads SUCCESS, because `BLOCKED` has many causes
+  and reading it off a PR with anything else wrong is precisely the error
+  above. Full output and scope in `milestones/M07/skipped-check.txt`.
+
+  Scope is one ruleset and one skip mechanism — a job-level `if:` evaluating
+  false. A job skipped by a failed `needs:` reaches `SKIPPED` by a different
+  path and is not covered.
+
+  **The consequence is a fail-open path, not a convenience.** A required check
+  that can skip is not a gate on the PRs where it skips. `golden-set` skips
+  while `EVAL_GATE_ENABLED` is false and on every fork PR, and those PRs read
+  CLEAN. `ground-truth-gate` carries no `if:` for exactly this reason, written
+  down before the answer was known; the answer makes that caution load-bearing
+  rather than merely tidy.
+
 ## Decision
 Configure protection to what a single-human repo can actually honor.
 

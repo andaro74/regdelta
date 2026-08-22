@@ -16,6 +16,23 @@
 # BARE JOB NAME, `golden-set` and not `eval-gate / golden-set`, which is
 # ADR-0005's finding and a debt owed since M04. This header gets its sentence
 # back when that lands and is verified, and not before.
+#
+# LANDED 2026-08-22, AND THE SENTENCE IS STILL NOT BACK. `golden-set` is on the
+# ruleset now (milestones/M07/required-checks.txt) and that changed nothing on
+# its own: with the flag false this job SKIPS, and a SKIPPED required check
+# reads CLEAN and does not block — measured on PR #16, not assumed
+# (milestones/M07/skipped-check.txt). "Required" and "gating" are different
+# properties and this repo has now paid to learn the difference twice.
+#
+# TWO CONDITIONS remain before the claim is true, and they are both about this
+# job RUNNING rather than about the ruleset: `EVAL_GATE_ENABLED` must be true,
+# and the run must be one where the `if:` below does not skip.
+#
+# THE FORK CLAUSE IS PERMANENTLY ONE OF THOSE SKIPS. A fork PR skips this job
+# and therefore reads CLEAN with no eval gate having run. The clause is still
+# right — see its own note below — but whatever sentence goes back in this
+# header must not describe `golden-set` as gating fork pull requests, because
+# it does not and cannot.
 name: eval-gate
 on:
   pull_request:
