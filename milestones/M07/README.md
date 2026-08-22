@@ -1,8 +1,10 @@
-# M07 — Governance Layer. **IN FLIGHT.** Doors 1–3 are what remain.
+# M07 — Governance Layer. **IN FLIGHT.** Doors 1-3 are RUN; close is what remains.
 
-Branch work landed as **four pull requests, all merged** (#15, #16, #17, #18).
-Close tag will be `m07`. **Session spend: ~$0.60** of a $1.50 budget — three
-`golden-set` runs at ~$0.20. No `make up`, no OCU; the hot tier stays down.
+Branch work landed as **five pull requests, all merged** (#15-#19), plus two
+staged demo PRs opened and closed unmerged (#20 Door 1, #21 Door 3). Close tag
+will be `m07`. **Session spend: ~$1.00** of a $1.50 budget — five `golden-set`
+runs at ~$0.20. Two earlier runs failed upstream of Bedrock and were free, and
+Door 3's skipped behind a red `unit`. No `make up`, no OCU; the hot tier is down.
 
 Read this file first. The commit messages carry the detail.
 
@@ -147,36 +149,58 @@ the PR it blocks, and needs no second identity.
 
 ## Next session, in order
 
-Steps 1-4 of the previous plan are DONE: the two-PR split (which became four),
-the flag flip and required checks, ADR-0005's SKIPPED question, and the admin
-bypass removal. What is left is the demo itself.
+**Everything SPEC/07's Done-when asks for now exists.** All three doors ran as
+real pull requests with CI verdicts, and the run-through is written up in
+`milestones/M07/doors/` with the three PR URLs.
 
-**1. Doors 1, 2, 3 — the recorded run-through.** ~$0.20 per pull request,
-because `golden-set` runs on every one. Door 1 is one PR, Door 2 is two, Door 3
-is one: budget ~$0.80 before starting.
+| door | PR | outcome |
+|---|---|---|
+| 1 | [#20](https://github.com/andaro74/regdelta/pull/20) | BLOCKED by `ruling-cited`, `unit` green, bypass empty. Closed unmerged. |
+| 2 | [#17](https://github.com/andaro74/regdelta/pull/17) -> [#18](https://github.com/andaro74/regdelta/pull/18) | MERGED CLEAN. Not staged — the milestone delivering itself. |
+| 3 | [#21](https://github.com/andaro74/regdelta/pull/21) | BLOCKED, two HIGH findings, `unit` red too. Closed unmerged. |
 
-- **Door 1** is finally filmable and was not before. Edit
-  `evals/golden_questions.json` with no ruling; `ruling-cited` fails and prints
-  the SME seat by name; the merge is refused **to the repository owner with no
-  bypass offered**. `ruleset-after-bypass-removal.json` is the JSON SPEC/07's
-  Done-when requires beside the screenshot.
-- **Door 2** is the path this milestone has already run for real, twice —
-  PR #17 landed a ruling, PR #18 cited it. Film it again on the demo change, or
-  cite those two if a live take is not affordable.
-- **Door 3**: the insecure branch is authorised with mitigations — in-diff
-  marker naming it a staged demo artifact, PR opened immediately so the security
-  finding is attached from the start, closed unmerged the same session.
+**1. `eval-gate-flake-gap.md` — CAUSE ESTABLISHED, ruling drafted.** Read it
+and `q05-mechanism.txt` before closing. **The gate was right.** The metrics
+refute the load hypothesis outright — no throttle in either window (the metric
+does not exist for this account), no timeout, no retry, no error, and q05 is
+question five of twenty. The verdict call **succeeded** both times, 7083 in and
+764 out against a `max_tokens` of 2000, on a prompt byte-identical to the one
+the probe answered 6/6. `_json_object` could not parse the reply, returned
+`{}`, and every downstream field collapsed. **q05 is a parse defect in
+`verdict()`, not noise** — same layer as q12, and it belongs in that milestone.
+All three candidate fixes the gap document proposed would have hidden it; one
+would have made it permanently invisible. What remains open is one policy
+question, not a gate-theory question.
 
-**2. The lead+PM ruling on `roles-amendment-draft.md`,** which Door 3's Close
-depends on. `demo-script.md`'s Close is marked do-not-film until then.
+The history below is left as filed, because the diagnosis was wrong three
+times in the same direction and that is the useful part:
 
-**3. Close the milestone** — `/close-milestone 07`, `run_evals.py --record`, the
-ADRs, the tag.
+- PR #20 — q03 regressed. `unit` was green on the same commit because
+  `replay_history` honoured the ruled admission; `golden-set` failed because
+  `gate_verdict()` never consults the register.
+- PR #22 — q05 regressed, and not on a token: the system **DECLINED to answer**
+  at confidence 0.00. q05 has passed in eleven recorded runs. PR #22 changes
+  documentation only.
 
-**Watch for:** every pull request now costs a `golden-set` run, and the admin
-bypass is gone. A red check has no override — that is the point, and it is also
-the thing that will surprise someone at the wrong moment. Restoring it is one
-call and the exact value to restore is printed in `bypass-removed.txt`.
+So the narrow fix ("consult the register") is insufficient: the register admits
+one ruled q03 observation and ADR-0015 caps it there. The real shape is that
+`run_evals.py` scores **one live sample** per question and the gate calls any
+miss a regression, while `replay_history.py` compares recorded runs and has a
+`FRAGILE` classification precisely because questions flip.
+
+**Operational consequence, with no bypass:** a docs-only PR cannot merge until a
+non-deterministic system happens to produce a passing sample, and the only
+recourse is re-running at ~$0.20 a time — the "repeat until green" behaviour
+`run_evals.py` itself warns about. **The gate currently makes the repository's
+own anti-pattern the only way to merge.**
+
+**2. Close the milestone** — `/close-milestone 07`: evidence pack,
+`run_evals.py --record`, the ADRs, tag `m07`.
+
+**Watch for:** every pull request costs a ~$0.20 `golden-set` run, and there is
+no admin bypass. A red check has no override — that is the point, and it is also
+what will surprise someone at the wrong moment. Restoring it is one call and the
+exact value is in `bypass-removed.txt`.
 
 ---
 
@@ -224,6 +248,24 @@ call and the exact value to restore is printed in `bypass-removed.txt`.
 | `unit-green/` | the green `unit`, and `replay_history --no-admissions` showing the unadmitted truth beside it |
 
 ## Still open, carried not closed
+
+- **THE EVAL GATE IGNORES THE ADMISSION REGISTER** (`eval-gate-flake-gap.md`).
+  Still true and still open: `unit` admits a ruled q03 observation; `golden-set`
+  does not, because `gate_verdict()` never consults
+  `evals/admitted_false_fails.json`. The register is keyed per recorded artifact
+  and a live run has none, so a fix has to decide what an admission MEANS for an
+  answer nobody has seen. **It is no longer the biggest one, and it was never
+  q05's cause** — that was a parse defect in `verdict()`, measured in
+  `q05-mechanism.txt`. This is q03's problem only.
+
+- **`_json_object` SWALLOWS AN UNPARSEABLE MODEL REPLY** and reports it as
+  confidence 0.00 with an empty answer (`q05-mechanism.txt`). Blocked PR #22
+  twice. The instrument that identifies it — `stop_reason`, built by M05 and
+  ADR-0013 — is in the API response body and is read by no consumer:
+  `run_evals.py` does not print it on a failure and neither did `q05_probe.py`,
+  and nothing records the raw completion. **The next occurrence will cost
+  another session of archaeology until that changes.** Product defect, same
+  layer as q12, and it belongs in that milestone rather than this one.
 
 - **SPEC/07 items 1–4 carry no Done-when observables at all** while item 5
   carries the strictest in the file (pm-spec-reviewer 12). A Done-when change,

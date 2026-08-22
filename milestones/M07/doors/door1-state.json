@@ -1,0 +1,1 @@
+{"checks":[{"conclusion":"FAILURE","name":"ruling-cited"},{"conclusion":"SUCCESS","name":"unit"},{"conclusion":"FAILURE","name":"golden-set"}],"mergeStateStatus":"BLOCKED","pr":20,"title":"[DEMO — DO NOT MERGE] Door 1: engineer edits ground truth to green a build","url":"https://github.com/andaro74/regdelta/pull/20"}
