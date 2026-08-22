@@ -1039,15 +1039,51 @@ class RegDeltaCoreStack(cdk.Stack):
                         # AccessDenied at configure-aws-credentials. That is the
                         # intended direction — a new trigger is a new thing to
                         # authorise, not something to inherit.
+                        #
+                        # THE IMMUTABLE FORM, and it is not what the docs or
+                        # the API told us to expect. MEASURED on the first run
+                        # that ever assumed this role (PR #17, 2026-08-22,
+                        # milestones/M07/oidc-claims.txt):
+                        #
+                        #   sub  'repo:andaro74@3157440/regdelta@1322516232:pull_request'
+                        #
+                        # GitHub issues the subject with the numeric OWNER id
+                        # and REPO id embedded. This was pinned as
+                        # `repo:andaro74/regdelta:pull_request` — the form every
+                        # published example uses — and the role could not be
+                        # assumed at all: "Not authorized to perform
+                        # sts:AssumeRoleWithWebIdentity", which names no claim.
+                        #
+                        # `repos/OWNER/REPO/actions/oidc/customization/sub`
+                        # reports `use_immutable_subject: false` while its
+                        # `sub_claim_prefix` shows the immutable prefix. Those
+                        # two fields disagree and the ISSUED TOKEN is the only
+                        # one that decides. Do not re-derive this from the API.
+                        #
+                        # It also RESOLVES security-reviewer M07 L1, which is
+                        # why the note below now reads as history. That finding
+                        # was that `andaro74/regdelta` is a name, so a renamed
+                        # account or deleted repo would let whoever registers
+                        # the path mint a byte-identical `sub`. The immutable
+                        # form carries both numeric ids, which cannot be
+                        # re-registered, so the sub is no longer name-bound.
                         "token.actions.githubusercontent.com:sub":
-                            "repo:andaro74/regdelta:pull_request",
-                        # THE sub CLAIM IS NAME-BOUND; THIS ONE IS NOT.
-                        # `andaro74/regdelta` is a personal-account path. If the
-                        # account is renamed or the repo deleted, whoever
-                        # registers that owner/name mints tokens with a
-                        # byte-identical `sub` and `aud` and assumes this role.
-                        # The numeric id cannot be re-registered.
-                        # security-reviewer, M07 L1.
+                            "repo:andaro74@3157440/regdelta@1322516232"
+                            ":pull_request",
+                        # KEPT, THOUGH THE sub ABOVE NOW CARRIES THE SAME id.
+                        # This was added because `andaro74/regdelta` is a name:
+                        # a renamed account or deleted repo would let whoever
+                        # registers that owner/name mint a byte-identical `sub`
+                        # and assume this role (security-reviewer, M07 L1). The
+                        # immutable subject closes that on its own.
+                        #
+                        # Not removed as newly-redundant, for one reason: the
+                        # subject format is GitHub's to change, and it changed
+                        # under this repo once already — silently, and against
+                        # what its own API reports. If it ever reverts to the
+                        # name form, this condition is what still binds the
+                        # trust to an id that cannot be re-registered. It costs
+                        # nothing and it is the belt to that brace.
                         "token.actions.githubusercontent.com:repository_id":
                             "1322516232",
                     },

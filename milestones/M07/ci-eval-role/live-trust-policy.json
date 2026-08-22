@@ -10,8 +10,8 @@
             "Condition": {
                 "StringEquals": {
                     "token.actions.githubusercontent.com:repository_id": "1322516232",
-                    "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-                    "token.actions.githubusercontent.com:sub": "repo:andaro74/regdelta:pull_request"
+                    "token.actions.githubusercontent.com:sub": "repo:andaro74@3157440/regdelta@1322516232:pull_request",
+                    "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
                 }
             }
         }

@@ -2,6 +2,13 @@ __pycache__/
 *.pyc
 .venv/
 infra/cdk.out/
+# ...AND AT THE REPO ROOT. `cdk` writes its assembly to ./cdk.out relative to
+# the WORKING DIRECTORY, not to the app file, so running
+# `cdk deploy --app "python infra/app.py"` from the repo root writes here and
+# not to the path above. On 2026-08-22 that put 3,697 files and 702,402 lines
+# of vendored Lambda-layer wheels into a commit, because .gitignore only knew
+# about the other spelling.
+cdk.out/
 loadtest/reports/
 .milestone-active
 # Loopback-shim pid files, written by `make baseline` / `make agent-evals`.
