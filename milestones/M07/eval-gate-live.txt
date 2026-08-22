@@ -1,0 +1,68 @@
+The eval gate, running and gating for the first time
+                          2026-08-22, PR #17, run 32581497965. Cost: ~$0.20.
+
+STEPS (golden-set):
+  Read the OIDC subject claim (temporary) : success
+  aws-actions/configure-aws-credentials@v4: success   <-- FIRST EVER ASSUMPTION
+  Run golden set vs staging               : success
+  Post scorecard on PR                    : success
+  Enforce                                 : failure   <-- non-zero eval rc
+
+SCORECARD, posted to the pull request:
+
+  -> 20 questions vs https://7o8mote0q6.execute-api.us-west-2.amazonaws.com/api
+  q01-q11 pass
+  X q12: none of ['was fair', 'fair at the time', 'was reasonable', ...] present
+  q13, q14 pass
+  X q15: missing required: 'February 25, 2028'
+         missing required: '89 FR 106064'
+  q16-q20 pass
+  18/20 passed (90%)
+
+MERGE STATE:
+  unit           SUCCESS
+  ruling-cited   SUCCESS
+  golden-set     FAILURE
+  mergeStateStatus: BLOCKED
+
+==========================================================================
+WHAT IS NOW ESTABLISHED, AND IT IS THE HEADER'S CLAIM
+
+`golden-set` matched by BARE JOB NAME, ran, failed, and the merge is refused.
+ADR-0005's deadlock was a required check written in the DISPLAY format
+(`eval-gate / golden-set`) that matched nothing and sat pending forever; this
+is the same configuration done the other way, exercised rather than asserted.
+
+Together with milestones/M07/skipped-check.txt the pair is complete:
+
+  golden-set FAILURE  -> BLOCKED   (here)
+  golden-set SKIPPED  -> CLEAN     (PR #16)
+
+So the gate gates when it RUNS and is silent when it SKIPS. The sentence
+restored to evals.yml's header says exactly that and no more.
+
+==========================================================================
+q12 AND q15 ARE NOT A REGRESSION, AND NOT M07's TO DECIDE
+
+Both fail in EVERY recorded run in evals/history/, across three milestones:
+
+  1fa942a-aoss-full.json        q12 FAIL  q15 FAIL
+  1fa942a-s3vectors-full.json   q12 FAIL  q15 FAIL
+  1f46b92-aoss-full.json        q12 FAIL  q15 FAIL
+  1f46b92-s3vectors-full.json   q12 FAIL  q15 FAIL
+  95235d9-aoss-full.json        q12 FAIL  q15 FAIL
+  95235d9-s3vectors-full.json   q12 FAIL  q15 FAIL
+
+18/20 is the repository's long-standing state. Turning the gate on did not
+break anything; it made an existing 90% start blocking merges, which is what a
+gate is for and is the first time this project has had to live with it.
+
+NOTHING WAS DONE ABOUT THEM HERE, DELIBERATELY. q15 is missing a compliance
+date and an FR citation. CLAUDE.md: "never edit evals/golden_questions.json to
+make a failure pass — run the sme-eval-triage agent and STOP for a human
+decision from the SME seat", and it records that stopping "is what caught q08
+and the fabricated compliance date". A missing date on q15 is that exact
+territory. Engineering does not get to decide whether 'February 25, 2028' is
+the right answer, whether the question is wrong, or whether the retrieval is.
+
+STOPPED HERE FOR THE SME SEAT.

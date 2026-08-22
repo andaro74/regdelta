@@ -2,6 +2,19 @@
 # Runs the golden set on every PR; posts the scorecard as a PR comment;
 # fails the check on regression.
 #
+# `golden-set` IS A REQUIRED CHECK, AND WHEN IT RUNS AND FAILS THE MERGE IS
+# REFUSED. Measured 2026-08-22 on PR #17, not asserted: golden-set FAILURE with
+# `unit` and `ruling-cited` both SUCCESS gave mergeStateStatus BLOCKED
+# (milestones/M07/eval-gate-live.txt).
+#
+# THE SENTENCE STOPS THERE, and the missing half is the point. A SKIPPED
+# required check reads CLEAN and does NOT block — also measured, on PR #16
+# (milestones/M07/skipped-check.txt). This job skips on fork pull requests and
+# whenever EVAL_GATE_ENABLED is false, and on those pull requests it is not a
+# gate at all. "Regresses ground-truth answers physically cannot merge" was the
+# old wording and it is still wrong, because it is silent about when this job
+# does not run.
+#
 # WHAT THIS HEADER USED TO CLAIM, AND WHY IT NO LONGER DOES. It said
 # `golden-set` is 'marked "required" in branch protection, so a PR that
 # regresses ground-truth answers physically cannot merge'. The live ruleset
@@ -17,16 +30,17 @@
 # ADR-0005's finding and a debt owed since M04. This header gets its sentence
 # back when that lands and is verified, and not before.
 #
-# LANDED 2026-08-22, AND THE SENTENCE IS STILL NOT BACK. `golden-set` is on the
-# ruleset now (milestones/M07/required-checks.txt) and that changed nothing on
-# its own: with the flag false this job SKIPS, and a SKIPPED required check
-# reads CLEAN and does not block — measured on PR #16, not assumed
+# LANDED 2026-08-22, and the sentence came back at the TOP of this file once it
+# had been exercised — not when the ruleset changed. Adding `golden-set` to the
+# ruleset changed nothing on its own: with the flag false this job SKIPS, and a
+# SKIPPED required check reads CLEAN and does not block — measured on PR #16
 # (milestones/M07/skipped-check.txt). "Required" and "gating" are different
 # properties and this repo has now paid to learn the difference twice.
 #
-# TWO CONDITIONS remain before the claim is true, and they are both about this
-# job RUNNING rather than about the ruleset: `EVAL_GATE_ENABLED` must be true,
-# and the run must be one where the `if:` below does not skip.
+# TWO CONDITIONS make the claim true, and they are both about this job RUNNING
+# rather than about the ruleset: `EVAL_GATE_ENABLED` must be true, and the run
+# must be one where the `if:` below does not skip. Both held on PR #17, the job
+# failed 18/20, and the merge was refused.
 #
 # THE FORK CLAUSE IS PERMANENTLY ONE OF THOSE SKIPS. A fork PR skips this job
 # and therefore reads CLEAN with no eval gate having run. The clause is still
