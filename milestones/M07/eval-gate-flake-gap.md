@@ -157,7 +157,7 @@ third.
 
 ## FOURTH observation — the metrics, and the load hypothesis dies
 
-Read 2026-08-23 from CloudWatch, at no Bedrock cost, exactly where the note
+Read 2026-08-22 from CloudWatch, at no Bedrock cost, exactly where the note
 above said to start. Full tables and method in
 [`q05-mechanism.txt`](q05-mechanism.txt). The short form:
 
@@ -238,10 +238,11 @@ start. Only `stop_reason` tells the two apart.)
 
 ---
 
-## RULING ON THE GATE — DRAFT, awaiting the PM seat
+## RULING ON THE GATE — **ADOPTED**, PM seat, 2026-08-22
 
-Written to be adopted, amended or rejected, not to be assumed. Sources are the
-tables in `q05-mechanism.txt`; every claim below is falsifiable against them.
+Adopted as drafted. Sources are the tables in `q05-mechanism.txt`; every claim
+below is falsifiable against them, which is what makes this a ruling rather
+than a signature.
 
 **1. The eval gate needs no change on account of q05, and the bar ruled on
 2026-08-22 stands.** It was asked to catch a regression against recorded
