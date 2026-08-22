@@ -96,10 +96,24 @@ seat ruling, not an application of this one.**
 
 ## Done when
 Recorded run-through of docs/governance/demo-script.md exists in
-milestones/M07/: Door 1 PR shows the blocked-merge screenshot; Door 2 PR
-shows triage table + SME approval + eval-gate comment + merge; Door 3 PR
-shows the HIGH security finding and required security seat. All three PR
-URLs listed in the journal.
+milestones/M07/: Door 1 PR shows `ground-truth-gate / ruling-cited`
+**failing**, with the gate's own message naming the SME seat, and the merge
+blocked with **no bypass available to the repository owner** — the ruleset's
+`bypass_actors` is empty at the time of the screenshot, and the screenshot is
+accompanied by the ruleset JSON showing it; Door 2 PR shows triage table + the
+ruling landed as its own PR + `ruling-cited` green + eval-gate comment +
+merge; Door 3 PR shows the HIGH security finding and required security seat.
+All three PR URLs listed in the journal.
+
+<!-- The Door 1 and Door 2 clauses were replaced 2026-08-22 by PM-seat ruling
+     (milestones/M07/spec07-door1-amendment.md, ruling at the foot). The
+     original read "Door 1 PR shows the blocked-merge screenshot", which is
+     satisfiable by a screenshot whose caption nothing can falsify — the trap
+     this milestone opened by finding in milestones/M07/baseline/. The ruling
+     records the consequence it accepted: this clause is downstream of the
+     admin bypass coming off, which is downstream of the new required checks
+     going green. If it cannot be filmed, the clause is NOT MET and M07 does
+     not close on it. It is not to be softened afterwards to fit. -->
 
 **And, for item 5** *(added 2026-08-21)*:
 

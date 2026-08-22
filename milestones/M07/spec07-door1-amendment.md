@@ -1,13 +1,14 @@
-# DRAFT — PM ruling owed: Door 1 becomes a check, not a review
+# ADOPTED — Door 1 becomes a check, not a review
 
-<!-- DRAFT, written in the engineering seat for the PM seat. Nothing in
-     docs/governance/demo-script.md or SPEC/07's Done-when has been changed.
-     The replacement text below is complete, so the ruling can be "adopt",
-     "adopt with amendments", or "reject" rather than a request for more
-     drafting. -->
+<!-- Written in the engineering seat for the PM seat, and RULED ON at the
+     foot of this file on 2026-08-22: adopt all three. The replacement text
+     below was complete when it was put, which is why the ruling could be
+     "adopt" rather than a request for more drafting. It has now been applied
+     to docs/governance/demo-script.md and SPEC/07. -->
 
-**Status: awaiting the PM seat. `demo-script.md` and SPEC/07's Done-when are
-unchanged.**
+**Status: ADOPTED 2026-08-22 (ruling at the foot of this file). The
+replacement text below has been applied verbatim to `demo-script.md` Doors 1
+and 2 and to SPEC/07's Done-when.**
 
 ## What is being asked
 
@@ -158,3 +159,61 @@ folded in.
 2. Adopt the Door 2 consequential change?
 3. Adopt the Done-when replacement, including the requirement that the ruleset
    JSON accompany the screenshot?
+
+---
+
+# PM-SEAT RULING — 2026-08-22: ADOPT ALL THREE
+
+**Status: ADOPTED.** Supersedes the "awaiting the PM seat" line at the top of
+this document. `docs/governance/demo-script.md` Doors 1 and 2 and SPEC/07's
+Done-when are changed to the replacement text above, verbatim.
+
+Ruling, with sources — not a signature. Each of the three is adopted because a
+document already on `main` says so, and a reader can open it and disagree.
+
+## 1. Door 1 replacement — ADOPTED
+
+The governing text is ADR-0005's 2026-08-08 extension: *"The signature is
+theater. The seat is not."* The scripted caption asks a viewer to believe in a
+seat that has no occupant. The replacement asks them to read a refusal. On a
+single-human repository those are not two ways of saying the same thing; only
+one of them is true, and ADR-0005 already ruled which.
+
+The second-account route is not reopened. ADR-0005 disposed of it as *"ceremony,
+not accountability"* and nothing in M07 changed the facts it was ruling on.
+
+## 2. Door 2 consequential change — ADOPTED
+
+Two pull requests is not presentation, it is the mechanism: a ruling cited from
+inside the pull request it authorises does not exist yet on `main`, so the gate
+rejects it (`ground_truth_gate_mutations.txt`, and the BLOCKED output quoted in
+`milestones/M07/README.md`). Door 2 must show the shape the gate actually
+permits, or it is filming a path that fails.
+
+## 3. Done-when replacement, ruleset JSON included — ADOPTED
+
+Adopted **as written**, including *"`bypass_actors` is empty at the time of the
+screenshot"*.
+
+The engineering seat raised, before this ruling, that this couples Door 1's
+evidence to removing the admin bypass, which `milestones/M07/README.md` step 4
+gates on the new checks going green — and `golden-set` has never executed. If
+the budget is exhausted before green, Door 1 becomes unfilmable under this
+criterion. That risk is accepted, and the reason is the one the amendment gives
+about itself: a screenshot of a blocked merge proves nothing about *why*, and
+this milestone opened by finding a red `unit` check captioned as an org chart
+(`milestones/M07/baseline/`). A Done-when that can be satisfied by a screenshot
+whose caption is unfalsifiable is the defect M07 exists to remove.
+
+**Consequence, stated so it is not discovered late:** Door 1 is now downstream
+of `golden-set` going green and the bypass coming off. If it cannot be filmed
+within budget, the correct outcome is that SPEC/07's Done-when is **not met**
+and M07 does not close on that clause — not that the clause is softened
+afterwards to fit what was achievable. Softening it after the fact is the
+2026-08-15 failure mode named in `milestones/M05/q03-ruling.md` §10.
+
+## Not ruled on here
+
+`docs/governance/ROLES.md`'s CODEOWNERS claim. The amendment raised it and
+declined to fold it in; that judgement is upheld. It is lead+PM co-owned and
+gets its own ruling. It remains open in `milestones/M07/README.md`.
