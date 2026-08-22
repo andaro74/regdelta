@@ -159,14 +159,29 @@ real pull requests with CI verdicts, and the run-through is written up in
 | 2 | [#17](https://github.com/andaro74/regdelta/pull/17) -> [#18](https://github.com/andaro74/regdelta/pull/18) | MERGED CLEAN. Not staged — the milestone delivering itself. |
 | 3 | [#21](https://github.com/andaro74/regdelta/pull/21) | BLOCKED, two HIGH findings, `unit` red too. Closed unmerged. |
 
-**1. Rule on `q03-gate-gap.md` — read it BEFORE closing.** Door 1's run found
-that `run_evals.gate_verdict()` does not consult the admitted-false-fail
-register, so a ruled q03 admission is honoured by `unit` and ignored by
-`golden-set` **on the same commit**. `golden-set` will intermittently block
-merges on q03 until this is settled, and the bypass is gone. It is a defect in a
-ruling this milestone made, found by this milestone's own demo, and it is
-deliberately left open rather than patched by its author at the end of the
-session that created it.
+**1. Rule on `eval-gate-flake-gap.md` — read it BEFORE closing, and before
+opening any pull request.** The eval gate blocks on run-to-run
+non-determinism. Observed **twice, on consecutive pull requests, on different
+questions, for different reasons, neither caused by the PR**:
+
+- PR #20 — q03 regressed. `unit` was green on the same commit because
+  `replay_history` honoured the ruled admission; `golden-set` failed because
+  `gate_verdict()` never consults the register.
+- PR #22 — q05 regressed, and not on a token: the system **DECLINED to answer**
+  at confidence 0.00. q05 has passed in eleven recorded runs. PR #22 changes
+  documentation only.
+
+So the narrow fix ("consult the register") is insufficient: the register admits
+one ruled q03 observation and ADR-0015 caps it there. The real shape is that
+`run_evals.py` scores **one live sample** per question and the gate calls any
+miss a regression, while `replay_history.py` compares recorded runs and has a
+`FRAGILE` classification precisely because questions flip.
+
+**Operational consequence, with no bypass:** a docs-only PR cannot merge until a
+non-deterministic system happens to produce a passing sample, and the only
+recourse is re-running at ~$0.20 a time — the "repeat until green" behaviour
+`run_evals.py` itself warns about. **The gate currently makes the repository's
+own anti-pattern the only way to merge.**
 
 **2. Close the milestone** — `/close-milestone 07`: evidence pack,
 `run_evals.py --record`, the ADRs, tag `m07`.
@@ -223,7 +238,7 @@ exact value is in `bypass-removed.txt`.
 
 ## Still open, carried not closed
 
-- **THE EVAL GATE IGNORES THE ADMISSION REGISTER** (`q03-gate-gap.md`). The
+- **THE EVAL GATE IGNORES THE ADMISSION REGISTER** (`eval-gate-flake-gap.md`). The
   biggest one, and it is a defect in this milestone's own PM ruling. `unit`
   admits a ruled q03 observation; `golden-set` does not, because
   `gate_verdict()` never consults `evals/admitted_false_fails.json`. Found by
