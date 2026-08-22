@@ -1,8 +1,0 @@
-case                                               verdict  banned-token failure?
---------------------------------------------------------------------------------------------
-B1 q03 concessive 'whether exempt or not'          FAIL     ["forbidden text present: 'TTB requires'"]
-B2 q03 hedge-then-assert, same sentence            FAIL     ["forbidden text present: 'TTB requires'"]
-B3 q18 'cannot say whether I cannot determine'     FAIL     ["forbidden text present: 'cannot determine'"]
-B4 q03 banned token inside answer_rows             FAIL     ["forbidden text present: 'TTB requires'"]
-
-0 of 4 reproduce as FALSE PASSES
