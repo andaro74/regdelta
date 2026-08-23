@@ -11,7 +11,8 @@ Claude Code. Every milestone is tagged, scored against a fixed golden
 question set, and journaled — the repo history IS the demo.
 
 **Live demo:** https://d2rdgeiujg622n.cloudfront.net ·
-**5-minute walkthrough:** [docs/demo-walkthrough.md](docs/demo-walkthrough.md)
+**5-minute walkthrough:** [docs/demo-walkthrough.md](docs/demo-walkthrough.md) ·
+**More projects:** [floresinnovations.com/projects](https://floresinnovations.com/projects)
 
 ## What it does, in one answer
 
@@ -276,3 +277,15 @@ docs/governance/demo-script.md · setup: docs/governance/branch-protection.md.
     make up / make down             # ephemeral AOSS hot tier per session
 
 See SPEC/00-overview.md (mission), SPEC/00b (baseline), CLAUDE.md (rules).
+
+## Provenance
+
+This project was created with [Claude Code](https://claude.com/claude-code),
+on Claude Opus 5 and Fable 5. [Hector Flores](https://floresinnovations.com)
+— the software architect — designed the project: the architecture, the
+milestones, and every seat ruling; Claude implemented it. A collaboration of
+AI and architect, with the division of labor encoded in the governance model
+above: the human decides what correct means, Claude writes the code, and the
+gates hold both to it.
+
+More projects: [floresinnovations.com/projects](https://floresinnovations.com/projects)
