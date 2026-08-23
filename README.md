@@ -4,6 +4,8 @@
 apply to us, and what's the real deadline?" — with a citation on every
 claim.**
 
+![RegDelta — agentic FDA regulatory-change assistant: Federal Register poller feeding an agent inside an evidence boundary, two retrieval tiers, an amendment graph, a human-review gate, and a cited answer](docs/assets/readme-header.png)
+
 An agentic regulatory-change assistant built milestone-by-milestone with
 Claude Code. Every milestone is tagged, scored against a fixed golden
 question set, and journaled — the repo history IS the demo.
