@@ -129,8 +129,15 @@
         <div class="hint gap-sm" id="profile-line">company profile: <span class="pill flat">none</span></div>
         <div class="row">
           <button class="primary" id="ask">Ask</button>
+          <!-- UNTICKED BY DEFAULT since the demo URL went public: every
+               bypassed ask is ~5,900 Opus tokens against a non-adjustable
+               daily cap (make opus-headroom), and a page that defaults to
+               bypass spends that cap on every curious visitor. A cache hit
+               is clearly labelled as one, so the honest-instrument rule
+               above is not weakened — the default changes cost, not
+               provenance. Tick it (or `&bypass=1`) for a live answer. -->
           <label class="check">
-            <input type="checkbox" id="bypass" checked>
+            <input type="checkbox" id="bypass">
             bypass the response cache
           </label>
           <span class="hint" id="bypass-hint">sends <code>no_cache: true</code></span>

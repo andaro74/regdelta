@@ -1,0 +1,84 @@
+<svg width="940" height="700" viewBox="0 0 940 700" fill="none" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace,'Cascadia Mono',Consolas,Menlo,monospace">
+  <!--
+    The README architecture diagram. Same palette family as
+    docs/assets/readme-header.html; one hue per layer so the flow reads at
+    a glance: green = corpus, blue/violet = the two retrieval tiers, amber
+    = the agent, rose = the amendment graph, cyan = serving. Phrasing rules
+    apply here too: "same algorithm, different infrastructure" — never
+    "hybrid", never "faster" (ADR-0009, ADR-0012).
+  -->
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#5b7091"/>
+    </marker>
+  </defs>
+
+  <!-- card background -->
+  <rect x="1" y="1" width="938" height="698" rx="16" fill="#0d1a2e" stroke="#2c3d5c" stroke-width="1.5"/>
+
+  <!-- ── Federal Register ─────────────────────────────────────────── -->
+  <rect x="350" y="34" width="240" height="60" rx="10" fill="#13233d" stroke="#5b7091" stroke-width="1.5"/>
+  <text x="470" y="60" text-anchor="middle" fill="#eef2f8" font-size="15" font-weight="bold" letter-spacing="1">FEDERAL REGISTER</text>
+  <text x="470" y="80" text-anchor="middle" fill="#8b9bb4" font-size="11.5">federalregister.gov</text>
+
+  <line x1="470" y1="94" x2="470" y2="140" stroke="#5b7091" stroke-width="1.5" marker-end="url(#arr)"/>
+  <circle cx="470" cy="112" r="3.5" fill="#f0a43a"/>
+  <text x="486" y="122" fill="#8b9bb4" font-size="11.5">daily poller &#183; 12:00 UTC</text>
+
+  <!-- ── S3 corpus (green) ────────────────────────────────────────── -->
+  <rect x="260" y="146" width="420" height="66" rx="10" fill="#12283b" stroke="#34d399" stroke-width="2"/>
+  <text x="470" y="173" text-anchor="middle" fill="#a7f3d0" font-size="15" font-weight="bold" letter-spacing="1">S3 CORPUS &#183; SOURCE OF TRUTH</text>
+  <text x="470" y="196" text-anchor="middle" fill="#8b9bb4" font-size="11.5">raw &#8594; parsed &#8594; chunks &#183; embeddings computed once, at ingest</text>
+
+  <!-- split into the two tiers -->
+  <line x1="470" y1="212" x2="470" y2="238" stroke="#5b7091" stroke-width="1.5"/>
+  <path d="M470 238 C 470 254 250 244 250 268" stroke="#5b7091" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+  <path d="M470 238 C 470 254 690 244 690 268" stroke="#5b7091" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+  <circle cx="470" cy="238" r="3.5" fill="#f0a43a"/>
+
+  <!-- ── Tier A (blue) ────────────────────────────────────────────── -->
+  <rect x="100" y="274" width="300" height="66" rx="10" fill="#12253f" stroke="#4da3ff" stroke-width="2"/>
+  <text x="250" y="301" text-anchor="middle" fill="#bfdcff" font-size="15" font-weight="bold" letter-spacing="1">S3 VECTORS</text>
+  <text x="250" y="324" text-anchor="middle" fill="#8b9bb4" font-size="11.5">always-on tier &#183; ~$2/mo idle</text>
+
+  <!-- ── Tier B (violet) ──────────────────────────────────────────── -->
+  <rect x="540" y="274" width="300" height="66" rx="10" fill="#182342" stroke="#a78bfa" stroke-width="2"/>
+  <text x="690" y="301" text-anchor="middle" fill="#ddd2fe" font-size="15" font-weight="bold" letter-spacing="1">OPENSEARCH SERVERLESS</text>
+  <text x="690" y="324" text-anchor="middle" fill="#8b9bb4" font-size="11.5">ephemeral hot tier &#183; make up / make down</text>
+
+  <!-- merge under the tiers -->
+  <path d="M250 340 C 250 372 470 356 470 388" stroke="#5b7091" stroke-width="1.5" fill="none"/>
+  <path d="M690 340 C 690 372 470 356 470 388" stroke="#5b7091" stroke-width="1.5" fill="none"/>
+  <line x1="470" y1="388" x2="470" y2="428" stroke="#5b7091" stroke-width="1.5" marker-end="url(#arr)"/>
+  <circle cx="470" cy="388" r="3.5" fill="#f0a43a"/>
+  <text x="486" y="380" fill="#8b9bb4" font-size="11.5">same algorithm &#183; different infrastructure</text>
+
+  <!-- ── the agent (amber) + amendment graph (rose) ───────────────── -->
+  <rect x="200" y="434" width="380" height="76" rx="12" fill="#182a47" stroke="#f0a43a" stroke-width="2.5"/>
+  <path d="M232 462 l5.4 13.2 13.2 5.4 -13.2 5.4 -5.4 13.2 -5.4 -13.2 -13.2 -5.4 13.2 -5.4 z" fill="#f0a43a"/>
+  <text x="268" y="468" fill="#ffe1ad" font-size="15" font-weight="bold" letter-spacing="1">LANGGRAPH AGENT</text>
+  <text x="268" y="490" fill="#8b9bb4" font-size="11.5">Claude on Bedrock &#183; verdict &#183; citations</text>
+
+  <line x1="580" y1="472" x2="646" y2="472" stroke="#5b7091" stroke-width="1.5"/>
+  <circle cx="613" cy="472" r="3.5" fill="#f0a43a"/>
+  <rect x="646" y="438" width="250" height="68" rx="10" fill="#2a1a30" stroke="#f472b6" stroke-width="2"/>
+  <text x="771" y="465" text-anchor="middle" fill="#fcd0e4" font-size="14" font-weight="bold" letter-spacing="1">AMENDMENT GRAPH</text>
+  <text x="771" y="487" text-anchor="middle" fill="#8b9bb4" font-size="11.5">DynamoDB &#183; timeline questions</text>
+
+  <!-- down to serving -->
+  <line x1="470" y1="510" x2="470" y2="556" stroke="#5b7091" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- ── serving (cyan) ───────────────────────────────────────────── -->
+  <rect x="230" y="562" width="220" height="66" rx="10" fill="#0f2a3a" stroke="#22d3ee" stroke-width="2"/>
+  <text x="340" y="589" text-anchor="middle" fill="#a5f3fc" font-size="14" font-weight="bold" letter-spacing="1">FASTAPI ON LAMBDA</text>
+  <text x="340" y="611" text-anchor="middle" fill="#8b9bb4" font-size="11.5">/query &#183; /resume &#183; /health</text>
+
+  <line x1="450" y1="595" x2="504" y2="595" stroke="#5b7091" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <rect x="510" y="562" width="220" height="66" rx="10" fill="#0f2a3a" stroke="#22d3ee" stroke-width="2"/>
+  <text x="620" y="589" text-anchor="middle" fill="#a5f3fc" font-size="14" font-weight="bold" letter-spacing="1">STATIC UI</text>
+  <text x="620" y="611" text-anchor="middle" fill="#8b9bb4" font-size="11.5">CloudFront &#183; same origin</text>
+
+  <!-- footer note -->
+  <text x="470" y="668" text-anchor="middle" fill="#667799" font-size="11.5"><tspan fill="#f0a43a">&#9679;</tspan>&#160; an answer without citations is a bug &#183; timeline dates come from the graph, not similarity</text>
+</svg>

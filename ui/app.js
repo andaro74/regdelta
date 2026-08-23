@@ -786,7 +786,9 @@ function escapeHtml(s) {
 // `?scenario=<id>` selects one; adding `&run=1` asks it immediately. That is
 // how the screenshot in milestones/M04/ is taken — a headless browser cannot
 // click, and a screenshot procedure that needs a human hand is one nobody can
-// reproduce. `&cache=1` un-ticks the bypass, for demonstrating a cache hit.
+// reproduce. `&cache=1` un-ticks the bypass and `&bypass=1` ticks it — the
+// default is now UNTICKED (see index.html), so the M04 screenshot procedure,
+// which needs `bypass`-labelled responses, must say `&bypass=1` explicitly.
 async function main() {
   document.getElementById("ask").onclick = ask;
   document.getElementById("question").addEventListener("keydown", e => {
@@ -804,6 +806,7 @@ async function main() {
     if (s) {
       selectScenario(s);
       if (q.get("cache") === "1") document.getElementById("bypass").checked = false;
+      if (q.get("bypass") === "1") document.getElementById("bypass").checked = true;
       if (q.get("run") === "1") ask();
     } else {
       document.getElementById("result").appendChild(

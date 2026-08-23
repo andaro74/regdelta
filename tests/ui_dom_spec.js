@@ -92,8 +92,10 @@ const RESPONSES = [
   //    exists for: the router falls back silently and by design, and before
   //    that resolution was carried onto the response a card filed under
   //    `-aoss-` could have reached AOSS zero times.
+  //    `cache: "miss"` because step 4 loads WITHOUT `&bypass=1` — it doubles
+  //    as the default-state probe, and the page's request says no_cache:false.
   answer({
-    tier: "s3vectors", cache: "bypass", retrieval_ms: 333,
+    tier: "s3vectors", cache: "miss", retrieval_ms: 333,
     fallback_reason: "AossError: refusing to sign a request to a collection "
                    + "that does not answer",
   }),
@@ -134,6 +136,15 @@ let healthTier = "s3vectors";
 
 let served = 0;
 
+// WHAT THE PAGE ACTUALLY SENT, one entry per /api/query request. The mock
+// used to ignore request bodies, which left the whole bypass control — the
+// checkbox default, `&cache=1`, `&bypass=1` — outside every assertion:
+// eng-code-reviewer showed the suite stayed green with the `&bypass=1`
+// handler deleted. The scripted `cache:` labels above say what the server
+// CLAIMS; this array is what the page ASKED FOR, and the checks compare it
+// per step so the two narratives cannot drift apart again.
+const ASKED = [];
+
 function startServer() {
   // `.css` IS LOAD-BEARING. A stylesheet served as text/plain is rejected by
   // the browser in standards mode, and the page then renders unstyled — which
@@ -156,7 +167,18 @@ function startServer() {
     if (url === "/api/query") {
       const body = RESPONSES[Math.min(served, RESPONSES.length - 1)];
       served += 1;
-      return json(200, body, API_DELAY_MS);
+      // Record what the page sent before answering. A parse failure is
+      // recorded as one rather than dropped — a missing entry would make the
+      // per-step indices below silently assert about the wrong request.
+      let sent = "";
+      req.on("data", c => { sent += c; });
+      req.on("end", () => {
+        let parsed;
+        try { parsed = JSON.parse(sent); } catch (e) { parsed = { unparseable: sent }; }
+        ASKED.push(parsed);
+        json(200, body, API_DELAY_MS);
+      });
+      return;
     }
     if (url === "/scenarios.json") return json(200, SCENARIOS);
 
@@ -273,8 +295,18 @@ async function main() {
     };
 
     // ---- 1. Tier A answers. The readout must be the SERVER's number.
-    let t = await load(origin + "/?scenario=healthy-claim&run=1",
+    //      `&bypass=1` because the checkbox now defaults to UNTICKED (the
+    //      demo URL is public; a bypassed ask spends real Opus tokens), and
+    //      this step's scripted response says `cache: "bypass"` — the URL has
+    //      to ask for what the script claims was served.
+    let t = await load(origin + "/?scenario=healthy-claim&run=1&bypass=1",
                        x => x.includes("2028-02-25"));
+
+    check("&bypass=1 ticks the box and the request says so", () => {
+      assert.equal(ASKED.length, 1, "expected exactly one /api/query so far");
+      assert.equal(ASKED[0].no_cache, true,
+        "&bypass=1 did not reach the request body as no_cache: true");
+    });
 
     // The stylesheet has to have applied before anything below is meaningful:
     // the labels these assertions match are uppercased by CSS, so an unstyled
@@ -317,6 +349,10 @@ async function main() {
                    x => x.includes("not recorded as a tier observation")
                      || x.includes("EQUAL") || x.includes("DIFFERS"));
 
+    check("&cache=1 un-ticks the box and the request says so", () => {
+      assert.equal(ASKED[1] && ASKED[1].no_cache, false,
+        "&cache=1 did not reach the request body as no_cache: false");
+    });
     check("A CACHE HIT IS REFUSED AS A TIER OBSERVATION", () => {
       assert.match(t, /not recorded as a tier observation/);
       // The hit carried aoss, different citations and a different date. If the
@@ -334,8 +370,13 @@ async function main() {
     // ---- 3. Tier B for real. The tier-switch demo moment.
     //      `make up` has happened: the SSM parameter moved, so /health moves too.
     healthTier = "aoss";
-    t = await load(origin + "/?scenario=healthy-claim&run=1",
+    t = await load(origin + "/?scenario=healthy-claim&run=1&bypass=1",
                    x => x.includes("EQUAL") || x.includes("DIFFERS"));
+
+    check("the tier-switch ask was bypassed, as its scripted response claims", () => {
+      assert.equal(ASKED[2] && ASKED[2].no_cache, true,
+        "step 3's request did not carry no_cache: true");
+    });
 
     check("THE TIER INDICATOR FLIPS — aoss, live, not stored", () => {
       // SPEC/04's UI clause is "an active-tier indicator that visibly flips
@@ -382,8 +423,17 @@ async function main() {
     });
 
     // ---- 4. The hot tier is configured and broken. /health still says aoss.
+    //      No `&bypass=1`, deliberately: this load is also the DEFAULT-STATE
+    //      probe. The page loads with the checkbox as shipped, asks, and the
+    //      request body says which way the default actually points.
     t = await load(origin + "/?scenario=healthy-claim&run=1",
                    x => x.includes("fell back") || x.includes("AossError"));
+
+    check("the checkbox DEFAULTS to unticked, measured off the request", () => {
+      assert.equal(ASKED[3] && ASKED[3].no_cache, false,
+        "a plain page load sent no_cache: true — the bypass default "
+        + "regressed to ticked, which spends Opus tokens on every visitor");
+    });
 
     check("A SILENT FALLBACK IS MADE LOUD", () => {
       // The answer still comes back — availability is the point of the

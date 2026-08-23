@@ -1,8 +1,76 @@
 # RegDelta
 
-Agentic FDA regulatory-change assistant, built milestone-by-milestone with
+**FDA changes a food-labeling rule. RegDelta answers "what changed, does it
+apply to us, and what's the real deadline?" — with a citation on every
+claim.**
+
+![RegDelta — agentic FDA regulatory-change assistant: Federal Register poller feeding an agent inside an evidence boundary, two retrieval tiers, an amendment graph, a human-review gate, and a cited answer](docs/assets/readme-header.png)
+
+An agentic regulatory-change assistant built milestone-by-milestone with
 Claude Code. Every milestone is tagged, scored against a fixed golden
 question set, and journaled — the repo history IS the demo.
+
+**Live demo:** https://d2rdgeiujg622n.cloudfront.net ·
+**5-minute walkthrough:** [docs/demo-walkthrough.md](docs/demo-walkthrough.md) ·
+**More projects:** [floresinnovations.com/projects](https://floresinnovations.com/projects)
+
+## What it does, in one answer
+
+The demo's signature question:
+
+> *"The effective date of the new 'healthy' claim rule was delayed.
+> Did the compliance deadline change?"*
+
+| | |
+|---|---|
+| **Product** | strawberry-frosted granola bar |
+| **Trigger** | updated 'healthy' implied nutrient content claim, 21 CFR 101.65(d) |
+| **Required change** | meet the food-group-equivalent and nutrients-to-limit criteria |
+| **Real deadline** | **2028-02-25 — it did not move** |
+| **Confidence** | 0.97 |
+| **Citations** | [89 FR 106064](https://www.federalregister.gov/d/2024-29957) · [90 FR 10592](https://www.federalregister.gov/d/2025-03118) |
+
+Why this is hard: FDA delayed the rule's *effective* date (Feb 25, 2025 →
+Apr 28, 2025). A naive reader — human or RAG — slides the compliance deadline
+forward with it. It did not move: the delaying document says, in terms, *"the
+compliance date remains unchanged at this time"*, and the answer quotes that
+sentence back with the citation.
+
+**The score, stated the honest way:** on the same 20-question golden set over
+the same corpus, naive RAG scores **4/20**; the agent scores **18/20**, on
+both retrieval tiers, identically. The two misses (q12, q15) are documented
+defects with triage write-ups (`milestones/M07/q12-q15-triage.md`) — recorded,
+not rounded away.
+
+![The healthy-claim verdict table, and the cross-tier panel reporting EQUAL](milestones/M04/screenshots/01-healthy-claim-and-cross-tier-equal.png)
+
+## How it works, in one screen
+
+![Architecture: the Federal Register daily poller feeds the S3 corpus (raw → parsed → chunks, embeddings computed once at ingest), which hydrates two retrieval tiers — S3 Vectors always-on and OpenSearch Serverless ephemeral, same algorithm on different infrastructure — feeding the LangGraph agent on Bedrock plus the DynamoDB amendment graph, served by FastAPI on Lambda behind a static UI on CloudFront](docs/assets/architecture.svg)
+
+Two design decisions carry most of the quality:
+
+- **Timeline questions never touch vector search.** Effective dates,
+  compliance dates, stays and supersessions are answered from a DynamoDB
+  amendment graph — SUPERSEDES and CONFIRMS edges scoped to
+  `effective_date` / `dates_confirmed`, extracted at ingest. The answer
+  above is read from two of those rows, not inferred from a similarity
+  match.
+- **Below 0.7 confidence, it refuses to answer.** "Are we affected?" with no
+  company profile attached renders **NEEDS HUMAN REVIEW** and mints a resume
+  token instead of guessing. In compliance, confidently wrong is worse than
+  slow.
+
+And one phrasing rule the repo enforces on itself: the second tier is the
+**same retrieval algorithm on different infrastructure** — not hybrid
+(measured worse than vector-only, ADR-0009) and not faster (measured and
+retired as a justification, ADR-0012). Its remaining case is concurrency.
+
+## The evidence trail
+
+Everything below is the audit trail: every number links to a recorded
+artifact in `milestones/M*/` or `evals/history/`, and the footnotes are
+load-bearing — read them before quoting a row.
 
 ## Progression
 
@@ -209,3 +277,15 @@ docs/governance/demo-script.md · setup: docs/governance/branch-protection.md.
     make up / make down             # ephemeral AOSS hot tier per session
 
 See SPEC/00-overview.md (mission), SPEC/00b (baseline), CLAUDE.md (rules).
+
+## Provenance
+
+This project was created with [Claude Code](https://claude.com/claude-code),
+on Claude Opus 5 and Fable 5. [Hector Flores](https://floresinnovations.com)
+— the software architect — designed the project: the architecture, the
+milestones, and every seat ruling; Claude implemented it. A collaboration of
+AI and architect, with the division of labor encoded in the governance model
+above: the human decides what correct means, Claude writes the code, and the
+gates hold both to it.
+
+More projects: [floresinnovations.com/projects](https://floresinnovations.com/projects)
