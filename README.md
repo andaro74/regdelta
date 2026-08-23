@@ -45,21 +45,7 @@ not rounded away.
 
 ## How it works, in one screen
 
-```
-Federal Register ──daily poller──▶ S3 corpus (raw → parsed → chunks;
-                                    embeddings computed once, at ingest)
-                                        │
-                   ┌────────────────────┴────────────────────┐
-             S3 Vectors                          OpenSearch Serverless
-             (always-on tier, ~$2/mo idle)       (ephemeral hot tier)
-                   └────────────────────┬────────────────────┘
-                                        │  same algorithm,
-                                        │  different infrastructure
-                          LangGraph agent (Claude on Bedrock)
-                          + DynamoDB amendment graph
-                                        │
-                          FastAPI on Lambda ──▶ static UI on CloudFront
-```
+![Architecture: the Federal Register daily poller feeds the S3 corpus (raw → parsed → chunks, embeddings computed once at ingest), which hydrates two retrieval tiers — S3 Vectors always-on and OpenSearch Serverless ephemeral, same algorithm on different infrastructure — feeding the LangGraph agent on Bedrock plus the DynamoDB amendment graph, served by FastAPI on Lambda behind a static UI on CloudFront](docs/assets/architecture.svg)
 
 Two design decisions carry most of the quality:
 
