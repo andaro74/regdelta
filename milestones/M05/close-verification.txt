@@ -1,0 +1,140 @@
+M05 CLOSE — THE LIFECYCLE WINDOW, RE-RUN AT TODAY'S CODE
+2026-08-22, on branch m05-close cut from main at c256b81.
+
+SPEC/05's Done-when:
+
+  Fresh account: bootstrap -> `make core && make up && make evals` green ->
+  `make down && make evals` still green (S3 Vectors tier) -> `make up` green
+  again. `cdk destroy regdelta-search` is never blocked by core.
+
+--------------------------------------------------------------------------
+WHY THIS WAS RE-RUN RATHER THAN CLOSED ON THE AUGUST CARDS
+--------------------------------------------------------------------------
+
+M05's window ran live on 2026-08-20 at sha 1f46b92 and its LIFECYCLE half
+passed end to end — `make up` gated at 1157/1157 twice, `make down` verified,
+a new collection id on cycle 2, the fault-drop rollback self-repaired, and the
+janitor tore the stack down through the restricted role. That evidence was
+good and is not being replaced.
+
+What was open was the `make evals` green criterion. Two things made closing on
+the old cards wrong:
+
+1. THE CARDS PREDATE M06 AND M07. They were recorded at 1f46b92, before the
+   load work, before the governance layer, before the eval gate's bar changed.
+   Closing a milestone on evidence recorded against a tree that has since moved
+   is the exact defect found in `milestones/M07/ci_eval_role_mutations.py` on
+   the same day this window was re-run — an artifact still asserting a result
+   about code that changed underneath it. Doing it deliberately, hours later,
+   would have been worse than doing it by accident.
+
+2. THE OLD CARDS ARE STILL RED UNDER THE NEW BAR. M07's PM ruling
+   (`milestones/M07/eval-gate-bar-ruling.md`) replaced `passed == total` with a
+   regression bar. Under it the 2026-08-20 S3 Vectors run is STILL red: q03
+   failed there and q03 has passed before, so it scores as a REGRESSION, not as
+   a known-bad. Making that green on paper would require the admitted-false-fail
+   register to reach `run_evals.gate_verdict()` — which it does not, and which
+   M07 deliberately left open (`milestones/M07/eval-gate-flake-gap.md`).
+   Closing M05 on that reading would have quietly decided an open question in
+   the direction that suited the close.
+
+So: re-run, at today's code, under the bar the PM seat actually ruled.
+
+--------------------------------------------------------------------------
+THE WINDOW, 2026-08-22
+--------------------------------------------------------------------------
+
+| step | outcome |
+|---|---|
+| `make up` #1 | hydration gate PASSED — 1157 indexed, 1157 in corpus, embedding=knn_vector |
+| `make evals` (AOSS) | **18/20, exit 0** — "no regression: every question that has ever passed still passes" |
+| `make down` | stack and collection deleted; "OCU billing stopped" |
+| `make evals` (S3 Vectors) | **18/20, exit 0** — tier flipped back automatically |
+| `make up` #2 | hydration gate PASSED — 1157/1157, and a NEW collection id |
+| `make down` #2 | destroyed; "OCU billing stopped"; tier back on S3 Vectors |
+
+`make core` was not re-run: the core stack is live and unchanged, and M07
+deployed and verified the one thing M05 added to it (the deletion role) against
+live IAM. Declared here rather than left to be assumed.
+
+### Both eval legs are green, and they are comparable to each other
+
+Recorded cards, both at the SAME sha:
+
+  evals/history/c256b81-aoss-full.json        18/20  traps 4/4
+  evals/history/c256b81-s3vectors-full.json   18/20  traps 4/4
+
+  sha                 c256b81 on both — so this is a parity pair, not two
+                      measurements of two different trees
+  corpus              35a293e17117, 52 documents, on both. The same
+                      fingerprint M04's cards carry.
+  dirty               false on both — recorded from a clean tree
+  tier_source         "observed (router Resolution)" on both. The tier is read
+                      back from the router, not assumed from a make target.
+                      That check exists because an M04 Tier B card once scored
+                      5/5 while AOSS answered nothing.
+  cache_statuses      ["bypass"] on both — no answer came from cache
+  fallbacks           [] on both. THE AOSS RUN DID NOT FALL BACK. The hot-tier
+                      card genuinely measures the hot tier.
+  wall_s              260.7 (aoss) vs 257.0 (s3vectors)
+
+The only two failures on either card are q12 and q15 — the two questions that
+have never passed in any recorded run, whose ground truth was UPHELD from the
+SME seat at M07 (`milestones/M07/q12-q15-triage.md`), and which the regression
+bar reports without gating.
+
+  AND q03 PASSED ON BOTH. The question that held this milestone open since
+  2026-08-20 passed on both tiers in this window. It was not admitted, not
+  exempted, and not rescored — `evals/golden_questions.json` is byte-identical
+  to what the SME seat left it as. q03 is FRAGILE and it may fail again; what
+  is recorded here is that it did not need to be silenced for M05 to close.
+
+  The 3.7 s wall-clock difference is not a Tier B latency claim. ADR-0012
+  retired that justification at M04 and CLAUDE.md forbids saying "faster".
+  Same algorithm, different infrastructure.
+
+### The second cycle rebuilds from nothing, and the id proves it
+
+  cycle 1 collection   u6mc3ovjsrq2pockgvg7
+  cycle 2 collection   2remv0wqg48n3bnju58g
+
+A different id, hydrated to the same 1157/1157 from the S3 corpus. That is the
+architecture rule in CLAUDE.md demonstrated rather than asserted: the S3 corpus
+bucket is the source of truth and the search index is a pure function of it, so
+the hot tier can be destroyed and rebuilt without touching the corpus. It is
+also why the AOSS grant had to live on the ephemeral stack — the ARN it is
+scoped to does not exist until `make up` creates it.
+
+### OCU, measured
+
+  cycle 1   CreateCollection 13:49:16 -> DeleteCollection 14:05:11 PT   15.9 min
+  cycle 2   CreateCollection 14:12:12 -> collection deleted ~14:20:1x    ~8.0 min
+
+  total ~23.9 minutes at the $0.24/hr the stack output states = ~$0.096
+
+Cycle 1's window is read from CloudTrail. Cycle 2's create is CloudTrail;
+its delete is read from the CloudFormation event stream, because CloudTrail had
+not yet surfaced the second DeleteCollection when this was written — stated
+rather than rounded into the CloudTrail figure. M05's August window measured
+34.7 min across two cycles at ~$0.14, i.e. ~$0.242/hr — the same rate,
+arrived at independently.
+
+### `cdk destroy regdelta-search` was never blocked by core
+
+The last clause of the Done-when. `make down` IS `cdk destroy regdelta-search
+--force`, and it ran twice in this window, both times to DELETE_COMPLETE on all
+16 resources with the core stack live throughout.
+
+--------------------------------------------------------------------------
+WHAT IS STILL NOT CLOSED BY THIS
+--------------------------------------------------------------------------
+
+The "fresh account: bootstrap" clause is NOT re-demonstrated here. This ran
+against an account that already had the core stack, the corpus and the vector
+index. The August window did not demonstrate it from empty either. It is
+recorded as unmet-and-known rather than counted, because a Done-when clause
+nobody has exercised should not be quietly absorbed by a close.
+
+`make fault-drop` and the janitor teardown were NOT re-run. Both passed live on
+2026-08-20 and neither depends on the eval bar that held this milestone open.
+Cited from the August window rather than re-measured.

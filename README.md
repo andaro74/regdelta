@@ -13,7 +13,7 @@ question set, and journaled — the repo history IS the demo.
 | 02 | Two-tier retrieval (S3 Vectors / AOSS) | `m02` | n/a ** | 9/9 probes ** | ✅ |
 | 03 | Agent graph + HITL | `m03` | 4/4 | 100% *** | ✅ |
 | 04 | API + demo UI | `m04` | 4/4 | 90% **** | ✅ |
-| 05 | Deploy + lifecycle | `m05` | – | – | ⬜ |
+| 05 | Deploy + lifecycle | `m05` | 4/4 | 90% \*\*\*\*\*\*\* | ✅ |
 | 06 | Load + observability | `m06` | 4/4 | 90% \*\*\*\*\* | ✅ |
 | 07 | Governance layer (three doors) | `m07` | 4/4 | 90% \*\*\*\*\*\* | ✅ |
 
@@ -141,6 +141,34 @@ then as Bedrock load, then as completion length — all four wrong. The metrics
 say the verdict call SUCCEEDED both times and `_json_object` could not parse a
 complete reply, so the answer collapsed to empty at confidence 0.00. The gate
 was right; the product was not. `milestones/M07/q05-mechanism.txt`.
+
+\*\*\*\*\*\*\* **M05's row was filled two months late, and the delay is the
+interesting part.** M05 built and deployed the lifecycle — the state-table
+split, the janitor's PassRole deletion, the AOSS grant scoped to the collection
+ARN, and the hydration gate that refuses a hot tier nobody filled. All four
+were measured live on 2026-08-20 and the lifecycle half of SPEC/05's Done-when
+passed end to end. The milestone stayed open on one criterion: `make evals`
+green, blocked by q03, a question that fails intermittently on a false fail the
+SME seat had already ruled on and whose scorer fix was implemented and then
+**reverted** because review found it created four false passes where it removed
+one false fail (`milestones/M05/q03-ruling.md`).
+
+What unblocked it was not a fix to q03. It was M07's PM ruling that the bar
+itself was wrong: `passed == total` had **never been satisfied by any recorded
+run in this project's history** (`milestones/M07/eval-gate-bar-ruling.md`). The
+gate now fails on a REGRESSION. M05 was then re-run end to end at today's code
+rather than closed on its August cards — both tiers green at 18/20, traps 4/4,
+q03 passing on both **without being admitted, exempted or rescored**.
+Evidence: `milestones/M05/close-verification.txt` and the parity pair
+`evals/history/c256b81-{aoss,s3vectors}-full.json`, same commit, same corpus
+fingerprint `35a293e17117`, `fallbacks: []` on both so the hot-tier card
+measures the hot tier.
+
+Two clauses are recorded as NOT met rather than absorbed into the close: the
+"fresh account: bootstrap" path has never been exercised, in August or now; and
+`make fault-drop` and the janitor teardown are cited from the 2026-08-20 window
+rather than re-measured, since neither depends on the eval bar that held the
+milestone open.
 
 ## Governance (separation of roles, from the start)
 The org chart is encoded in the repo: CODEOWNERS maps files to role seats
