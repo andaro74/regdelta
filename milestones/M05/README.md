@@ -1,12 +1,118 @@
-# M05 — Deploy + Lifecycle
+# M05 — Deploy + Lifecycle. **CLOSED**, two milestones late.
 
-Branch `m05-deploy-lifecycle`, cut from `m04-api-demo` at `8ac6c37`, rebased
-onto `main` after PR #11 merged. Live window run 2026-08-20.
+- Git tag: `m05`   Scorecard commit: `c256b81`   Branches: `m05-deploy-lifecycle`
+  (the code, squashed to `main` as PR #12), `m05-close` (this close)
+- Spec: SPEC/05-aws-deploy.md
+- ADRs touched: none new. ADR-0011 (corpus fingerprint) is relied on by the
+  parity pair below.
+- Sessions: the build and live window on 2026-08-20; the close on 2026-08-22,
+  after M06 and M07 had already closed.
 
-**Status: NOT closed.** All four SPEC/05 items are built, deployed and measured
-live, and the lifecycle half of the Done-when passed end to end. The `make
-evals` green criterion is **still open**: q03 fails intermittently on a proven
-false fail, the SME seat ruled the fix belongs in the scorer, and the
+## Scorecard
+
+| run | tier | subset | pass | total | wall s |
+|-----|------|--------|------|-------|--------|
+| `c256b81` | aoss | full | 18 | 20 | 260.7 |
+| `c256b81` | s3vectors | full | 18 | 20 | 257.0 |
+
+**A parity pair**: same commit, same corpus fingerprint `35a293e17117`
+(52 documents), both recorded from a clean tree, both with
+`tier_source: "observed (router Resolution)"`, `cache: bypass` and
+**`fallbacks: []`** — so the AOSS card measures AOSS and not a silent fallback.
+
+**Delta vs baseline (M00b): traps q01-q04 1/4 → 4/4, overall 30% → 90%.**
+
+The 3.7 s difference between the tiers is **not** a latency claim. ADR-0012
+retired Tier B's latency justification at M04. Same algorithm, different
+infrastructure.
+
+## Why this closed two milestones late, and what changed
+
+**Nothing in M05 changed.** What changed is the bar it was being held to.
+
+M05 was held open by one criterion — `make evals` green — and by one question,
+q03, which fails intermittently on a false fail the SME seat had already ruled
+on. The August window scored 16/20, 17/20 and 18/20, all red against a
+`passed == total` bar. M07's PM seat then ruled that bar wrong: it had **never
+been satisfied by any recorded run in the project's history**
+(`milestones/M07/eval-gate-bar-ruling.md`), and the gate now fails on a
+REGRESSION instead.
+
+That did not make M05 closable on paper — under the regression bar the August
+S3 Vectors card is *still* red, because q03 had passed before and so scores as
+a regression. It made M05 closable on a **re-run**, which is what happened:
+`milestones/M05/close-verification.txt` records the full window at today's
+code, both legs green, and q03 passing on both tiers **without being admitted,
+exempted or rescored**. `evals/golden_questions.json` is byte-identical to what
+the SME seat left it as.
+
+The original refusal stands as written and is left below: *"I am not recording
+the milestone as done on a green-modulo-a-known-false-fail argument."* It was
+right. The milestone is not being recorded as done on that argument now — it is
+being recorded on a run where the thing actually passed.
+
+## What you can demo at this point (2-3 min)
+
+1. **`make up`.** Watch the hydration gate: `1157 chunks indexed, 1157 in the
+   corpus, embedding=knn_vector`. Then note what it is gating — the SSM
+   endpoint parameter is *deleted before* the index is rebuilt and republished
+   only after count-parity and the k-NN mapping check both return. A deploy
+   that exits 0 over an index nobody hydrated is still refused, because
+   `evals/check_hydration.py` reads the index and never the deploy's exit code.
+2. **`make evals`, then `make down`, then `make evals` again.** 18/20 on the
+   hot tier, 18/20 on S3 Vectors, and the tier flips back on its own because
+   the parameter is CloudFormation-owned. Nothing in the app knows a tier was
+   destroyed.
+3. **`make up` a second time and read the collection id.** It is different —
+   `u6mc3ovjsrq2pockgvg7` then `2remv0wqg48n3bnju58g` — and it hydrates to the
+   same 1157/1157 from the S3 corpus. The index is a pure function of the
+   bucket, demonstrated rather than asserted. It is also why the AOSS grant had
+   to move to the ephemeral stack: the ARN it is scoped to does not exist until
+   `make up` creates it.
+
+## Evidence artifacts
+
+- `close-verification.txt` — the 2026-08-22 window, and what it does NOT close
+- `evals/history/c256b81-{aoss,s3vectors}-full.json` — the parity pair
+- `leadingkeys_probe.py`, `hydration_gate_mutations.py`,
+  `deletion_role_mutations.py`, `review_fix_mutations.py` — the probes
+- `q03-ruling.md` — the ruling that kept this milestone open, and was right to
+- OCU: **~23.9 minutes ≈ $0.096** across two cycles, measured from CloudTrail
+
+## What broke / what I'd redo
+
+**1. A milestone was held open for two months by a bar no run had ever met.**
+`passed == total` was never satisfied by any recorded run in this project. M05
+was the milestone that paid for it, and the cost was not the redness — it was
+that the redness was *correct* under the rule and *wrong* about the system, and
+nobody separated those two until M07.
+
+**2. The fix for q03 was implemented and reverted**, because review found it
+created four false passes where it removed one false fail. That revert is the
+best decision in this milestone and it is why q03 was still failing. A visible
+gated false fail beats four invisible false passes.
+
+**3. Closing late meant the August evidence could not be used.** The cards
+predated M06 and M07, and closing on them would have been the same defect found
+in M07's OIDC mutation suite on the very day this window was re-run: an
+artifact still asserting a result about code that had moved. Re-running cost
+~$0.50. Reading the old cards into a pass would have cost the credibility of
+every other card in `evals/history/`.
+
+**4. The "fresh account: bootstrap" clause has still never been exercised** —
+not in August and not now. It is recorded as unmet rather than absorbed.
+
+---
+
+# Session record
+
+What follows is the working journal from the build and the 2026-08-20 live
+window, left as written.
+
+**Status at the time: NOT closed.** All four SPEC/05 items are built, deployed
+and measured live, and the lifecycle half of the Done-when passed end to end.
+The `make evals` green criterion is **still open**: q03 fails intermittently on
+a proven false fail, the SME seat ruled the fix belongs in the scorer, and the
 implementation of that ruling was reverted after review found it created four
 false passes (see below). CI is red on the q03 FRAGILE gate — one visible,
 gated false fail rather than four invisible false passes.
