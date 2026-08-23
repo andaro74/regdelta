@@ -1,0 +1,13 @@
+# The L3 suite's build and run artifacts.
+#
+# `results/playwright.json` is the recorder's INPUT, not the record: what gets
+# committed is the card `record_verdict.py` writes into evals/history/, which
+# is where this repository keeps measurements it later cites. Committing the
+# raw report too would put two copies of one run in the tree with no rule about
+# which one a reader should believe.
+node_modules/
+results/
+test-results/
+playwright-report/
+blob-report/
+.playwright/

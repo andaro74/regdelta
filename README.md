@@ -12,6 +12,7 @@ question set, and journaled — the repo history IS the demo.
 
 **Live demo:** https://d2rdgeiujg622n.cloudfront.net ·
 **5-minute walkthrough:** [docs/demo-walkthrough.md](docs/demo-walkthrough.md) ·
+**How the demo page is tested:** [docs/ui-testing.md](docs/ui-testing.md) ·
 **More projects:** [floresinnovations.com/projects](https://floresinnovations.com/projects)
 
 ## What it does, in one answer

@@ -1,0 +1,12 @@
+{
+  "name": "regdelta-ui-tests",
+  "private": true,
+  "version": "0.0.0",
+  "description": "SPEC/08 — the deployed demo page, driven in Chromium against the real stack (L3). Isolated here, with its own package.json, so the repo's only npm dependency stays out of everything else.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

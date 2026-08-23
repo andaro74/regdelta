@@ -43,7 +43,7 @@ RESOLVE_ENV_STRICT = env=$$(python evals/local_env.py) || { echo "cannot resolve
 
 .PHONY: help bootstrap layer core up down status smoke evals agent-evals discrimination replay-history lint test demo ingest-backfill synth diff \
         retrieval-evals retrieval-parity preflight rebuild-vectors demo-parity fault-drop \
-        tier-disposition tier-disposition-price opus-headroom
+        tier-disposition tier-disposition-price opus-headroom ui-tests ui-record
 
 help:
 	@echo "make layer           - build the Lambda dependency layer (needed by core)"
@@ -71,6 +71,9 @@ help:
 	@echo "make rebuild-vectors - rebuild S3 Vectors from the corpus (no re-embed)"
 	@echo "make lint            - ruff (same scope as the eval gate)"
 	@echo "make test            - pytest"
+	@echo "make ui-tests        - SPEC/08: the DEPLOYED demo page in Chromium"
+	@echo "                       (APP_URL=... to point it elsewhere)"
+	@echo "make ui-record       - file that run as evals/history/<sha>-playwright.json"
 	@echo "make ingest-backfill - one-shot backfill of the demo corpus"
 	@echo "make demo            - up + smoke + print demo URL"
 
@@ -439,7 +442,74 @@ agent-evals:
 # Same scope as the eval-gate `unit` job, so a green local run means a green
 # gate. Keep the two in step.
 lint:
-	ruff check src evals infra tests
+	ruff check src evals infra tests ui-tests
+
+# ------------------------------------------------------------------ SPEC/08
+# THE DEMO PAGE, AGAINST THE DEPLOYED STACK (L3).
+#
+# `make test` covers two layers below this one and neither touches a deployed
+# byte: tests/test_api.py drives the real API in-process with the graph
+# stubbed, and tests/ui_dom_spec.js drives the real page in a real browser
+# against SCRIPTED responses -- green against a stack that is entirely down.
+# This target points a browser at CloudFront.
+#
+# OPUS HEADROOM FIRST, chained with `&&`, exactly as `smoke` and `evals` are.
+# The suite spends real tokens: the `needs-review` spec is a GUARANTEED cache
+# miss, because `response_cache.cacheable()` refuses to store any body carrying
+# a resume_token, so a capability is never cached. `--questions 2` is the
+# number of specs and is pinned to it by tests/test_ui_surface_pins.py, on the
+# reasoning stated for the counts above -- declared rather than derived, so
+# adding a spec shows up as a diff instead of silently under-declaring.
+#
+# NO SKIP PATH. A missing browser, an unreachable URL or an absent scenario
+# button FAILS. `ui_dom_spec.js` exits 64 for "no chrome" and the pytest
+# wrapper turns that into a skip, which is right there because chrome is not a
+# declared dependency; here Chromium is one, and a skip would be a green check
+# for a thing that did not run.
+#
+# `npm ci` and `playwright install chromium` run first, so a fresh clone runs
+# this target without a separate install step: the browser is a dependency of
+# the suite, not of the operator.
+# EXPORTED, not interpolated into the recipe. `APP_URL=$(APP_URL) npx ...`
+# puts an operator-supplied string into a command line, in a shell that has
+# just `eval`'d the deployed Lambda environment via RESOLVE_ENV_STRICT — a
+# value containing a space or a `;` runs there. `evals/local_env.py` already
+# treats "the Makefile evals this" as worth defending (its _NOT_OURS list),
+# and this is the same surface. security-reviewer L1.
+APP_URL ?= https://d2rdgeiujg622n.cloudfront.net
+export APP_URL
+
+# --ignore-scripts makes an EXISTING property enforced rather than
+# incidental: the four packages in the lockfile run zero lifecycle scripts
+# on this host today (fsevents is optional and darwin-only), and nothing
+# should quietly start. security-reviewer L3.
+ui-tests:
+	@$(RESOLVE_ENV_STRICT) \
+	  python evals/check_opus_headroom.py --questions 2 && \
+	  cd ui-tests && npm ci --silent --ignore-scripts && \
+	  npx playwright install chromium && \
+	  npx playwright test
+
+# SPEC/08's record. Refuses a dirty tree (ARGS=--allow-dirty stamps it
+# provisional) and SUPERSEDES rather than overwrites a card at the same sha, so
+# re-running until green cannot leave the losing runs untraceable -- which is
+# the whole point of a milestone whose ruling is that a red result closes it
+# red.
+#
+# Its exit code says whether a CARD WAS WRITTEN, never whether the suite
+# passed. `ui-tests` already reported that, and conflating the two would make a
+# red suite look like a broken recorder.
+# RESOLVE_ENV, the LENIENT form. Without it `corpus_fingerprint()` has no
+# REGISTRY_TABLE and the field is permanently
+# `{"available": false, "reason": "REGISTRY_TABLE unset"}` — an
+# honest-looking degraded value that is really a fixed constant, so "best
+# effort, recorded when available" would describe a branch that never runs.
+# Lenient rather than strict because SPEC/08 says this card makes NO corpus
+# claim and gates nothing on it: an unresolvable environment must not stop
+# a failing run being recorded. eng-code-reviewer M10.
+ui-record:
+	@$(RESOLVE_ENV) \
+	  python ui-tests/record_verdict.py $(ARGS)
 
 test:
 	pytest -q

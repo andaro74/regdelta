@@ -1,0 +1,67 @@
+{
+  "sha": "940af83",
+  "dirty": true,
+  "at": "2026-08-23T22:47:50+00:00",
+  "suite": "playwright",
+  "surface": "web",
+  "layer": "L3",
+  "app_url": "https://d2rdgeiujg622n.cloudfront.net",
+  "fail_closed": true,
+  "tier": "s3vectors",
+  "tier_source": "observed (page instrument strip, from the response body)",
+  "cache_statuses": [
+    "miss",
+    "miss"
+  ],
+  "fallbacks": [],
+  "mode": "browser",
+  "subset": null,
+  "corpus": {
+    "available": false,
+    "reason": "REGISTRY_TABLE unset"
+  },
+  "provenance": {},
+  "passed": 1,
+  "total": 2,
+  "wall_s": 79.9,
+  "specs": [
+    {
+      "title": "the healthy-claim verdict renders against the deployed stack",
+      "file": "healthy-claim.spec.ts",
+      "pass": true,
+      "status": "passed",
+      "duration_ms": 18115,
+      "observed": {
+        "scenario": "healthy-claim",
+        "tier": "s3vectors",
+        "tierNote": "observed on this response, not /health",
+        "cache": "miss",
+        "configuredTier": "s3vectors",
+        "retrieval": "355 ms",
+        "roundTrip": "14.47 s"
+      },
+      "errors": []
+    },
+    {
+      "title": "the pause renders and the resume capability is never printed",
+      "file": "needs-review.spec.ts",
+      "pass": false,
+      "status": "timedOut",
+      "duration_ms": 60435,
+      "observed": {
+        "scenario": "needs-review",
+        "tier": "s3vectors",
+        "tierNote": "observed on this response, not /health",
+        "cache": "miss",
+        "configuredTier": "s3vectors",
+        "retrieval": "260 ms",
+        "roundTrip": "14.99 s"
+      },
+      "errors": [
+        "Test timeout of 60000ms exceeded.",
+        "Error: a paused run rendered a deadline \u2014 a pause means no answer is being asserted\n\nexpect(locator).toHaveCount(expected) failed\n\nLocator:  locator('#result').locator('td.deadline')\nExpected: 0\nReceived: 1\n\nCall log:\n  - a paused run rendered a deadline \u2014 a pause means no answer is being asserted with timeout 55000ms\n  - waiting for locator('#result').locator('td.deadline')\n    91 \u00d7 locator resolved to 1 element\n       - unexpected value \"1\"\n  - Test timeout of 60000ms exceeded.\n\n\n  78 |     result.locator(\"td.deadline\"),\n  79 |     \"a paused run rendered a deadline \u2014 a pause means no answer is being asserted\",\n> 80 |   ).toHaveCount(0);\n     |     ^\n  81 |\n  82 |   // \u2500\u2500 4. and nothing token-shaped anywhere in the DOM.\n  83 |   const pattern = resumeTokenPattern();\n    at C:\\Users\\andar\\code\\regdelta\\ui-tests\\tests\\needs-review.spec.ts:80:5"
+      ]
+    }
+  ],
+  "supersedes": []
+}
