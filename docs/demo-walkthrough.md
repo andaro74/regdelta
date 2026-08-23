@@ -56,10 +56,14 @@ this time."*
 Then: **"Naive RAG scores 4 out of 20 on this question set. This scores
 18."** That is the product.
 
-Now **untick the bypass box and click the same button again** → back in well
-under a second, labelled `hit`, with the tier and latency greyed and labelled
-as provenance of the *stored* answer — because nothing was retrieved for this
-request. That is the cost story, told honestly.
+Now the cache beat — and mind the mechanics: **a bypassed ask skips the
+cache write too** (SPEC/04 control 1), so the ask you just did stored
+nothing. **Untick the bypass box and click the same button again**: this one
+is a ~12 s `miss` that populates the cache. **Click a third time** → back in
+well under a second, labelled `hit`, with the tier and latency greyed and
+labelled as provenance of the *stored* answer — nothing was retrieved for
+this request. That is the cost story, told honestly. (To skip the middle
+wait on stage, do one un-ticked ask before the show starts.)
 
 ## Act 3 — When it refuses to answer (1 min)
 
@@ -80,8 +84,9 @@ ecfr.gov. "Go read the sentence yourself. If we're wrong, you can prove it."
 
 **b) The corpus** — S3, the `regdelta-core-corpusbucket…` bucket
 (`CorpusBucketName` in the stack outputs). Three prefixes: `raw/` (what FDA
-published) → `parsed/` → `chunks/`, foldered by CFR part (`101/` labeling,
-`74/` color additives, `170/` food additives). A scheduled poller checks the
+published, flat) → `parsed/` (flat) → `chunks/`, which is foldered by CFR
+part (`101/` labeling, `74/` color additives, `170/` food additives). A
+scheduled poller checks the
 Federal Register daily at 12:00 UTC; the corpus grew from 4 documents to 52
 on its own.
 

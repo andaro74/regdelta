@@ -63,9 +63,10 @@ Two design decisions carry most of the quality:
 
 - **Timeline questions never touch vector search.** Effective dates,
   compliance dates, stays and supersessions are answered from a DynamoDB
-  amendment graph — typed edges like `SUPERSEDES#effective_date` and
-  `CONFIRMS#dates_confirmed`, extracted at ingest. The answer above is read
-  from two of those rows, not inferred from a similarity match.
+  amendment graph — SUPERSEDES and CONFIRMS edges scoped to
+  `effective_date` / `dates_confirmed`, extracted at ingest. The answer
+  above is read from two of those rows, not inferred from a similarity
+  match.
 - **Below 0.7 confidence, it refuses to answer.** "Are we affected?" with no
   company profile attached renders **NEEDS HUMAN REVIEW** and mints a resume
   token instead of guessing. In compliance, confidently wrong is worse than
