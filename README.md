@@ -1,8 +1,86 @@
 # RegDelta
 
-Agentic FDA regulatory-change assistant, built milestone-by-milestone with
+**FDA changes a food-labeling rule. RegDelta answers "what changed, does it
+apply to us, and what's the real deadline?" — with a citation on every
+claim.**
+
+An agentic regulatory-change assistant built milestone-by-milestone with
 Claude Code. Every milestone is tagged, scored against a fixed golden
 question set, and journaled — the repo history IS the demo.
+
+**Live demo:** https://d2rdgeiujg622n.cloudfront.net ·
+**5-minute walkthrough:** [docs/demo-walkthrough.md](docs/demo-walkthrough.md)
+
+## What it does, in one answer
+
+The demo's signature question:
+
+> *"The effective date of the new 'healthy' claim rule was delayed.
+> Did the compliance deadline change?"*
+
+| | |
+|---|---|
+| **Product** | strawberry-frosted granola bar |
+| **Trigger** | updated 'healthy' implied nutrient content claim, 21 CFR 101.65(d) |
+| **Required change** | meet the food-group-equivalent and nutrients-to-limit criteria |
+| **Real deadline** | **2028-02-25 — it did not move** |
+| **Confidence** | 0.97 |
+| **Citations** | [89 FR 106064](https://www.federalregister.gov/d/2024-29957) · [90 FR 10592](https://www.federalregister.gov/d/2025-03118) |
+
+Why this is hard: FDA delayed the rule's *effective* date (Feb 25, 2025 →
+Apr 28, 2025). A naive reader — human or RAG — slides the compliance deadline
+forward with it. It did not move: the delaying document says, in terms, *"the
+compliance date remains unchanged at this time"*, and the answer quotes that
+sentence back with the citation.
+
+**The score, stated the honest way:** on the same 20-question golden set over
+the same corpus, naive RAG scores **4/20**; the agent scores **18/20**, on
+both retrieval tiers, identically. The two misses (q12, q15) are documented
+defects with triage write-ups (`milestones/M07/q12-q15-triage.md`) — recorded,
+not rounded away.
+
+![The healthy-claim verdict table, and the cross-tier panel reporting EQUAL](milestones/M04/screenshots/01-healthy-claim-and-cross-tier-equal.png)
+
+## How it works, in one screen
+
+```
+Federal Register ──daily poller──▶ S3 corpus (raw → parsed → chunks;
+                                    embeddings computed once, at ingest)
+                                        │
+                   ┌────────────────────┴────────────────────┐
+             S3 Vectors                          OpenSearch Serverless
+             (always-on tier, ~$2/mo idle)       (ephemeral hot tier)
+                   └────────────────────┬────────────────────┘
+                                        │  same algorithm,
+                                        │  different infrastructure
+                          LangGraph agent (Claude on Bedrock)
+                          + DynamoDB amendment graph
+                                        │
+                          FastAPI on Lambda ──▶ static UI on CloudFront
+```
+
+Two design decisions carry most of the quality:
+
+- **Timeline questions never touch vector search.** Effective dates,
+  compliance dates, stays and supersessions are answered from a DynamoDB
+  amendment graph — typed edges like `SUPERSEDES#effective_date` and
+  `CONFIRMS#dates_confirmed`, extracted at ingest. The answer above is read
+  from two of those rows, not inferred from a similarity match.
+- **Below 0.7 confidence, it refuses to answer.** "Are we affected?" with no
+  company profile attached renders **NEEDS HUMAN REVIEW** and mints a resume
+  token instead of guessing. In compliance, confidently wrong is worse than
+  slow.
+
+And one phrasing rule the repo enforces on itself: the second tier is the
+**same retrieval algorithm on different infrastructure** — not hybrid
+(measured worse than vector-only, ADR-0009) and not faster (measured and
+retired as a justification, ADR-0012). Its remaining case is concurrency.
+
+## The evidence trail
+
+Everything below is the audit trail: every number links to a recorded
+artifact in `milestones/M*/` or `evals/history/`, and the footnotes are
+load-bearing — read them before quoting a row.
 
 ## Progression
 
