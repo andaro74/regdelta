@@ -1,4 +1,4 @@
-# M09 — The paused-run defect: ruled, measured, fixed. **IN FLIGHT — the golden run is unpaid.**
+# M09 — The paused-run defect: ruled, measured, fixed, scored. **IN FLIGHT — not deployed.**
 
 - Branch: `m09-pause-suppression` (off `m08-ui-surface`, which is unmerged)
 - Spec: none new. This is SPEC/04 behaviour, found by SPEC/08's suite.
@@ -12,7 +12,10 @@ which pauses for human review **also asserts an answer** — deadline
 `2028-02-25`, confidence 0.95, and prose claiming the asker makes a 'healthy'
 claim, for a `company_profile` of `{}`.
 
-M09 is the disposition. It has three parts, and **two of them are done**.
+M09 is the disposition: the ruling, the measurement, the prompt fix, the
+suppression fix, and the golden run. **All five are done.** What remains
+is listed under "what is NOT done" — chiefly that ruling 1 is half
+enforced and the deployment still carries the old code.
 
 ## 1. The ruling — done
 
@@ -148,8 +151,53 @@ survived the whole suite while restoring the M08 defect. The fixture now uses
 `ok`, and **both mutations were applied and confirmed red before being
 reverted.**
 
+## 5. The golden run — PAID, and it holds
+
+`make agent-evals ARGS="--record"` → `evals/history/f023e27-s3vectors-full.json`.
+
+**18/20 (90%). No regression: every question that has ever passed still
+passes.** The two misses are `q12` and `q15`, which have recorded runs and have
+never passed in any of them — reported on every card, gating nothing, and not
+this change's doing.
+
+**`make agent-evals`, NOT `make evals`, and the difference is the whole point.**
+`make evals` resolves the API URL from CloudFormation and drives the DEPLOYED
+Lambda, which is still running the old code — it would have measured the bug
+and reported it fixed. `agent-evals` drives the real graph in-process through
+`evals/serve_local.py`, which is the local tree. A source change verified
+against a deployment that does not contain it is the M04 defect class
+("verified end-to-end" that never invoked the deployed function) with the
+arrow reversed.
+
+**The behaviour changed, not just the score** — which is the check that
+separates "still green" from "green for the right reason":
+
+| id | status before | status after | rows now | pass |
+|---|---|---|---|---|
+| q04 (trap) | `needs_input` | **`ok`** | 1 | ✓ |
+| q19 (trap) | `needs_input` | **`ok`** | 1 | ✓ |
+| q10 | `needs_input` | `needs_input` | **0** | ✓ |
+| q16 | `needs_input` | `needs_input` | **0** | ✓ |
+| q18 (control) | `ok` | `ok` | 1 | ✓ |
+| q01 (control) | `ok` | `ok` | 1 | ✓ |
+
+**No `needs_input` response on any of the twenty carries a verdict row.**
+
+And the two traps are now being *answered* rather than sidestepped: q04 and q19
+pass on their content — "not binding", "January 15, 2027", the citations — for
+the first time in any recorded run, instead of passing while pausing.
+
+Cost: 117,636 Opus tokens planned against a 2,592,000/day non-adjustable cap,
+checked before the run with `make opus-headroom` (0 used at the time).
+
 ## What is NOT done
 
+- **`make ui-tests` has not been re-run, and re-running it today would prove
+  nothing.** The suite drives the DEPLOYED page, and the deployed Lambda still
+  carries the old code — M08's spec would fail exactly as before, for a defect
+  that is fixed in the tree. Watching it go green requires `make core` first.
+  Deliberately not run: spending Opus tokens to re-observe a known state is the
+  reflex SPEC/08's budget clause exists to stop.
 - **Ruling 1 is HALF enforced, and the Playwright spec is no longer evidence
   for it.** `eng-code-reviewer` H1. M08's assertion is on `td.deadline`, which
   `ui/app.js` renders only from `answer_rows` — so it goes green with this fix.
@@ -157,17 +205,13 @@ reverted.**
   must comply … The compliance date remains February 25, 2028"*, rendered under
   the NEEDS HUMAN REVIEW banner. **A green spec must not be read as ruling 1
   closed.** Closing it is 2c's job, and 2c still has no oracle (ruling 6).
-- **`make evals` has not been run.** ~118k Opus tokens, ~4.5% of the
-  non-adjustable daily cap. See the desk check below for what it is expected to
-  show.
-- **`make ui-tests` has not been re-run** since the fix.
 - **2c** — the prose defect — and its oracle.
 - **q10's guard**, and see the sequencing correction below.
 - **The two book-keeping defects** in `check_discrimination.py` and
   `golden_questions.json`'s `_scoring_ruling`.
 - **q16's instability is fixed but unrated.** Three calls before, three after.
 
-### Desk check, in place of the golden run I have not paid for
+### The desk check that preceded the run, and how it did
 
 `eng-code-reviewer` M4 re-scored every recorded response through the real
 `run_evals.check()` with `answer_rows` emptied, across all three recorded cards:
@@ -178,9 +222,11 @@ reverted.**
   row-dependent pass anywhere in recorded history.
 
 Ruling 3a's regression arithmetic was about withholding the **answer**;
-rows-only has no regression surface. **This lowers the risk of the golden run
-substantially but does not replace it** — q04 and q19 will take the unpaused
-path for the first time in any recorded run.
+rows-only has no regression surface. It lowered the risk of the golden run
+without replacing it — the residual was that q04 and q19 would take the
+unpaused path for the first time in any recorded run. **The run confirmed the
+desk check exactly**: 18/20, no regression, and the two newly-unpaused traps
+pass on content.
 
 ### A sequencing correction the ruling did not anticipate
 
