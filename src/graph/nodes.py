@@ -882,6 +882,83 @@ def _needs_review(state: RegDeltaState) -> tuple[str | None, str]:
     return None, ""
 
 
+def assertable_rows(rows, status: str, profile_sufficient: bool = True) -> list:
+    """The verdict rows a response may carry.
+
+    ONE RULE, two ways of failing it: a response carries no verdict rows if it
+    ends `needs_input`, OR if the run never had a sufficient profile — whatever
+    status it ends in.
+
+    WHY. M08's Playwright suite, first run against the deployed stack, found the
+    demo pausing for human review and rendering a full verdict table underneath
+    it — `real_deadline` 2028-02-25 at 0.95 confidence, for a `company_profile`
+    of `{}`. `hitl_gate` runs AFTER synthesis, so the rows are already in state
+    when the gate decides to pause; the gate was a post-hoc LABEL rather than a
+    suppression. The SME seat ruled that a paused run must not assert a
+    compliance deadline to the asker (`milestones/M09/`, ruling 1), on the basis
+    that `evals/check_discrimination.py:300-310` has classified a gate firing
+    beside an asserted deadline as a knowingly-accepted wrong answer
+    (`LIMIT_FALSE_PASS`) since 2026-08-15. **That specimen is narrower than this
+    fix and is not discharged by it**: its status is `pending_review` and its
+    deadline is in PROSE, which are the two attributes this rule exempts. It
+    stays a declared limitation until the prose defect (M09 ruling 2c) is
+    fixed.
+
+    `needs_input` ONLY — for the STATUS half — and the distinction is not
+    fussiness. On `needs_input` the reviewer supplies a missing profile and
+    `_resume_with` sends the run back through retrieval to re-synthesise, so
+    the draft is discarded and nothing is lost by not shipping it. On
+    `pending_review` the reviewer APPROVES or REJECTS the existing answer: the
+    draft IS the artifact under review, and suppressing it there would leave a
+    reviewer nothing to review.
+
+    WHY `profile_sufficient` IS ALSO READ, and it is not belt-and-braces — the
+    first version keyed on status alone and `eng-code-reviewer` reproduced the
+    hole against the real graph in one call. `_resume_with` turns ANY unusable
+    resume payload into `pending_review`, which the paragraph above exempts —
+    and the graph only re-enters retrieval on `resumed`, so the rows synthesised
+    while the profile was insufficient are still sitting in the checkpoint,
+    unchanged. So:
+
+        POST /query          -> needs_input,     answer_rows: []   (suppressed)
+        POST /resume/<id> {"unrelated": "junk"}
+                             -> pending_review,  answer_rows: [the 2028-02-25 row]
+
+    One request, and the row the ruling forbids is back — asked for by the
+    anonymous asker, who was handed the resume token in the first response. The
+    status is a symptom; `profile_sufficient` is the predicate that made the run
+    untrustworthy in the first place, and reading it closes the door at the same
+    boundary without touching synthesis or q16's prose.
+
+    ROWS ONLY, and this is where the ruling's own reasoning was incomplete.
+    Ruling 4 proposed doing this in the GRAPH — not synthesising at all once
+    `profile_sufficient` is false — on the ground that the draft is unused on
+    that path. **q16 disproves that.** Its question ("do we have to put a
+    nutrition summary on the front of our package") pauses correctly, and its
+    ground truth is an HONESTY check: the answer must say the sources establish
+    no such requirement, and it passes on the word "cannot confirm" in the
+    PROSE. Skipping synthesis would have deleted the text q16 scores on and
+    regressed a golden question in the act of fixing another defect. So the
+    prose survives and the ROWS — the table where a deadline is put in front of
+    a reader — do not.
+
+    WHAT THIS DOES NOT FIX, stated so nobody reads more into it: the prose can
+    still assert an obligation ("Because your company makes a 'healthy' claim,
+    you must comply..."), which is a fact about the asker the system recorded it
+    did not have. That is a separate correctness defect, ruled separately at
+    M09 (2c) and owed its own oracle (ruling 6). Suppressing rows does not
+    touch it and is not claimed to.
+
+    Lives here, in one place, because `src/api/api.py:_shape` and
+    `evals/serve_local.py:_shape` are deliberately the same mapping — the
+    deployed API and the offline shim must agree or `make evals` and
+    `make agent-evals` measure different systems.
+    """
+    if status == "needs_input" or not profile_sufficient:
+        return []
+    return list(rows or [])
+
+
 def _row_field(row, name: str):
     """Rows are VerdictRow or dict depending on where they came from."""
     return row.get(name) if isinstance(row, dict) else getattr(row, name, None)

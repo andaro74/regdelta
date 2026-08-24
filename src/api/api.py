@@ -300,18 +300,25 @@ def _shape(state: dict, thread_id: str) -> dict:
     """
     from dataclasses import asdict
 
+    from graph.nodes import assertable_rows
+
     rows = [asdict(r) if hasattr(r, "__dataclass_fields__") else dict(r)
             for r in state.get("verdict_rows") or []]
     paused = (state.get("__interrupt__") or [None])[0]
     request = dict(getattr(paused, "value", None) or {}) if paused else {}
+    status = request.get("status") or state.get("status", "degraded")
 
     return {
         "thread_id": thread_id,
         "answer": state.get("answer", ""),
-        "answer_rows": rows,
+        # A paused `needs_input` run carries no verdict rows — see
+        # `graph.nodes.assertable_rows` for the ruling and for why the prose
+        # survives while the table does not.
+        "answer_rows": assertable_rows(rows, status,
+                                      state.get("profile_sufficient", True)),
         "citations": state.get("citations") or [],
         "confidence": state.get("confidence"),
-        "status": request.get("status") or state.get("status", "degraded"),
+        "status": status,
         "review_reason": request.get("reason") or state.get("review_reason", ""),
         # A model that reached for authority the sources did not carry is a
         # finding about the answer, not noise — the shim has surfaced this

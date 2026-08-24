@@ -119,7 +119,7 @@ def _shape(state: dict, thread_id: str) -> dict:
     """
     from dataclasses import asdict
 
-    from graph.nodes import _cache_state
+    from graph.nodes import _cache_state, assertable_rows
     from retrieval import router
     from shared import config
 
@@ -131,14 +131,19 @@ def _shape(state: dict, thread_id: str) -> dict:
     # returned yet, so its status is not there to read.
     paused = (state.get("__interrupt__") or [None])[0]
     request = dict(getattr(paused, "value", None) or {}) if paused else {}
+    status = request.get("status") or state.get("status", "degraded")
 
     return {
         "thread_id": thread_id,
         "answer": state.get("answer", ""),
-        "answer_rows": rows,
+        # A paused `needs_input` run carries no verdict rows. The same call the
+        # deployed API makes, from the same module, because these two mappings
+        # are one contract — see `graph.nodes.assertable_rows`.
+        "answer_rows": assertable_rows(rows, status,
+                                      state.get("profile_sufficient", True)),
         "citations": state.get("citations") or [],
         "confidence": state.get("confidence"),
-        "status": request.get("status") or state.get("status", "degraded"),
+        "status": status,
         "mode": "agent",
         "review_reason": request.get("reason") or state.get("review_reason"),
         "paused": bool(paused),
