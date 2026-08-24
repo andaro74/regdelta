@@ -268,15 +268,37 @@ Question: {query}
 
 Reply with only a JSON object:
 {{"intent": "timeline" | "applicability" | "lookup" | "other",
-  "products": ["<product the asker makes, as they described it>"],
-  "claims": ["<label claim at issue, e.g. healthy>"],
+  "products": ["<product the ASKER SAYS THEY MAKE, as they described it>"],
+  "claims": ["<claim the ASKER SAYS THEIR OWN LABEL BEARS>"],
   "profile_sufficient": true | false}}
 
-`profile_sufficient` is false ONLY when the question asks whether something
-applies to the asker but names no product and no label claim to apply it to.
-A question that names a product or a claim IS sufficient — company size is not
-required, because the rules here turn on what the product is and what its label
-says, never on how large the company is."""
+`products` and `claims` describe THE ASKER'S OWN PRODUCTS AND LABELS, and
+nothing else. A claim named only as the SUBJECT OF THE RULE — "the
+healthy-claim changes", "the front-of-package rule", "the Red No. 3 order" —
+is not the asker's claim. Leave `claims` empty for those.
+
+The test is WHETHER THE ANSWER WOULD BE THE SAME FOR EVERYONE.
+
+`profile_sufficient` is TRUE when it would: what a document says, what a rule
+means, when a rule takes effect, whether a request is legally binding, whether
+someone else's reading of a rule is correct. Those are answerable from the
+documents alone and need no asker — EVEN WHEN PHRASED AS "us" OR "our". "Is
+that binding on us?" and "our supplier says X, are they right?" are questions
+of law, not applicability questions.
+
+`profile_sufficient` is false ONLY when BOTH of these hold:
+  1. the answer would DIFFER depending on what the asker makes or what their
+     label says — whether a requirement reaches THEIR product, whether THEY
+     must change or add something, whether a rule applies to THEM; and
+  2. the question names no product the asker makes and no claim their label
+     bears.
+
+"Do we have to <do something to our product or label>?" is such a question:
+labeling requirements carry exemptions that turn on the product, so the answer
+differs by asker.
+
+Company size is never required: the rules here turn on what the product is and
+what its label says, never on how large the company is."""
 
 
 def supervisor(state: RegDeltaState, invoke=None) -> dict:
@@ -292,6 +314,36 @@ def supervisor(state: RegDeltaState, invoke=None) -> dict:
     threshold exists anywhere in this corpus. A supervisor that demanded a
     revenue figure before answering would encode the fabricated tier that
     ruling removed, so the prompt says so explicitly.
+
+    TWO THINGS THE PROMPT SAYS BECAUSE IT DID NOT, AND THAT COST FOUR PAUSES.
+    Measured at M09 (`milestones/M09/supervisor_probe.py`, ruling 3b): the gate
+    fired on q04, q10, q16 and q19 on every recorded run, and only q10's pause
+    was correct.
+
+    1. `claims` WAS AMBIGUOUS between "the claim the asker's label bears" and
+       "the claim the rule is about". q10 — "Are we affected by the
+       healthy-claim changes?" — came back with `claims: ["healthy"]` AND
+       `profile_sufficient: false`, which contradicts the prompt's own rule
+       that naming a claim makes a question sufficient. The model was resolving
+       an ambiguity the instruction never addressed, and it resolved it
+       correctly; the instruction was what was wrong. q16 flip-flopped 2:1
+       across three identical calls on the same ambiguity — an unstable
+       classifier is the signature of an under-specified prompt, not of an
+       unreliable model.
+
+    2. THERE WAS NO WAY TO SAY "THIS NEEDS NO ASKER AT ALL". Whether an HHS
+       request is binding (q04) and whether a supplier's reading of an order is
+       right (q19) are questions of LAW. They are answerable from the documents
+       and the first-person pronoun in them is incidental — but the old rule's
+       first clause, "asks whether something applies to the asker", read them
+       as applicability questions. Both are TRAP questions, and a pause
+       sidesteps the trap rather than falling into it, which is why the golden
+       set scored them PASS and nobody noticed for three milestones.
+
+    THE ACCEPTANCE TEST FOR ANY FURTHER CHANGE HERE is that probe, re-run, with
+    q18 and q01 as regression controls: q18 is q10's twin WITH a product and a
+    claim and must stay sufficient, and a classifier that breaks it is broken
+    generally. A prompt change that is not re-probed is not done.
     """
     query = state.get("query", "")
     given = dict(state.get("company_profile") or {})
@@ -828,6 +880,83 @@ def _needs_review(state: RegDeltaState) -> tuple[str | None, str]:
         return "pending_review", (f"confidence {confidence:.2f} below "
                                   f"{config.CONFIDENCE_HITL_THRESHOLD:.2f}")
     return None, ""
+
+
+def assertable_rows(rows, status: str, profile_sufficient: bool = True) -> list:
+    """The verdict rows a response may carry.
+
+    ONE RULE, two ways of failing it: a response carries no verdict rows if it
+    ends `needs_input`, OR if the run never had a sufficient profile — whatever
+    status it ends in.
+
+    WHY. M08's Playwright suite, first run against the deployed stack, found the
+    demo pausing for human review and rendering a full verdict table underneath
+    it — `real_deadline` 2028-02-25 at 0.95 confidence, for a `company_profile`
+    of `{}`. `hitl_gate` runs AFTER synthesis, so the rows are already in state
+    when the gate decides to pause; the gate was a post-hoc LABEL rather than a
+    suppression. The SME seat ruled that a paused run must not assert a
+    compliance deadline to the asker (`milestones/M09/`, ruling 1), on the basis
+    that `evals/check_discrimination.py:300-310` has classified a gate firing
+    beside an asserted deadline as a knowingly-accepted wrong answer
+    (`LIMIT_FALSE_PASS`) since 2026-08-15. **That specimen is narrower than this
+    fix and is not discharged by it**: its status is `pending_review` and its
+    deadline is in PROSE, which are the two attributes this rule exempts. It
+    stays a declared limitation until the prose defect (M09 ruling 2c) is
+    fixed.
+
+    `needs_input` ONLY — for the STATUS half — and the distinction is not
+    fussiness. On `needs_input` the reviewer supplies a missing profile and
+    `_resume_with` sends the run back through retrieval to re-synthesise, so
+    the draft is discarded and nothing is lost by not shipping it. On
+    `pending_review` the reviewer APPROVES or REJECTS the existing answer: the
+    draft IS the artifact under review, and suppressing it there would leave a
+    reviewer nothing to review.
+
+    WHY `profile_sufficient` IS ALSO READ, and it is not belt-and-braces — the
+    first version keyed on status alone and `eng-code-reviewer` reproduced the
+    hole against the real graph in one call. `_resume_with` turns ANY unusable
+    resume payload into `pending_review`, which the paragraph above exempts —
+    and the graph only re-enters retrieval on `resumed`, so the rows synthesised
+    while the profile was insufficient are still sitting in the checkpoint,
+    unchanged. So:
+
+        POST /query          -> needs_input,     answer_rows: []   (suppressed)
+        POST /resume/<id> {"unrelated": "junk"}
+                             -> pending_review,  answer_rows: [the 2028-02-25 row]
+
+    One request, and the row the ruling forbids is back — asked for by the
+    anonymous asker, who was handed the resume token in the first response. The
+    status is a symptom; `profile_sufficient` is the predicate that made the run
+    untrustworthy in the first place, and reading it closes the door at the same
+    boundary without touching synthesis or q16's prose.
+
+    ROWS ONLY, and this is where the ruling's own reasoning was incomplete.
+    Ruling 4 proposed doing this in the GRAPH — not synthesising at all once
+    `profile_sufficient` is false — on the ground that the draft is unused on
+    that path. **q16 disproves that.** Its question ("do we have to put a
+    nutrition summary on the front of our package") pauses correctly, and its
+    ground truth is an HONESTY check: the answer must say the sources establish
+    no such requirement, and it passes on the word "cannot confirm" in the
+    PROSE. Skipping synthesis would have deleted the text q16 scores on and
+    regressed a golden question in the act of fixing another defect. So the
+    prose survives and the ROWS — the table where a deadline is put in front of
+    a reader — do not.
+
+    WHAT THIS DOES NOT FIX, stated so nobody reads more into it: the prose can
+    still assert an obligation ("Because your company makes a 'healthy' claim,
+    you must comply..."), which is a fact about the asker the system recorded it
+    did not have. That is a separate correctness defect, ruled separately at
+    M09 (2c) and owed its own oracle (ruling 6). Suppressing rows does not
+    touch it and is not claimed to.
+
+    Lives here, in one place, because `src/api/api.py:_shape` and
+    `evals/serve_local.py:_shape` are deliberately the same mapping — the
+    deployed API and the offline shim must agree or `make evals` and
+    `make agent-evals` measure different systems.
+    """
+    if status == "needs_input" or not profile_sufficient:
+        return []
+    return list(rows or [])
 
 
 def _row_field(row, name: str):

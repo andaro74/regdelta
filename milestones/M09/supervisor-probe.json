@@ -1,0 +1,245 @@
+{
+  "q04": {
+    "question": "HHS asked manufacturers to phase out Red No. 3 sooner than 2027. Is that binding on us?",
+    "control": false,
+    "sufficient": false,
+    "stable": true,
+    "calls": [
+      {
+        "profile_sufficient": false,
+        "intent": "timeline",
+        "products": [],
+        "claims": [],
+        "key_present_in_raw": true,
+        "raw_parsed": true,
+        "raw": "{\"intent\": \"timeline\", \"products\": [], \"claims\": [], \"profile_sufficient\": false}"
+      },
+      {
+        "profile_sufficient": false,
+        "intent": "timeline",
+        "products": [],
+        "claims": [],
+        "key_present_in_raw": true,
+        "raw_parsed": true,
+        "raw": "{\"intent\": \"timeline\", \"products\": [], \"claims\": [], \"profile_sufficient\": false}"
+      },
+      {
+        "profile_sufficient": false,
+        "intent": "timeline",
+        "products": [],
+        "claims": [],
+        "key_present_in_raw": true,
+        "raw_parsed": true,
+        "raw": "{\"intent\": \"timeline\", \"products\": [], \"claims\": [], \"profile_sufficient\": false}"
+      }
+    ]
+  },
+  "q10": {
+    "question": "Are we affected by the healthy-claim changes?",
+    "control": false,
+    "sufficient": false,
+    "stable": true,
+    "calls": [
+      {
+        "profile_sufficient": false,
+        "intent": "applicability",
+        "products": [],
+        "claims": [
+          "healthy"
+        ],
+        "key_present_in_raw": true,
+        "raw_parsed": true,
+        "raw": "{\"intent\": \"applicability\", \"products\": [], \"claims\": [\"healthy\"], \"profile_sufficient\": false}"
+      },
+      {
+        "profile_sufficient": false,
+        "intent": "applicability",
+        "products": [],
+        "claims": [
+          "healthy"
+        ],
+        "key_present_in_raw": true,
+        "raw_parsed": true,
+        "raw": "{\"intent\": \"applicability\", \"products\": [], \"claims\": [\"healthy\"], \"profile_sufficient\": false}"
+      },
+      {
+        "profile_sufficient": false,
+        "intent": "applicability",
+        "products": [],
+        "claims": [
+          "healthy"
+        ],
+        "key_present_in_raw": true,
+        "raw_parsed": true,
+        "raw": "{\"intent\": \"applicability\", \"products\": [], \"claims\": [\"healthy\"], \"profile_sufficient\": false}"
+      }
+    ]
+  },
+  "q16": {
+    "question": "Do we have to put a nutrition summary on the front of our package, and by when?",
+    "control": false,
+    "sufficient": null,
+    "stable": false,
+    "calls": [
+      {
+        "profile_sufficient": false,
+        "intent": "timeline",
+        "products": [],
+        "claims": [
+          "nutrition summary",
+          "front of package nutrition labeling"
+        ],
+        "key_present_in_raw": true,
+        "raw_parsed": true,
+        "raw": "{\"intent\": \"timeline\", \"products\": [], \"claims\": [\"nutrition summary\", \"front of package nutrition labeling\"], \"profile_sufficient\": false}"
+      },
+      {
+        "profile_sufficient": true,
+        "intent": "timeline",
+        "products": [],
+        "claims": [
+          "nutrition summary",
+          "front of package nutrition label"
+        ],
+        "key_present_in_raw": true,
+        "raw_parsed": true,
+        "raw": "```json\n{\"intent\": \"timeline\", \"products\": [], \"claims\": [\"nutrition summary\", \"front of package nutrition label\"], \"profile_sufficient\": true}\n```"
+      },
+      {
+        "profile_sufficient": false,
+        "intent": "timeline",
+        "products": [],
+        "claims": [
+          "nutrition summary",
+          "front of package nutrition label"
+        ],
+        "key_present_in_raw": true,
+        "raw_parsed": true,
+        "raw": "{\"intent\": \"timeline\", \"products\": [], \"claims\": [\"nutrition summary\", \"front of package nutrition label\"], \"profile_sufficient\": false}"
+      }
+    ]
+  },
+  "q19": {
+    "question": "Our supplier says the Red No. 3 order sets no compliance date, so there is no hard deadline for using up our coloured inventory. Are they right?",
+    "control": false,
+    "sufficient": false,
+    "stable": true,
+    "calls": [
+      {
+        "profile_sufficient": false,
+        "intent": "timeline",
+        "products": [],
+        "claims": [],
+        "key_present_in_raw": true,
+        "raw_parsed": true,
+        "raw": "```json\n{\"intent\": \"timeline\", \"products\": [], \"claims\": [], \"profile_sufficient\": false}\n```"
+      },
+      {
+        "profile_sufficient": false,
+        "intent": "timeline",
+        "products": [],
+        "claims": [],
+        "key_present_in_raw": true,
+        "raw_parsed": true,
+        "raw": "```json\n{\"intent\": \"timeline\", \"products\": [], \"claims\": [], \"profile_sufficient\": false}\n```"
+      },
+      {
+        "profile_sufficient": false,
+        "intent": "timeline",
+        "products": [],
+        "claims": [],
+        "key_present_in_raw": true,
+        "raw_parsed": true,
+        "raw": "```json\n{\"intent\": \"timeline\", \"products\": [], \"claims\": [], \"profile_sufficient\": false}\n```"
+      }
+    ]
+  },
+  "q18": {
+    "question": "We sell a shelf-stable lentil soup labeled 'healthy'. Are we affected by the healthy-claim changes?",
+    "control": true,
+    "sufficient": true,
+    "stable": true,
+    "calls": [
+      {
+        "profile_sufficient": true,
+        "intent": "applicability",
+        "products": [
+          "shelf-stable lentil soup"
+        ],
+        "claims": [
+          "healthy"
+        ],
+        "key_present_in_raw": true,
+        "raw_parsed": true,
+        "raw": "{\"intent\": \"applicability\", \"products\": [\"shelf-stable lentil soup\"], \"claims\": [\"healthy\"], \"profile_sufficient\": true}"
+      },
+      {
+        "profile_sufficient": true,
+        "intent": "applicability",
+        "products": [
+          "shelf-stable lentil soup"
+        ],
+        "claims": [
+          "healthy"
+        ],
+        "key_present_in_raw": true,
+        "raw_parsed": true,
+        "raw": "{\"intent\": \"applicability\", \"products\": [\"shelf-stable lentil soup\"], \"claims\": [\"healthy\"], \"profile_sufficient\": true}"
+      },
+      {
+        "profile_sufficient": true,
+        "intent": "applicability",
+        "products": [
+          "shelf-stable lentil soup"
+        ],
+        "claims": [
+          "healthy"
+        ],
+        "key_present_in_raw": true,
+        "raw_parsed": true,
+        "raw": "{\"intent\": \"applicability\", \"products\": [\"shelf-stable lentil soup\"], \"claims\": [\"healthy\"], \"profile_sufficient\": true}"
+      }
+    ]
+  },
+  "q01": {
+    "question": "The effective date of the new 'healthy' claim rule was delayed. Did the compliance deadline change?",
+    "control": true,
+    "sufficient": true,
+    "stable": true,
+    "calls": [
+      {
+        "profile_sufficient": true,
+        "intent": "timeline",
+        "products": [],
+        "claims": [
+          "healthy"
+        ],
+        "key_present_in_raw": true,
+        "raw_parsed": true,
+        "raw": "```json\n{\"intent\": \"timeline\", \"products\": [], \"claims\": [\"healthy\"], \"profile_sufficient\": true}\n```"
+      },
+      {
+        "profile_sufficient": true,
+        "intent": "timeline",
+        "products": [],
+        "claims": [
+          "healthy"
+        ],
+        "key_present_in_raw": true,
+        "raw_parsed": true,
+        "raw": "{\"intent\": \"timeline\", \"products\": [], \"claims\": [\"healthy\"], \"profile_sufficient\": true}"
+      },
+      {
+        "profile_sufficient": true,
+        "intent": "timeline",
+        "products": [],
+        "claims": [
+          "healthy"
+        ],
+        "key_present_in_raw": true,
+        "raw_parsed": true,
+        "raw": "{\"intent\": \"timeline\", \"products\": [], \"claims\": [\"healthy\"], \"profile_sufficient\": true}"
+      }
+    ]
+  }
+}
