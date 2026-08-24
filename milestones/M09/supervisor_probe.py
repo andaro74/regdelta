@@ -175,9 +175,10 @@ def report(results: dict) -> int:
 
     if not (unparsed or keyless):
         print("NOT H3: every verdict is the model's own, not a parser fallback. "
-              "The question is now whether the PROMPT asks for this (H1) or the "
-              "model misjudges it (H2) — read `_SUPERVISOR_PROMPT` beside the raw "
-              "outputs in the json, and rule 3b from that.")
+              "So each verdict above is either the prompt asking for it (H1) or the "
+              "model misjudging it (H2) — read `_SUPERVISOR_PROMPT` beside the raw "
+              "outputs in the json to tell them apart. This line says what the probe "
+              "ruled OUT; it does not say the table is right.")
     return 0
 
 
@@ -191,7 +192,11 @@ def main() -> int:
     results = probe(args.runs)
     code = report(results)
     args.out.write_text(json.dumps(results, indent=2), encoding="utf-8")
-    print(f"\nwritten: {args.out.relative_to(ROOT)}")
+    try:
+        shown = args.out.resolve().relative_to(ROOT)
+    except ValueError:
+        shown = args.out
+    print(f"\nwritten: {shown}")
     print("This probe answers 3b's PREREQUISITE. It does not rule 3b.")
     return code
 

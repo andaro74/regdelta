@@ -518,12 +518,16 @@ and **neither touches a golden question.**
 
 | # | proposition | decision | note |
 |---|---|---|---|
-| 3b-i | **q10 pauses correctly.** | | |
-| 3b-ii | **q04 and q19 should not pause** — both are questions of law, both are trap questions, and a pause sidesteps the trap. | | |
-| 3b-iii | **q16 should pause on its merits, and its 2:1 instability is a separate defect** worth its own fix regardless. | | |
-| 3b-iv | The remedy is **two prompt changes** — disambiguate `claims`, and admit "no asker needed" — verified by re-running this probe, with q18/q01 as regression controls. **No golden question is edited.** | | |
+| 3b-i | **q10 pauses correctly.** | **ACCEPTED** | The model's `false` is right; the prompt's stated rule is what is wrong. No change to q10's behaviour is sought. |
+| 3b-ii | **q04 and q19 should not pause** — both are questions of law, both are trap questions, and a pause sidesteps the trap. | **ACCEPTED** | q04's trap is the request/rule distinction; q19's is that an order with no compliance date still has an operative deadline derived from the effective date (ADR-0006). A pause answers neither. |
+| 3b-iii | **q16 should pause on its merits, and its 2:1 instability is a separate defect** worth its own fix regardless. | **ACCEPTED** | A classifier that answers differently on identical input is a defect whichever answer is right. Rated, not just observed, before it is called fixed. |
+| 3b-iv | The remedy is **two prompt changes** — disambiguate `claims`, and admit "no asker needed" — verified by re-running this probe, with q18/q01 as regression controls. **No golden question is edited.** | **ACCEPTED** | Engineering-seat work. The probe is the acceptance test: a prompt change that is not re-probed is not done. |
 
-**Seat:** ______________________  **Date:** ______________
+**Seat:** the human seat of this repository (ADR-0005) · **Date:** 2026-08-23
+
+**3b is now closed.** Ruling 3a's block lifts only once the prompt change is
+made AND re-probed — the block was never on the ruling, it was on the
+over-firing itself.
 
 Until 3b is decided, **ruling 3a still stands and still blocks**: no
 suppression fix may land, because q04, q16 and q19 currently pass on text that
