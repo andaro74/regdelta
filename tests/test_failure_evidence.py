@@ -104,14 +104,26 @@ def test_the_workflow_keeps_the_full_card_as_an_artifact():
 def test_evidence_is_printed_for_a_failure_that_is_not_a_decline():
     """The q18 SHAPE, end to end through `check()` rather than the helper.
 
-    `status: ok`, a real cited answer, failing only a token group. The old card
-    printed the missing-token list and stopped there.
+    `status: ok`, a real answer, failing on content rather than on a decline.
+    The old card printed the missing-token list and stopped there.
+
+    NOT KEYED TO q18's TOKEN GROUP any more, and the reason is recorded: this
+    test originally asserted that q18's live answer still failed, which was
+    true until the 2026-09-03 ruling added `is directly affected`. It then
+    failed with its own message — "specimen no longer reproduces the q18
+    failure" — which is the canary working, but a canary that goes off every
+    time ground truth is legitimately ruled on is a test coupled to the wrong
+    thing. What this file is about is whether EVIDENCE PRINTS, so the specimen
+    now fails on a wrong DATE, which no token ruling will ever make pass.
     """
     golden = json.loads((ROOT / "evals" / "golden_questions.json").read_text(encoding="utf-8"))
     q18 = next(q for q in golden["questions"] if q["id"] == "q18")
-    resp = {"answer": Q18_ANSWER, "status": "ok", "confidence": 0.93,
+    wrong_date = Q18_ANSWER.replace("February 25, 2028", "February 25, 2029")
+    resp = {"answer": wrong_date, "status": "ok", "confidence": 0.93,
             "stop_reason": "end_turn", "citations": ["89 FR 106064"]}
     fails = run_evals.check(q18, resp)
-    assert fails, "specimen no longer reproduces the q18 failure; update it"
-    assert not run_evals.declined(resp), "q18 was not a decline"
-    assert "is directly affected" in _evidence(resp)
+    assert fails, "specimen no longer fails; it must, or this asserts nothing"
+    assert not run_evals.declined(resp), "this must not be a decline"
+    out = _evidence(resp)
+    assert "is directly affected" in out
+    assert "status='ok'" in out
