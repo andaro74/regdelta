@@ -262,6 +262,24 @@ jobs:
           python evals/run_evals.py > scorecard.txt 2>&1 || rc=$?
           cat scorecard.txt
           echo "exit=$rc" >> "$GITHUB_OUTPUT"
+      # THE WHOLE CARD, SURVIVING THE COMMENT'S TRUNCATION. M07 ruling item 4.
+      #
+      # The PR comment posts `scorecard.txt.slice(-3000)` — the LAST 3,000
+      # characters — so the run summary always survives and the per-question
+      # evidence above it may not. That is the right trade for the comment and
+      # the wrong one for an investigation: on 2026-09-03 the q18 failure had to
+      # be reproduced with three live Bedrock calls because the answer existed
+      # nowhere after the job ended.
+      #
+      # `if: always()` because the artifact is worth most on the runs that
+      # FAILED, and the eval step is the one allowed to fail here.
+      - name: Keep the full scorecard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scorecard-${{ github.event.pull_request.head.sha }}
+          path: scorecard.txt
+          retention-days: 30
       - name: Post scorecard on PR
         uses: actions/github-script@v7
         with:

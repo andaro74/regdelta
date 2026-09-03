@@ -1,0 +1,73 @@
+
+========================================================================
+q11
+========================================================================
+1. does any accept token pass inside its own negation?
+   safe   'did not change'
+   safe   'unchanged'
+   safe   'not change'
+   safe   'no change'
+   safe   'did not move'
+   safe   'confirmed both dates'
+   safe   'dates confirmed'
+   safe   'confirmed the deadline'
+   safe   'confirmed both'
+   safe   'not extended'
+   safe   'did not extend'
+   safe   'no extension'
+   safe   'still January 15, 2027'
+   safe   'remains January 15, 2027'
+   safe   'colleague is incorrect'
+
+2. the observed live answer
+   before: ["none of ['did not change', 'unchanged', 'not change', 'no change', 'did not move', 'confirmed both dates', 'dates confirmed', 'confirmed the deadline', 'confirmed both', 'not extended', 'did not extend', 'no extension', 'still January 15, 2027', 'remains January 15, 2027'] present"]
+   after : PASS
+
+3. discrimination specimens
+      CORRECT pass=True  denies via the stem's own verb
+      CORRECT pass=True  negation-only phrasing, no 'unchanged'
+      WRONG   pass=False tolling, states a new date
+      WRONG   pass=False tolling, avoids every banned verb
+      WRONG   pass=False right date, unaware a stay ever existed
+      WRONG   pass=False 'confirmed' about the stay, not the dates
+
+4. do the proposed bans fire on a CORRECT specimen?
+   none fired
+
+========================================================================
+q18
+========================================================================
+1. does any accept token pass inside its own negation?
+   safe   'you are affected'
+   safe   'are affected'
+   safe   'it applies to your'
+   safe   'applies to your'
+   safe   'does apply to your'
+   safe   'the rule applies to you'
+   safe   'applies to you'
+   safe   'yes, it applies'
+   safe   'yes, the rule applies'
+   safe   'yes — it applies'
+   safe   'is affected'
+   safe   'is directly affected'
+
+2. the observed live answer
+   before: ["none of ['you are affected', 'are affected', 'it applies to your', 'applies to your', 'does apply to your', 'the rule applies to you', 'applies to you', 'yes, it applies', 'yes, the rule applies', 'yes — it applies', 'is affected'] present"]
+   after : PASS
+
+3. discrimination specimens
+      CORRECT pass=True  affirms applicability
+      CORRECT pass=True  phrased as 'applies to you'
+      WRONG   pass=False denies applicability — the substring trap
+      WRONG   pass=False gate fires when it should not
+      CORRECT pass=True  PRODUCT as subject — the phrasing that failed live at 2cea737
+      WRONG   pass=False subject-negation: 'nothing is affected'
+      WRONG   pass=False subject-negation: flat 'no product is affected'
+      WRONG   pass=False hedge: recites the rule, never applies it to this product
+      WRONG   pass=False declines via a `whether` belonging to another clause
+      WRONG   pass=False demands a revenue figure
+
+4. do the proposed bans fire on a CORRECT specimen?
+   none fired
+
+OK: 0 problem(s)

@@ -363,7 +363,8 @@
           "did not extend",
           "no extension",
           "still January 15, 2027",
-          "remains January 15, 2027"
+          "remains January 15, 2027",
+          "colleague is incorrect"
         ],
         [
           "91 FR 50475",
@@ -378,7 +379,10 @@
         "deadline moved to",
         "new deadline of",
         "new compliance date is",
-        "pushed the deadline"
+        "pushed the deadline",
+        "colleague is correct",
+        "colleague is right",
+        "the deadline did move"
       ],
       "must_cite_any": [
         "90 FR 4628",
@@ -651,14 +655,19 @@
           "yes, it applies",
           "yes, the rule applies",
           "yes — it applies",
-          "is affected"
+          "is affected",
+          "is directly affected"
         ]
       ],
       "must_not_contain": [
         "2029",
         "cannot determine",
         "nothing is affected",
-        "no product is affected"
+        "no product is affected",
+        "is not affected",
+        "are not affected",
+        "is not directly affected",
+        "does not apply to your"
       ],
       "must_cite_any": [
         "89 FR 106064",
