@@ -625,3 +625,105 @@ def test_the_503_does_not_tell_clients_to_come_back_tomorrow(client, monkeypatch
                             m.quota.QuotaUnavailableError("blip")))
     r = c.post("/query", json={"question": "q"})
     assert int(r.headers["Retry-After"]) <= 60, "a transient fault must not cost a day"
+
+
+# ------------------------------------------- model-bound input size (SPEC/04)
+#
+# THE DEFECT THESE PIN, measured on the deployed demo 2026-09-03. `question`
+# reaches the model untruncated — `nodes._VERDICT_PROMPT` interpolates it raw —
+# and nothing bounded it. A 40 KB question drove 14,661 Opus input tokens
+# against a normal query's 5,882. Since `daily_quota` counts REQUESTS, a caller
+# controlled the cost of something the ceiling counted as one, and the stated
+# "80 x $0.0475 = $3.80/day" was off by roughly 38x.
+def test_an_oversized_question_is_refused(client, monkeypatch):
+    c, _ = client
+    _stub_graph(monkeypatch, _answered())
+    from shared import config
+    r = c.post("/query", json={"question": "x" * (config.MAX_QUESTION_CHARS + 1)})
+    assert r.status_code == 400
+    assert "question" in r.json()["detail"]
+
+
+def test_an_oversized_profile_is_refused(client, monkeypatch):
+    """Measured as serialised JSON, not by key count: one key holding 90 KB is
+    the case a key count misses, and the profile reaches the graph whole."""
+    c, _ = client
+    _stub_graph(monkeypatch, _answered())
+    from shared import config
+    r = c.post("/query", json={"question": "ok?",
+                               "company_profile": {"x": "y" * (config.MAX_PROFILE_CHARS + 1)}})
+    assert r.status_code == 400
+    assert "company_profile" in r.json()["detail"]
+
+
+def test_an_oversized_request_never_reaches_the_model(client, monkeypatch):
+    """The point of the limit. A 400 returned after the graph ran would report a
+    ceiling while paying the bill it exists to bound."""
+    c, _ = client
+    invoked = []
+
+    class _App:
+        def invoke(self, *a, **k):
+            invoked.append(1)
+            return _answered()
+
+    monkeypatch.setattr(m, "_compiled", {"app": _App(), "resumable": True})
+    from shared import config
+    c.post("/query", json={"question": "x" * (config.MAX_QUESTION_CHARS + 1)})
+    assert invoked == [], "the graph ran for a request refused on size"
+
+
+def test_an_oversized_request_does_not_consume_the_daily_allowance(client, monkeypatch):
+    """ORDERING, pinned. Charging a unit for a request refused on size would let
+    a rejected caller exhaust the day — the denial of service the quota exists
+    to prevent, wearing the quota's own uniform."""
+    c, _ = client
+    _stub_graph(monkeypatch, _answered())
+    calls = _quota(monkeypatch)
+    from shared import config
+    c.post("/query", json={"question": "x" * (config.MAX_QUESTION_CHARS + 1)})
+    assert calls == [], "a size refusal claimed an allowance unit"
+
+
+def test_a_question_at_the_limit_is_accepted(client, monkeypatch):
+    """The boundary is inclusive. An off-by-one here refuses a legitimate
+    question, and the longest golden question is 234 characters."""
+    c, _ = client
+    _stub_graph(monkeypatch, _answered())
+    from shared import config
+    r = c.post("/query", json={"question": "x" * config.MAX_QUESTION_CHARS})
+    assert r.status_code == 200
+
+
+def test_every_golden_question_fits_the_limit():
+    """The limit must not refuse the set this project is graded on."""
+    import json as _json
+    from pathlib import Path
+
+    from shared import config
+    golden = _json.loads(
+        (Path(__file__).parent.parent / "evals" / "golden_questions.json")
+        .read_text(encoding="utf-8"))
+    longest = max(len(q["question"]) for q in golden["questions"])
+    assert longest <= config.MAX_QUESTION_CHARS, longest
+
+
+def test_an_oversized_resume_decision_is_refused(client, monkeypatch):
+    """`/resume` carries a decision that reaches the graph through
+    `Command(resume=...)`, so it is model-bound too."""
+    c, _ = client
+    _stub_graph(monkeypatch, _answered())
+    from shared import config
+    r = c.post("/resume/whatever",
+               json={"resume_token": "t", "answer": "z" * (config.MAX_RESUME_CHARS + 1)})
+    assert r.status_code == 400
+    assert "resume decision" in r.json()["detail"]
+
+
+def test_a_normal_resume_is_unaffected_by_the_size_check(client, monkeypatch):
+    """The size check sits above the token check; it must not swallow the
+    opaque 404 that SPEC/04's indistinguishability rests on."""
+    c, _ = client
+    _stub_graph(monkeypatch, _answered())
+    assert c.post("/resume/never-existed",
+                  json={"resume_token": "nonsense"}).status_code == 404
