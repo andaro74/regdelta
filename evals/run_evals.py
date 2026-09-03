@@ -528,6 +528,59 @@ def gate_verdict(per_q: list[dict]) -> int:
     return 0
 
 
+#: How much of a failing answer to print. Enough to read the sentence a token
+#: assertion missed; short enough that a card full of failures still leaves the
+#: SUMMARY inside the last 3,000 characters, which is all the PR comment shows
+#: (`.github/workflows/evals.yml`, `scorecard.txt.slice(-3000)`).
+FAILURE_EXCERPT_CHARS = 420
+
+
+def _print_failure_evidence(resp: dict | None) -> None:
+    """What the system actually said, on any failure. M07 ruling item 4.
+
+    THE DEBT THIS PAYS. `milestones/M07/eval-gate-flake-gap.md` recorded, of the
+    q05 investigation: "The raw text is logged nowhere and cannot be
+    recovered." Its remedy — print `stop_reason` on a decline — was never
+    implemented, and on 2026-09-03 the bill came due a second time on q18, which
+    was NOT a decline: `status: ok`, a full cited answer, failing one
+    affirmative-phrase group. Diagnosing it needed three live Bedrock calls
+    against the deployed API because nothing in CI had kept the sentence.
+
+    So this prints on EVERY failure and not only on a decline. The q18 answer
+    opened "…is directly affected by…" where the assertion wanted "is affected";
+    one adverb, visible in the first line of the excerpt, and the whole
+    investigation would have been a five-minute read of the card.
+
+    A HEAD EXCERPT, deliberately, rather than the region around a missing
+    token. Locating "where the token should have been" means guessing at intent
+    — the phrase may be absent because the answer is wrong, which is precisely
+    the distinction the reader is trying to make. The opening sentence of a
+    verdict answer states the finding, so the head is where the evidence is.
+    """
+    if not resp:
+        return
+    rows = resp.get("answer_rows") or resp.get("verdict_rows") or []
+    print(f"       status={resp.get('status')!r} "
+          f"confidence={resp.get('confidence')} "
+          f"stop_reason={resp.get('stop_reason')!r} "
+          f"truncated={resp.get('truncated')} cache={resp.get('cache')!r} "
+          f"rows={len(rows)} citations={resp.get('citations') or []}")
+
+    # THE PROSE, NOT `flatten_answer`. The assertions score the flattened form —
+    # rows JSON, then prose, then citations — but printing that leads every
+    # excerpt with `""` or a wall of row JSON and pushes the sentence a reader
+    # needs past the character budget. The rows and citations are summarised on
+    # the line above; this line is for the sentence that decides the verdict.
+    text = " ".join((resp.get("answer") or "").split())
+    if not text:
+        print("       answer: (empty)  <- the emptiness IS the finding; the "
+              "token misses are downstream of it")
+        return
+    clipped = text[:FAILURE_EXCERPT_CHARS]
+    ellipsis = "…" if len(text) > FAILURE_EXCERPT_CHARS else ""
+    print(f"       answer[{len(text)} chars]: {clipped}{ellipsis}")
+
+
 def check(q: dict, resp: dict) -> list[str]:
     """Return list of failure reasons (empty = pass)."""
     fails: list[str] = []
@@ -660,12 +713,14 @@ def main() -> int:
             if declined(resp):
                 print(f"     ↳ DECLINED, not answered — status "
                       f"{resp.get('status')}, confidence "
-                      f"{resp.get('confidence')}: "
+                      f"{resp.get('confidence')}, stop_reason "
+                      f"{resp.get('stop_reason')!r}: "
                       f"{resp.get('review_reason') or '(no reason recorded)'}")
                 print("       the token misses below follow from an empty "
                       "answer; they are not its cause")
             for f in fails:
                 print(f"     - {f}")
+            _print_failure_evidence(resp)
             if args.fail_fast:
                 return 1
         else:
