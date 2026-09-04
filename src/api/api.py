@@ -70,7 +70,9 @@ def _too_large(trace_id: str, field: str, size: int, limit: int) -> JSONResponse
                 trace_id, field, size, limit)
     return JSONResponse(
         status_code=400,
-        content={"detail": f"{field} is {size} characters; the limit is {limit}",
+        content={"detail": (f"{field} exceeds the limit of {limit} characters"
+                            if size < 0 else
+                            f"{field} is {size} characters; the limit is {limit}"),
                  "trace_id": trace_id})
 
 
@@ -86,7 +88,24 @@ def _oversize(payload: dict) -> tuple[str, int, int] | None:
     question = str(payload.get("question") or "")
     if len(question) > config.MAX_QUESTION_CHARS:
         return "question", len(question), config.MAX_QUESTION_CHARS
-    profile = json.dumps(payload.get("company_profile") or {}, default=str)
+
+    # TYPE BEFORE SIZE, and it is the same denial of service by another route.
+    # `nodes.supervisor` does `dict(state.get("company_profile") or {})`, which
+    # raises on a string, a list or an int — and nothing wraps `_app().invoke`,
+    # so the request 500s AFTER `quota.consume()` has claimed its unit. Zero
+    # Bedrock is spent and a day's allowance still drains: 80 malformed requests
+    # cost an attacker nothing and take the demo, and `make evals` with it, to
+    # 429 until midnight. Reproduced by security-reviewer M2 round 2.
+    #
+    # Reported through the size channel because the caller's remedy is the same
+    # — send a well-formed profile — and a second refusal shape would be a
+    # second thing to keep honest for no gain. `-1` is the sentinel for "not
+    # measurable", which reads correctly in the message: an object, not 5000
+    # characters, is what was wrong.
+    profile_in = payload.get("company_profile") or {}
+    if not isinstance(profile_in, dict):
+        return "company_profile (must be an object)", -1, config.MAX_PROFILE_CHARS
+    profile = json.dumps(profile_in, default=str)
     if len(profile) > config.MAX_PROFILE_CHARS:
         return "company_profile", len(profile), config.MAX_PROFILE_CHARS
     return None
@@ -243,10 +262,18 @@ def query(payload: dict, request: Request) -> dict:
                             content={"detail": "question is required",
                                      "trace_id": trace_id})
 
-    # BEFORE the cache lookup as well as before the quota. A refused request
-    # must not consult or populate the cache: an oversized question is not one
-    # this system will ever answer, so a cache slot keyed on it could never be
-    # served.
+    # BEFORE the cache lookup as well as before the quota.
+    #
+    # The quota half is the load-bearing one: after `consume()`, a caller
+    # refused on size would still have burned a unit.
+    #
+    # The cache half buys less than an earlier version of this comment claimed.
+    # It said a refusal would "occupy a cache slot that can never be served",
+    # which is not reachable — `cache.put` runs only on the success path below,
+    # so no ordering of these two lines could store a refusal. What checking
+    # first actually buys is one fewer DynamoDB GetItem per refused request, and
+    # no attacker-controlled 2,000-character key material hashed into a cache
+    # read. Both real; the mechanism named was not. security-reviewer L1.
     if over := _oversize(payload):
         return _too_large(trace_id, *over)
 

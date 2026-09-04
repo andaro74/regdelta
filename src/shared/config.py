@@ -135,6 +135,24 @@ RERANK = os.environ.get("RERANK", "0") == "1"
 # hazard. The longest golden question is 234 characters (q03) and the largest
 # company profile anywhere in the repo is 106; these are ~8x and ~38x that.
 #
+# THE PRINCIPLE, which generalises where the paragraph below does not:
+# REFUSE WHAT THE CALLER ASSERTS, TRUNCATE WHAT THE SYSTEM RETRIEVES.
+# `untrusted.fence` truncates corpus passages and is right to — a trimmed
+# passage still either does or does not support a citation, and
+# `_supported_citations` re-decides that independently. A question is the
+# caller's assertion about what was asked and a profile is their assertion
+# about who is asking; trimming either silently substitutes a different
+# assertion and then cites sources against it. security-reviewer, round 2 Q4.
+#
+# AND THE $3.80 IS NOT EXACT. These bounds leave ~1,500 tokens of caller text
+# against a 5,882-token baseline — under ~25% on Opus input. The larger
+# remaining lever is on the CORPUS side: wording a question toward a densely
+# cross-referencing page can reach ~16k tokens through crossref fan-out,
+# roughly 2.5-3x, bounded by NAIVE_TOP_K, CROSSREF_MAX and CHUNK_MAX_CHARS —
+# none of which was chosen as a cost control. Say "about $3.80" and mean it to
+# within a factor, not to the cent. Over-confidence in exactly this number is
+# what made the unbounded-question defect invisible for a day.
+#
 # REFUSED, NOT TRUNCATED. Silently trimming a question would answer a DIFFERENT
 # question from the one asked and cite sources for it — which in a compliance
 # product is a wrong answer with a citation on it, the failure CLAUDE.md names

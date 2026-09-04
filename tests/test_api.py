@@ -727,3 +727,30 @@ def test_a_normal_resume_is_unaffected_by_the_size_check(client, monkeypatch):
     _stub_graph(monkeypatch, _answered())
     assert c.post("/resume/never-existed",
                   json={"resume_token": "nonsense"}).status_code == 404
+
+
+def test_a_malformed_profile_is_refused_before_the_quota(client, monkeypatch):
+    """M1, round 2: the same denial of service by another route.
+
+    `nodes.supervisor` does `dict(state.get("company_profile") or {})`, which
+    raises on a string — and nothing wraps `_app().invoke`, so the request 500s
+    AFTER `quota.consume()` claimed its unit. Zero Bedrock spent, a day's
+    allowance drained: 80 malformed requests cost an attacker nothing and take
+    the demo, and `make evals` with it, to 429 until midnight.
+    """
+    c, _ = client
+    _stub_graph(monkeypatch, _answered())
+    calls = _quota(monkeypatch)
+    r = c.post("/query", json={"question": "ok?", "company_profile": "not-an-object"})
+    assert r.status_code == 400
+    assert "company_profile" in r.json()["detail"]
+    assert "characters" not in r.json()["detail"].split("limit of")[0]
+    assert calls == [], "a malformed profile claimed an allowance unit"
+
+
+@pytest.mark.parametrize("bad", ["a string", ["a", "list"], 7, True])
+def test_every_non_object_profile_is_refused(client, monkeypatch, bad):
+    c, _ = client
+    _stub_graph(monkeypatch, _answered())
+    r = c.post("/query", json={"question": "ok?", "company_profile": bad})
+    assert r.status_code == 400, f"{bad!r} was accepted"
