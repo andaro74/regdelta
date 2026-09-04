@@ -113,6 +113,57 @@ QUEUE_URL = os.environ.get("QUEUE_URL", "")
 SEMANTIC_CACHE = os.environ.get("SEMANTIC_CACHE", "0") == "1"
 RERANK = os.environ.get("RERANK", "0") == "1"
 
+# ---------------------------------------------- attacker-controlled input size
+# HOW MUCH MODEL-BOUND TEXT ONE REQUEST MAY CARRY.
+#
+# THE DEFECT THESE CLOSE, measured on the deployed demo 2026-09-03. `/query` is
+# unauthenticated and nothing bounded the length of `question`. It reaches the
+# model UNTRUNCATED — `nodes._VERDICT_PROMPT` interpolates it raw, and so does
+# the supervisor prompt. Only the embedding call caps input (`query[:30000]`),
+# and that cap protects Titan, not Opus.
+#
+# So a caller controls the token count of a request the daily quota counts as
+# ONE. Measured: a 40 KB question drove 14,661 Opus input tokens against a
+# normal query's 5,882, and 7,722 Sonnet. Opus's context window is the only
+# other ceiling, so ~800 KB of padding is ~200,000 input tokens — about $1.80 a
+# query against $0.0475. QUERY_DAILY_LIMIT bounds the COUNT of Bedrock runs and
+# was priced at the cost of a typical one; without these limits, 80 x $0.0475 =
+# $3.80/day is off by roughly 38x.
+#
+# Same shape as MAX_FETCH_BYTES and MAX_CHUNKS_PER_DOC below: a bound on data
+# this system does not author, sized off the real corpus rather than off the
+# hazard. The longest golden question is 234 characters (q03) and the largest
+# company profile anywhere in the repo is 106; these are ~8x and ~38x that.
+#
+# THE PRINCIPLE, which generalises where the paragraph below does not:
+# REFUSE WHAT THE CALLER ASSERTS, TRUNCATE WHAT THE SYSTEM RETRIEVES.
+# `untrusted.fence` truncates corpus passages and is right to — a trimmed
+# passage still either does or does not support a citation, and
+# `_supported_citations` re-decides that independently. A question is the
+# caller's assertion about what was asked and a profile is their assertion
+# about who is asking; trimming either silently substitutes a different
+# assertion and then cites sources against it. security-reviewer, round 2 Q4.
+#
+# AND THE $3.80 IS NOT EXACT. These bounds leave ~1,500 tokens of caller text
+# against a 5,882-token baseline — under ~25% on Opus input. The larger
+# remaining lever is on the CORPUS side: wording a question toward a densely
+# cross-referencing page can reach ~16k tokens through crossref fan-out,
+# roughly 2.5-3x, bounded by NAIVE_TOP_K, CROSSREF_MAX and CHUNK_MAX_CHARS —
+# none of which was chosen as a cost control. Say "about $3.80" and mean it to
+# within a factor, not to the cent. Over-confidence in exactly this number is
+# what made the unbounded-question defect invisible for a day.
+#
+# REFUSED, NOT TRUNCATED. Silently trimming a question would answer a DIFFERENT
+# question from the one asked and cite sources for it — which in a compliance
+# product is a wrong answer with a citation on it, the failure CLAUDE.md names
+# as a bug rather than a style issue. A 400 says what happened.
+MAX_QUESTION_CHARS = int(os.environ.get("MAX_QUESTION_CHARS", "2000"))
+MAX_PROFILE_CHARS = int(os.environ.get("MAX_PROFILE_CHARS", "4000"))
+# `/resume` carries a decision object that reaches the graph through
+# `Command(resume=...)`, so it is model-bound too. It needs a valid capability
+# token first, which makes it narrower than `/query` — not unbounded.
+MAX_RESUME_CHARS = int(os.environ.get("MAX_RESUME_CHARS", "4000"))
+
 # How many Bedrock-backed runs `/query` and `/resume` may start in one UTC day
 # before they answer 429 (`api/daily_quota.py`). CACHE HITS DO NOT COUNT.
 #

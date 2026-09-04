@@ -19,6 +19,7 @@ retrieved for them — and those are not alike.
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
@@ -47,6 +48,77 @@ _REFUSAL = "not found"
 #: rather than a day of them, long enough not to invite a retry storm from a
 #: fleet that all failed at once. See `_refuse_over_quota`.
 _UNAVAILABLE_RETRY_SECONDS = 15
+
+
+def _too_large(trace_id: str, field: str, size: int, limit: int) -> JSONResponse:
+    """400 for model-bound input past its ceiling. See `config.MAX_QUESTION_CHARS`.
+
+    BEFORE `quota.consume()`, DELIBERATELY, and the order is the whole point.
+    The quota counts REQUESTS; these limits bound what one request can cost. A
+    caller who can send an arbitrarily long question controls the token count of
+    something the ceiling counts as one, which is how "80 x $0.0475 = $3.80/day"
+    was off by roughly 38x until this landed. Charging a unit for a request
+    refused on size would also let a rejected caller consume the day's
+    allowance — the denial of service the quota exists to prevent, wearing the
+    quota's own uniform.
+
+    400 and not 413: `413` is about the HTTP entity, and API Gateway owns that
+    boundary at 10 MB. This is a semantic limit on one field, so it belongs with
+    the empty-question 400 and says which field and by how much.
+    """
+    log.warning("input refused trace_id=%s field=%s size=%s limit=%s",
+                trace_id, field, size, limit)
+    return JSONResponse(
+        status_code=400,
+        # A NEGATIVE SIZE MEANS "NOT A LENGTH PROBLEM", and the message must
+        # then say nothing about lengths. Reported live as "company_profile
+        # (must be an object) exceeds the limit of 4000 characters", which
+        # names the wrong defect: the caller sent a string, not a long one, and
+        # would go away and shorten it.
+        content={"detail": field if size < 0 else
+                 f"{field} is {size} characters; the limit is {limit}",
+                 "trace_id": trace_id})
+
+
+def _oversize(payload: dict) -> tuple[str, int, int] | None:
+    """The first model-bound field over its ceiling, or None.
+
+    `company_profile` is measured as SERIALISED JSON rather than by key count:
+    it reaches the graph whole, so what bounds its cost is characters of text,
+    not shape. A profile of one key holding 90 KB is what a key count misses.
+    """
+    from shared import config
+
+    question = str(payload.get("question") or "")
+    if len(question) > config.MAX_QUESTION_CHARS:
+        return "question", len(question), config.MAX_QUESTION_CHARS
+
+    # TYPE BEFORE SIZE, and it is the same denial of service by another route.
+    # `nodes.supervisor` does `dict(state.get("company_profile") or {})`, which
+    # raises on a string, a list or an int — and nothing wraps `_app().invoke`,
+    # so the request 500s AFTER `quota.consume()` has claimed its unit. Zero
+    # Bedrock is spent and a day's allowance still drains: 80 malformed requests
+    # cost an attacker nothing and take the demo, and `make evals` with it, to
+    # 429 until midnight. Reproduced by security-reviewer M2 round 2.
+    #
+    # Reported through the size channel because the caller's remedy is the same
+    # — send a well-formed profile — and a second refusal shape would be a
+    # second thing to keep honest for no gain. `-1` is the sentinel for "not
+    # measurable", which reads correctly in the message: an object, not 5000
+    # characters, is what was wrong.
+    profile_in = payload.get("company_profile") or {}
+    if not isinstance(profile_in, dict):
+        return "company_profile must be a JSON object", -1, config.MAX_PROFILE_CHARS
+    profile = json.dumps(profile_in, default=str)
+    if len(profile) > config.MAX_PROFILE_CHARS:
+        return "company_profile", len(profile), config.MAX_PROFILE_CHARS
+    return None
+
+
+def _resume_limit() -> int:
+    from shared import config
+
+    return config.MAX_RESUME_CHARS
 
 
 def _refuse_over_quota(trace_id: str, exc: Exception) -> JSONResponse:
@@ -194,6 +266,21 @@ def query(payload: dict, request: Request) -> dict:
                             content={"detail": "question is required",
                                      "trace_id": trace_id})
 
+    # BEFORE the cache lookup as well as before the quota.
+    #
+    # The quota half is the load-bearing one: after `consume()`, a caller
+    # refused on size would still have burned a unit.
+    #
+    # The cache half buys less than an earlier version of this comment claimed.
+    # It said a refusal would "occupy a cache slot that can never be served",
+    # which is not reachable — `cache.put` runs only on the success path below,
+    # so no ordering of these two lines could store a refusal. What checking
+    # first actually buys is one fewer DynamoDB GetItem per refused request, and
+    # no attacker-controlled 2,000-character key material hashed into a cache
+    # read. Both real; the mechanism named was not. security-reviewer L1.
+    if over := _oversize(payload):
+        return _too_large(trace_id, *over)
+
     profile = payload.get("company_profile") or {}
     bypass = cache.bypass_requested(payload, request.headers)
     t0 = time.perf_counter()
@@ -277,6 +364,16 @@ def resume(thread_id: str, payload: dict, request: Request):
     from langgraph.types import Command
 
     trace_id = _trace_id(request)
+
+    # Size first, and BEFORE the token check, because this costs nothing to
+    # decide and reveals nothing: the limit is a published constant, so a 400
+    # tells an attacker only what `config.MAX_RESUME_CHARS` already says. It does
+    # not narrow SPEC/04's four-way indistinguishability, which is about WHICH
+    # THREAD exists — and a size refusal is silent on that.
+    decision_size = len(json.dumps(
+        {k: v for k, v in payload.items() if k != "resume_token"}, default=str))
+    if decision_size > _resume_limit():
+        return _too_large(trace_id, "resume decision", decision_size, _resume_limit())
 
     if rt.enabled():
         try:

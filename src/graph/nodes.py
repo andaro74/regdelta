@@ -299,7 +299,11 @@ def supervisor(state: RegDeltaState, invoke=None) -> dict:
     reset_usage()
     raw = (invoke or _converse)(
         config.MODEL_FAST, _SUPERVISOR_SYSTEM,
-        _SUPERVISOR_PROMPT.format(query=query), max_tokens=400)
+        # Fenced for the same reason as the verdict prompt below: `query` is an
+        # unauthenticated caller's text. security-reviewer M2.
+        _SUPERVISOR_PROMPT.format(
+            query=untrusted.fence(query, limit=config.MAX_QUESTION_CHARS)),
+        max_tokens=400)
     parsed = _json_object(raw)
 
     profile = {
@@ -654,8 +658,34 @@ def verdict(state: RegDeltaState, invoke=None) -> dict:
     raw = (invoke or _converse)(
         config.MODEL_VERDICT, _VERDICT_SYSTEM,
         _VERDICT_PROMPT.format(
-            query=state.get("query", ""),
-            profile=json.dumps(state.get("applicability") or {}),
+            # FENCED, AND THE CALLER IS WHY. Every corpus passage goes through
+            # `untrusted.fence` in `_passages`, on the stated rule that this
+            # module's job is text "this project did not author". When that was
+            # written the only such text was Federal Register prose. It is not
+            # any more: `/query` is unauthenticated, so the QUESTION and the
+            # PROFILE are a stranger's bytes arriving in the same prompt, and
+            # they were the only untrusted input reaching it unfenced.
+            #
+            # What that allowed: emit `</passage>` and a forged opener, and the
+            # model sees a boundary that is not there. It cannot manufacture a
+            # citation — `_supported_citations` is computed from the retrieved
+            # Chunk objects rather than from the prompt — and it cannot poison
+            # another caller, because `response_cache.key` includes the profile.
+            # What it could do is shape the PROSE, which is deliberately never
+            # rewritten, so a fabricated date could appear beside a real FR
+            # citation. This repo has shipped a fabricated compliance date once
+            # already; that is the whole reason the ruling seat exists.
+            #
+            # The limit is generous rather than tight: `api._oversize` already
+            # refuses anything over MAX_QUESTION_CHARS / MAX_PROFILE_CHARS, so
+            # this truncation should never bind. It is here so the fence cannot
+            # be bypassed by a future caller that skips that check.
+            # security-reviewer M2.
+            query=untrusted.fence(state.get("query", ""),
+                                  limit=config.MAX_QUESTION_CHARS),
+            profile=untrusted.fence(
+                json.dumps(state.get("applicability") or {}),
+                limit=config.MAX_PROFILE_CHARS),
             facts=_render_facts(facts),
             passages=passages),
         max_tokens=2000)
