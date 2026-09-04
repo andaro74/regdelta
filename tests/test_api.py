@@ -743,8 +743,13 @@ def test_a_malformed_profile_is_refused_before_the_quota(client, monkeypatch):
     calls = _quota(monkeypatch)
     r = c.post("/query", json={"question": "ok?", "company_profile": "not-an-object"})
     assert r.status_code == 400
-    assert "company_profile" in r.json()["detail"]
-    assert "characters" not in r.json()["detail"].split("limit of")[0]
+    detail = r.json()["detail"]
+    assert detail == "company_profile must be a JSON object", detail
+    # A type error must not be reported as a length error. The first live
+    # deploy said "... exceeds the limit of 4000 characters", which names the
+    # wrong defect and sends the caller off to shorten a string that was never
+    # too long.
+    assert "characters" not in detail and "limit" not in detail
     assert calls == [], "a malformed profile claimed an allowance unit"
 
 

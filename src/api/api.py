@@ -70,9 +70,13 @@ def _too_large(trace_id: str, field: str, size: int, limit: int) -> JSONResponse
                 trace_id, field, size, limit)
     return JSONResponse(
         status_code=400,
-        content={"detail": (f"{field} exceeds the limit of {limit} characters"
-                            if size < 0 else
-                            f"{field} is {size} characters; the limit is {limit}"),
+        # A NEGATIVE SIZE MEANS "NOT A LENGTH PROBLEM", and the message must
+        # then say nothing about lengths. Reported live as "company_profile
+        # (must be an object) exceeds the limit of 4000 characters", which
+        # names the wrong defect: the caller sent a string, not a long one, and
+        # would go away and shorten it.
+        content={"detail": field if size < 0 else
+                 f"{field} is {size} characters; the limit is {limit}",
                  "trace_id": trace_id})
 
 
@@ -104,7 +108,7 @@ def _oversize(payload: dict) -> tuple[str, int, int] | None:
     # characters, is what was wrong.
     profile_in = payload.get("company_profile") or {}
     if not isinstance(profile_in, dict):
-        return "company_profile (must be an object)", -1, config.MAX_PROFILE_CHARS
+        return "company_profile must be a JSON object", -1, config.MAX_PROFILE_CHARS
     profile = json.dumps(profile_in, default=str)
     if len(profile) > config.MAX_PROFILE_CHARS:
         return "company_profile", len(profile), config.MAX_PROFILE_CHARS
