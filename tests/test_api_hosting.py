@@ -116,10 +116,52 @@ def test_the_stage_is_named_api_because_cloudfront_forwards_that_prefix(template
 def test_the_unauthenticated_endpoint_is_throttled(template):
     """/query is unauthenticated by SPEC/04's own scope decision and spends a
     Bedrock call per request. Without a ceiling the only limit on a stranger's
-    bill is Lambda account concurrency."""
+    bill is Lambda account concurrency.
+
+    PINNED TO THE EXACT PAIR, not `> 0`. The loose form passed at 20/40 and
+    would pass at 20,000: it asserted that SOMEBODY had typed a number, which
+    is not the property the file's docstring claims. Both `core_stack.py` and
+    `config.py` state that this and QUERY_DAILY_LIMIT "must move together"
+    because the worst-case day is the sum of their two terms; nothing enforced
+    that until this test. eng-code-reviewer L5.
+
+    The arithmetic these two numbers stand for:
+        answered  80 x $0.0475               = $3.80
+        refused   86,400 x 1 x $0.00000603   = $0.52
+        floor                                = $0.09
+                                               -----
+                                               $4.41/day
+    Change either number and change that sum in `config.QUERY_DAILY_LIMIT`'s
+    comment, or this test is the only place the pair still agree.
+    """
     settings = one(template, "AWS::ApiGatewayV2::Stage")["DefaultRouteSettings"]
-    assert settings["ThrottlingRateLimit"] > 0
-    assert settings["ThrottlingBurstLimit"] > 0
+    assert settings["ThrottlingRateLimit"] == 1
+    assert settings["ThrottlingBurstLimit"] == 5
+
+
+def test_the_query_function_carries_the_quota_environment(template):
+    """The fail-OPEN in a fail-closed module, pinned where it can be pinned.
+
+    `daily_quota.enabled()` returns False when STATE_TABLE is unset, leaving the
+    endpoint UNCAPPED rather than refusing — the one place this module admits on
+    missing configuration. Its docstring justifies that by saying the stack
+    cannot produce the state. That is a claim about this template, so it is
+    asserted against this template rather than trusted.
+
+    QUERY_DAILY_LIMIT is pinned alongside it because `core_stack.py:382` was
+    otherwise untested, and because its absence is silent: the function would
+    fall back to the in-code default and nothing would say the declaration had
+    been dropped. security-reviewer F6, eng-code-reviewer M2.
+    """
+    fns = [r for r in template["Resources"].values()
+           if r["Type"] == "AWS::Lambda::Function"
+           and "QUERY_DAILY_LIMIT" in str(r["Properties"].get("Environment", ""))]
+    assert len(fns) == 1, "expected exactly one function to declare the ceiling"
+    env = fns[0]["Properties"]["Environment"]["Variables"]
+    assert "STATE_TABLE" in env, "quota fails OPEN without it"
+    from shared import config
+
+    assert int(env["QUERY_DAILY_LIMIT"]) == config.QUERY_DAILY_LIMIT_DEFAULT
 
 
 def test_tooling_depends_on_these_output_names(template):

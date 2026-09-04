@@ -214,6 +214,40 @@ def add_observability(scope: Construct, *, query_fn: _lambda.Function,
                 "table is unreadable. It does NOT mean the golden set fails — "
                 "no golden question is run by it."),
         ),
+        # THE ONLY ALARM ON THE QUERY PATH, and it exists because
+        # `api/daily_quota.py` fails CLOSED. When that module cannot reach
+        # DynamoDB — most plausibly because the `QUOTA#*` grant did not land —
+        # every /query returns 503, and before this alarm the ONLY symptom was
+        # that `Queries` went to zero. On a demo whose normal traffic is near
+        # zero, that is indistinguishable from a quiet day: the M05-to-M06 cache
+        # outage in the closed direction, under a module whose whole argument is
+        # against controls nobody can see fire.
+        #
+        # ON `unavailable` ONLY. `QuotaRefused` carries a `reason` dimension and
+        # `exhausted` is the control WORKING — alarming on it would page someone
+        # because the ceiling did its job. Only "I could not find out" is a
+        # defect. security-reviewer F1, eng-code-reviewer M3.
+        #
+        # NOT_BREACHING for the same reason as the janitor below: this metric is
+        # emitted per refusal, so a healthy day produces no datapoint at all and
+        # BREACHING would fire every night the system worked.
+        cw.Alarm(
+            scope, "QuotaUnavailableAlarm",
+            metric=_metric("QuotaRefused", dimensions={"reason": "unavailable"},
+                           period_minutes=5),
+            threshold=0, comparison_operator=cw.ComparisonOperator.GREATER_THAN_THRESHOLD,
+            evaluation_periods=1,
+            treat_missing_data=cw.TreatMissingData.NOT_BREACHING,
+            alarm_description=(
+                "/query is refusing with 503 because the daily quota could not "
+                "be verified — api/daily_quota.py fails closed by design, so "
+                "this is a HARD OUTAGE of the query path, not a throttle. The "
+                "first thing to check is whether the QueryFn role still carries "
+                "dynamodb:UpdateItem on QUOTA#* against the state table. This "
+                "does NOT fire when the ceiling is merely reached: that is "
+                "QuotaRefused with reason=exhausted, and it is the control "
+                "working."),
+        ),
         cw.Alarm(
             scope, "JanitorCouldNotActAlarm",
             metric=could_not_act.metric(statistic="Sum",

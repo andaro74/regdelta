@@ -383,8 +383,11 @@ def test_no_dynamodb_data_grant_is_unconditioned(template):
 _READABLE_PREFIXES = {"THREAD#*", "CACHE#*"}
 
 #: And what it may WRITE. `REVIEW#*` is here and deliberately absent from the
-#: readable set: the review queue is write-only for this role.
-_WRITABLE_PREFIXES = {"THREAD#*", "REVIEW#*", "CACHE#*"}
+#: readable set: the review queue is write-only for this role. `QUOTA#*` is
+#: write-only for the same structural reason and a different one — the daily
+#: ceiling is claimed with a conditional UpdateItem that returns the new count,
+#: so no code path reads it and a read grant would be unused capability.
+_WRITABLE_PREFIXES = {"THREAD#*", "REVIEW#*", "CACHE#*", "QUOTA#*"}
 
 
 def test_the_review_queue_is_never_readable(template):
@@ -442,33 +445,59 @@ def test_writes_to_both_prefixes_live_in_one_statement(template):
 
     `dynamodb:LeadingKeys` under `ForAllValues:` requires EVERY key in the
     request to match the statement's own patterns. `delete_thread` issues one
-    batch carrying both a `THREAD#` key and the `REVIEW#` key, so two
-    per-prefix write statements would each see a key they do not cover and the
-    batch would be denied by both. Splitting by ACTION rather than by PREFIX is
-    the only form that survives it.
+    batch carrying both a `THREAD#` key and the `REVIEW#` key, so splitting
+    those two across per-prefix statements leaves each seeing a key it does not
+    cover, and the batch is denied by both.
+
+    THE ASSERTION IS "ONE STATEMENT COVERS BOTH", NOT "THERE IS ONE STATEMENT",
+    and the difference matters now that `QUOTA#*` has its own. This test used to
+    count write statements, which reads as the same thing and is not: IAM allows
+    on the UNION of statements, so an additional statement cannot take away what
+    another grants. The mixed batch succeeds as long as SOME statement matches
+    every key in it. What the count was really guarding is a split BY PREFIX of
+    keys used TOGETHER, and that is still caught below.
+
+    A single-prefix statement is safe exactly when its prefix never shares a
+    request with another. `QUOTA#` qualifies: `daily_quota.consume()` issues one
+    `UpdateItem` for one key and appears in no batch anywhere.
     """
     write_stmts = [s for s in _state_table_statements(template)
                    if any(a in _WRITE_ACTIONS for a in _actions(s))]
-    assert len(write_stmts) == 1, \
-        f"{len(write_stmts)} write statements; a mixed batch satisfies neither"
-    operator, keys = _leading_keys(write_stmts[0])
-    assert operator == "ForAllValues:StringLike", operator
-    assert "THREAD#*" in keys and "REVIEW#*" in keys, keys
-    # AND BOUNDED, mirroring the read side. When `CACHE#*` was added this
-    # assertion was relaxed from an equality to a membership test, and NOTHING
-    # else in this file constrains which patterns the write statement carries:
-    # `["THREAD#*", "REVIEW#*", "*"]` — unconditioned PutItem/UpdateItem/
-    # DeleteItem/BatchWriteItem over every key in the state table, from the
-    # anonymous-driven role, able to overwrite any caller's THREAD# checkpoint
-    # or CACHE# entry — passed the whole file green.
+    assert write_stmts, "no write statement at all"
+
+    together = [s for s in write_stmts
+                if {"THREAD#*", "REVIEW#*"} <= set(_leading_keys(s)[1] or [])]
+    assert len(together) == 1, (
+        "THREAD#* and REVIEW#* must share exactly one statement — "
+        f"{len(together)} do; `delete_thread`'s mixed batch satisfies none")
+
+    # EVERY write statement is conditioned AND bounded, not just the mixed one.
     #
-    # That is the same "the test restated the list it was checking" failure
-    # that `test_every_state_table_prefix_in_src_is_granted` exists to end,
-    # reintroduced on the other statement. An allowlist keeps the forcing
-    # function: a fourth prefix fails here, and widening is a one-line edit
-    # made in the open. security-reviewer, M06.
-    assert set(keys) <= _WRITABLE_PREFIXES, \
-        f"write actions reach {sorted(set(keys) - _WRITABLE_PREFIXES)}"
+    # When `CACHE#*` was added, this was relaxed from an equality to a
+    # membership test, and nothing else in this file constrained which patterns
+    # the write statement carried: `["THREAD#*", "REVIEW#*", "*"]` —
+    # unconditioned Put/Update/Delete/BatchWriteItem over every key in the state
+    # table, from the anonymous-driven role, able to overwrite any caller's
+    # THREAD# checkpoint or CACHE# entry — passed the whole file green. That is
+    # the same "the test restated the list it was checking" failure that
+    # `test_every_state_table_prefix_in_src_is_granted` exists to end.
+    # Iterating rather than checking `write_stmts[0]` is what stops that
+    # regression simply moving to a second statement. security-reviewer, M06.
+    for stmt in write_stmts:
+        operator, keys = _leading_keys(stmt)
+        assert operator == "ForAllValues:StringLike", operator
+        assert set(keys) <= _WRITABLE_PREFIXES,             f"write actions reach {sorted(set(keys) - _WRITABLE_PREFIXES)}"
+
+    # AND THE ACTIONS ARE SCOPED TOO. The allowlist guards PREFIXES and said
+    # nothing about actions, so `QUOTA#*` folded into the four-action statement
+    # silently acquired PutItem, DeleteItem and BatchWriteItem — letting the
+    # QueryFn DELETE the ceiling that constrains it. `consume()` makes exactly
+    # one kind of call and the grant should say so. security-reviewer F3.
+    quota_stmts = [s for s in write_stmts
+                   if "QUOTA#*" in (_leading_keys(s)[1] or [])]
+    assert len(quota_stmts) == 1, f"{len(quota_stmts)} statements reach QUOTA#*"
+    assert _actions(quota_stmts[0]) == ["dynamodb:UpdateItem"],         f"QUOTA#* reaches more than it calls: {_actions(quota_stmts[0])}"
+    assert _leading_keys(quota_stmts[0])[1] == ["QUOTA#*"],         "the single-action statement must not carry other prefixes"
 
 
 # --------------------------------------------------- prefix coverage, derived

@@ -113,6 +113,77 @@ QUEUE_URL = os.environ.get("QUEUE_URL", "")
 SEMANTIC_CACHE = os.environ.get("SEMANTIC_CACHE", "0") == "1"
 RERANK = os.environ.get("RERANK", "0") == "1"
 
+# How many Bedrock-backed runs `/query` and `/resume` may start in one UTC day
+# before they answer 429 (`api/daily_quota.py`). CACHE HITS DO NOT COUNT.
+#
+# 80 IS A DOLLAR DECISION, and the human seat named the figure: a worst-case
+# day under $5. The arithmetic it comes from has two terms, because refusing is
+# cheap but not free —
+#
+#   answered:  80 x $0.0475                        = $3.80
+#   refused:   86,400 x 1 rps x $0.00000603         = $0.52
+#   floor:     alarms + storage, measured           = $0.09
+#                                                    -------
+#                                                     $4.41/day
+#
+# The per-refusal $0.00000603 decomposes as $0.00000333 Lambda GB-seconds
+# (0.1s x 2GB), $0.00000125 for the DynamoDB FAILED CONDITIONAL WRITE — which
+# DynamoDB bills — $0.000001 API Gateway request, $0.0000002 Lambda request and
+# ~$0.000000125 cache read.
+#
+# ONLY THE FIRST TERM SCALES WITH DURATION, and the 100ms in it is an ESTIMATE
+# rather than a measurement. So a 3x duration miss is NOT a 3x cost miss: at
+# 300ms the per-refusal figure is ~$0.0000127, about 2.1x, and the day becomes
+# $3.80 + $1.10 + $0.09 = $4.99. (An earlier version of this comment said
+# $5.45, which came from trebling the whole line including four fixed costs.)
+# 80 rather than the 90 that also clears $5 because 90 at 300ms is $5.47 and
+# misses. Measure `Duration` on the 429 path and this constant can be tightened.
+# eng-code-reviewer P1.
+#
+# The second term is why `ThrottleSettings` in core_stack.py is part of this
+# number and must move with it. At the 20 rps this stack shipped with until now,
+# the same 80-query ceiling costs $10.43 a day in refusals alone — the ceiling
+# would be bounding the cheap half of the bill.
+#
+# It is ALSO inside BEDROCK_DAILY_TOKEN_CAP below: at 5,881.8 Opus tokens per
+# uncached query, the Opus 4.6 entry's NON-ADJUSTABLE 2,592,000/day is 440
+# queries, and 80 is 470,544 tokens, 18% of it.
+#
+# THAT SURVIVING 82% IS NOT REACHABLE THROUGH THE API, and an earlier version of
+# this comment claimed the opposite — that it protected `make evals` from a
+# stranger. It does not: `make evals` drives the DEPLOYED endpoint and draws on
+# this same counter, so exhausting the ceiling 429s the golden set too. The cost
+# to deny this project's definition of done went from 440 attacker requests to
+# 80, while the defender's spend went from ~$21 to $3.80. The bill is bounded;
+# the gate's availability got CHEAPER to attack. See `api/daily_quota.py` for
+# the two escapes that make the trade acceptable — the in-process eval path,
+# which never touches this counter, and deleting the day's item with the
+# operator's own credentials. security-reviewer F2.
+#
+# 80 is also ~4-16x the traffic a portfolio demo actually sees, with cache hits
+# free on top inside each 1h TTL, and it leaves room for an `evals` run (20) and
+# a `smoke` run (5) through the same API on the same day.
+#
+# Zero closes the endpoint entirely and is a supported setting — WHEN THE QUOTA
+# IS ON AT ALL. `daily_quota.consume()` returns before reading this value if
+# STATE_TABLE is unset, so a zero there closes nothing; see `daily_quota
+# .enabled()` for why that fail-open exists and what pins it. It is the
+# DECLARATIVE form of `put-function-concurrency 0` — not because the CLI setting
+# is fragile (it survives a deploy: the template declares no
+# ReservedConcurrentExecutions, and CloudFormation does not manage a property it
+# does not declare) but because nothing in the repo records that one, so its
+# existence is knowable only by asking the live account. The two also refuse
+# differently: this returns 429 with a `Retry-After`, while a zero-concurrency
+# function returns 503 with nothing a caller can act on.
+#: THE DEFAULT, SEPARATE FROM THE RESOLVED VALUE, and the split is load-bearing.
+#: `core_stack.py` pins this literal into the deployed function's environment.
+#: If it pinned QUERY_DAILY_LIMIT instead, that value resolves in the SYNTH
+#: process, so a stale `export QUERY_DAILY_LIMIT=100000` in the deployer's shell
+#: would silently ship a 100,000/day ceiling. eng-code-reviewer M1.
+QUERY_DAILY_LIMIT_DEFAULT = 80
+QUERY_DAILY_LIMIT = int(os.environ.get(
+    "QUERY_DAILY_LIMIT", str(QUERY_DAILY_LIMIT_DEFAULT)))
+
 # ------------------------------------------------------- spend (SPEC/06)
 # WHAT A TOKEN COSTS IN THIS ACCOUNT, in dollars per million. SPEC/06's
 # dashboard shows "Bedrock cost/query" and `loadtest/budget.py` refuses a run

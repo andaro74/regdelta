@@ -26,7 +26,7 @@ import uuid
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from api import response_cache as cache, resume_token as rt
+from api import daily_quota as quota, response_cache as cache, resume_token as rt
 
 log = logging.getLogger("regdelta.api")
 
@@ -41,6 +41,73 @@ router = APIRouter()
 # than four call sites is what makes that structural instead of a convention
 # somebody has to remember. `trace_id` is filled per request; nothing else varies.
 _REFUSAL = "not found"
+
+#: `Retry-After` on the 503 branch — "I could not find out", not "come back
+#: tomorrow". Short enough that a healed transient costs one lost request
+#: rather than a day of them, long enough not to invite a retry storm from a
+#: fleet that all failed at once. See `_refuse_over_quota`.
+_UNAVAILABLE_RETRY_SECONDS = 15
+
+
+def _refuse_over_quota(trace_id: str, exc: Exception) -> JSONResponse:
+    """The 429/503 pair from `api.daily_quota`, rendered once.
+
+    UNLIKE `_refuse`, THIS ONE IS DELIBERATELY INFORMATIVE. `/resume`'s opaque
+    404 exists because distinguishing its four rejection reasons would tell an
+    attacker which threads exist. Nothing analogous is true here: the ceiling,
+    the fact that it was reached, and when it resets are not secrets, and a
+    caller who cannot tell "the service is broken" from "come back tomorrow"
+    will retry immediately — which is the behaviour the ceiling exists to stop.
+
+    `Retry-After` is in seconds rather than an HTTP-date because the reset is a
+    duration from now and every well-behaved client understands the delta form.
+    """
+    over = isinstance(exc, quota.QuotaExceededError)
+    status = 429 if over else 503
+    detail = ("daily query limit reached; this demo caps Bedrock-backed answers "
+              "per UTC day" if over else
+              "query limit could not be verified; refusing rather than spending")
+
+    # RETRY-AFTER IS NOT THE SAME DURATION ON THE TWO BRANCHES, and collapsing
+    # it was the defect. `seconds_until_reset()` is right for 429 — the
+    # allowance really does return at midnight. On 503 it is wrong and harmful:
+    # a two-second DynamoDB blip at 00:30 UTC would hand every well-behaved
+    # client `Retry-After: 84600` and empty the demo for the rest of the day
+    # over a fault that had already healed. The module goes to trouble to keep
+    # "you have had your share" and "I could not find out" apart in the status
+    # code; sending one number for both puts them back together in the header a
+    # client actually obeys. security-reviewer F4.
+    retry_after = quota.seconds_until_reset() if over else _UNAVAILABLE_RETRY_SECONDS
+
+    log.warning("query refused status=%s trace_id=%s reason=%s", status, trace_id, exc)
+    # THE REFUSAL HAS TO BE VISIBLE, and until now it was not. Both refusal
+    # paths returned before `_request_metrics`, so a refused request emitted no
+    # `Queries` and no `QueryLatency` — and none of SPEC/06's five alarms
+    # watches the query path. The state "every /query is 503-ing because the
+    # QUOTA#* grant did not land" therefore presented on the dashboard as ZERO
+    # QUERIES, which on a low-traffic demo is indistinguishable from a quiet
+    # day. That is the M05-to-M06 cache outage in the closed direction, under a
+    # module whose own docstring argues against controls nobody can see fire.
+    #
+    # `reason` is a DIMENSION because the two need different responses:
+    # `exhausted` is the control working and wants no alarm, `unavailable` is
+    # the control broken and carries one (observability.QuotaUnavailableAlarm).
+    # security-reviewer F1, eng-code-reviewer M3.
+    try:
+        from shared import observability
+
+        observability.emit(
+            {"QuotaRefused": (1.0, "Count")},
+            {"reason": "exhausted" if over else "unavailable"},
+            {"trace_id": trace_id, "status": status})
+    except Exception as e:                       # noqa: BLE001 — as _request_metrics
+        log.warning("quota refusal not emitted: %s", e)
+
+    return JSONResponse(
+        status_code=status,
+        headers={"Retry-After": str(retry_after)},
+        content={"detail": detail, "trace_id": trace_id,
+                 "retry_after_seconds": retry_after})
 
 
 def _refuse(trace_id: str, reason: str) -> JSONResponse:
@@ -146,6 +213,18 @@ def query(payload: dict, request: Request) -> dict:
             _request_metrics(t0, cache.HIT, hit)
             return hit
 
+    # THE DAILY CEILING, CLAIMED HERE AND NOWHERE EARLIER.
+    #
+    # Below the cache lookup on purpose: a hit spends no Bedrock and must not
+    # consume the allowance, or one caller replaying a single cached question
+    # could lock out every other visitor. Above `_app().invoke` on purpose too —
+    # this is the last line before the run becomes unavoidable, and a quota
+    # claimed after the model call would bound the count while paying the bill.
+    try:
+        quota.consume()
+    except (quota.QuotaExceededError, quota.QuotaUnavailableError) as exc:
+        return _refuse_over_quota(trace_id, exc)
+
     thread_id = str(uuid.uuid4())
     state = _app().invoke(
         {"query": question, "company_profile": profile},
@@ -204,6 +283,51 @@ def resume(thread_id: str, payload: dict, request: Request):
             rt.verify(payload.get("resume_token"), _load_token(thread_id))
         except rt.ResumeDeniedError as denied:
             return _refuse(trace_id, denied.reason)
+
+    # AFTER the token verifies, and the order is a decision with a cost.
+    #
+    # A resume runs the graph, so it spends Bedrock and must count — a paused
+    # question therefore consumes two units across its two requests, which is
+    # two model runs and the honest number.
+    #
+    # Claiming it after verification means a REFUSED resume never consumes the
+    # allowance. The alternative — claim first — would let anyone burn the day's
+    # ceiling with garbage tokens, turning the cost control into the cheapest
+    # denial of service against itself.
+    #
+    # THE COST: it narrows SPEC/04's indistinguishability. A valid token yields
+    # 429 where an invalid one still yields the opaque 404, so the pair is an
+    # oracle for token validity.
+    #
+    # TWO THINGS AN EARLIER VERSION OF THIS COMMENT GOT WRONG, corrected here
+    # because the reasoning is what a future reader inherits:
+    #
+    #   * It said reaching the exhausted state "costs an attacker the whole
+    #     day's ceiling". It costs the DEFENDER $3.80 and the demo's day. It
+    #     costs the attacker 80 requests — 80 seconds at 1 rps. That is a price
+    #     the victim pays, not a barrier.
+    #   * It said the oracle exists only while exhausted. It is available at
+    #     ANY time: drive the counter to cap-1, submit the candidate token,
+    #     then issue one `/query`. A 429 means the token verified and consumed
+    #     the last unit; a 200 means it was refused before `consume()`.
+    #
+    # SHIPPED ANYWAY, on the two clauses that do hold. Resume tokens are minted
+    # at full entropy, so there is nothing to enumerate — the oracle cannot find
+    # a token, only confirm one already held. And the marginal capability it
+    # grants is narrow: validate a leaked token (screenshot, shared URL, log)
+    # WITHOUT exercising it, where today the holder would learn the same thing
+    # by using it.
+    #
+    # The clean close, if that ever stops being acceptable, is peek-then-claim:
+    # a GetItem on QUOTA#<day> BEFORE `rt.verify()` returning 429 to everyone
+    # when exhausted, with the atomic UpdateItem still claimed after
+    # verification. It costs one read grant and tolerates a stale peek, because
+    # the claim stays atomic. Re-open this if `/resume` ever gains a guessable
+    # identifier. security-reviewer F5.
+    try:
+        quota.consume()
+    except (quota.QuotaExceededError, quota.QuotaUnavailableError) as exc:
+        return _refuse_over_quota(trace_id, exc)
 
     decision = {k: v for k, v in payload.items() if k != "resume_token"}
     try:

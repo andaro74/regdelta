@@ -420,3 +420,208 @@ def test_a_mismatched_prefix_is_a_404_and_not_a_500(monkeypatch):
     monkeypatch.setenv("API_BASE_PATH", "/wrong")
     resp = m.handler(_v2_event("/api/health"), None)
     assert resp["statusCode"] == 404
+
+
+# ------------------------------------------------------- daily ceiling (429)
+#
+# The quota is stubbed at `m.quota` rather than at DynamoDB: what these assert
+# is the HTTP CONTRACT the ceiling produces — which status, which header, and
+# crucially WHERE in the request path it is claimed. `test_daily_quota.py` owns
+# the arithmetic and the conditional write.
+def _quota(monkeypatch, raises=None):
+    """Replace the quota with a recording stub. Returns the call log."""
+    calls = []
+
+    def _consume(now=None):
+        calls.append(now)
+        if raises is not None:
+            raise raises
+        return len(calls)
+
+    monkeypatch.setattr(m.quota, "consume", _consume)
+    monkeypatch.setattr(m.quota, "seconds_until_reset", lambda now=None: 3600)
+    return calls
+
+
+def test_over_the_daily_ceiling_a_query_is_429(client, monkeypatch):
+    c, _ = client
+    _stub_graph(monkeypatch, _answered())
+    _quota(monkeypatch, raises=m.quota.QuotaExceededError("200 already served"))
+    r = c.post("/query", json={"question": "what changed?"})
+    assert r.status_code == 429
+    assert r.headers["Retry-After"] == "3600"
+    assert r.json()["retry_after_seconds"] == 3600
+
+
+def test_an_unverifiable_ceiling_is_503_not_429(client, monkeypatch):
+    """The two say different things and must not collapse.
+
+    429 means "come back tomorrow" and reads as the service working. Reporting
+    a BROKEN quota that way would hide it exactly as `response_cache`'s
+    swallowed AccessDenied hid a dead cache from M05 to M06.
+    """
+    c, _ = client
+    _stub_graph(monkeypatch, _answered())
+    _quota(monkeypatch, raises=m.quota.QuotaUnavailableError("dynamodb down"))
+    r = c.post("/query", json={"question": "what changed?"})
+    assert r.status_code == 503
+    assert r.json()["detail"] != ""
+
+
+def test_a_refused_query_never_reaches_the_graph(client, monkeypatch):
+    """The ceiling has to bound SPEND, not just responses.
+
+    A 429 returned after `_app().invoke` would report a limit while paying the
+    Bedrock bill it exists to prevent — the one defect that would make the whole
+    module decorative.
+    """
+    c, _ = client
+    invoked = []
+
+    class _App:
+        def invoke(self, *a, **k):
+            invoked.append(1)
+            return _answered()
+
+    monkeypatch.setattr(m, "_compiled", {"app": _App(), "resumable": True})
+    _quota(monkeypatch, raises=m.quota.QuotaExceededError("full"))
+    assert c.post("/query", json={"question": "q"}).status_code == 429
+    assert invoked == [], "the graph ran for a request that was refused"
+
+
+def test_a_cache_hit_does_not_consume_the_allowance(client, monkeypatch):
+    """A hit spends no Bedrock, so it must not spend the ceiling either.
+
+    Counting hits would let one caller replaying a single cached question lock
+    every other visitor out for the day — a denial of service built out of the
+    control installed to prevent one.
+    """
+    c, _ = client
+    _stub_graph(monkeypatch, _answered())
+    monkeypatch.setattr(m.cache, "enabled", lambda: True)
+    monkeypatch.setattr(m.cache, "get",
+                        lambda q, p: {"answer": "stored", "citations": ["x"],
+                                      "status": "ok"})
+    calls = _quota(monkeypatch)
+    assert c.post("/query", json={"question": "q"}).status_code == 200
+    assert calls == [], "a cache hit claimed an allowance unit"
+
+
+def test_a_missed_query_consumes_exactly_one_unit(client, monkeypatch):
+    c, _ = client
+    _stub_graph(monkeypatch, _answered())
+    monkeypatch.setattr(m.cache, "enabled", lambda: False)
+    monkeypatch.setattr(m.cache, "get", lambda q, p: None)
+    calls = _quota(monkeypatch)
+    assert c.post("/query", json={"question": "q"}).status_code == 200
+    assert len(calls) == 1
+
+
+def test_a_refused_resume_does_not_consume_the_allowance(client, monkeypatch):
+    """Claiming BEFORE verification would make garbage tokens the cheapest way
+    to exhaust the day's ceiling — a denial of service against the control."""
+    c, _ = client
+    _stub_graph(monkeypatch, _answered())
+    calls = _quota(monkeypatch)
+    r = c.post("/resume/never-existed", json={"resume_token": "nonsense"})
+    assert r.status_code == 404
+    assert calls == [], "a refused resume claimed an allowance unit"
+
+
+def test_an_authorised_resume_consumes_one_unit(client, monkeypatch):
+    """A resume runs the graph, so it spends Bedrock and must count. A paused
+    question therefore costs two units across its two requests — two model runs,
+    which is the honest number."""
+    c, _ = client
+    _stub_graph(monkeypatch, _paused())
+    calls = _quota(monkeypatch)
+    first = c.post("/query", json={"question": "are we affected?"}).json()
+    _stub_graph(monkeypatch, _answered())
+    c.post(f"/resume/{first['thread_id']}",
+           json={"resume_token": first["resume_token"], "answer": "yes"})
+    assert len(calls) == 2
+
+
+def test_over_the_ceiling_a_resume_is_429_and_never_reaches_the_graph(client, monkeypatch):
+    """The ordering decision in `/resume`, pinned so a change to it fails loudly.
+
+    The diff spends twenty lines arguing that claiming AFTER token verification
+    is right despite narrowing SPEC/04's indistinguishability — an exhausted
+    quota answers 429 to a valid token where an invalid one still gets the
+    opaque 404. That trade-off was reviewed and accepted; what was missing was
+    anything asserting the behaviour it describes, so a later refactor could
+    have silently collapsed the 429 into the 404 (losing the honest signal) or
+    the 404 into the 429 (leaking token validity to everyone). Both directions
+    now fail here. eng-code-reviewer L4.
+    """
+    c, _ = client
+    _stub_graph(monkeypatch, _paused())
+    first = c.post("/query", json={"question": "are we affected?"}).json()
+
+    invoked = []
+
+    class _App:
+        def invoke(self, *a, **k):
+            invoked.append(1)
+            return _answered()
+
+    monkeypatch.setattr(m, "_compiled", {"app": _App(), "resumable": True})
+    _quota(monkeypatch, raises=m.quota.QuotaExceededError("full"))
+
+    r = c.post(f"/resume/{first['thread_id']}",
+               json={"resume_token": first["resume_token"], "answer": "yes"})
+    assert r.status_code == 429
+    assert invoked == [], "the graph ran for a resume that was refused"
+    # And the other half of the oracle: an unauthorised resume still 404s
+    # rather than revealing the ceiling.
+    assert c.post("/resume/never-existed",
+                  json={"resume_token": "nonsense"}).status_code == 404
+
+
+def test_a_refusal_emits_a_metric_with_its_reason(client, monkeypatch):
+    """The merge blocker, pinned.
+
+    Both refusal paths used to return before `_request_metrics`, so a 503 storm
+    presented on the dashboard as ZERO QUERIES — indistinguishable from a quiet
+    day on a low-traffic demo, under a module whose own argument is against
+    controls nobody can see fire. `reason` is a dimension because
+    `observability.QuotaUnavailableAlarm` fires on `unavailable` only:
+    `exhausted` is the ceiling working. security-reviewer F1, eng-code-reviewer M3.
+    """
+    c, _ = client
+    _stub_graph(monkeypatch, _answered())
+    emitted = []
+    monkeypatch.setattr("shared.observability.emit",
+                        lambda metrics, dims, props=None, **kw: emitted.append((metrics, dims)))
+
+    _quota(monkeypatch, raises=m.quota.QuotaExceededError("full"))
+    c.post("/query", json={"question": "q"})
+    _quota(monkeypatch, raises=m.quota.QuotaUnavailableError("dynamodb down"))
+    c.post("/query", json={"question": "q"})
+
+    refusals = [(mt, d) for mt, d in emitted if "QuotaRefused" in mt]
+    assert [d["reason"] for _, d in refusals] == ["exhausted", "unavailable"]
+
+
+def test_the_503_does_not_tell_clients_to_come_back_tomorrow(client, monkeypatch):
+    """429 and 503 are kept apart in the status code; the header must agree.
+
+    `seconds_until_reset()` on the 503 branch meant a two-second DynamoDB blip
+    at 00:30 UTC handed every well-behaved client `Retry-After: 84600` and
+    emptied the demo for the rest of the day over a fault that had healed.
+    security-reviewer F4.
+    """
+    c, _ = client
+    _stub_graph(monkeypatch, _answered())
+    monkeypatch.setattr(m.quota, "seconds_until_reset", lambda now=None: 84600)
+
+    monkeypatch.setattr(m.quota, "consume",
+                        lambda now=None: (_ for _ in ()).throw(
+                            m.quota.QuotaExceededError("full")))
+    assert c.post("/query", json={"question": "q"}).headers["Retry-After"] == "84600"
+
+    monkeypatch.setattr(m.quota, "consume",
+                        lambda now=None: (_ for _ in ()).throw(
+                            m.quota.QuotaUnavailableError("blip")))
+    r = c.post("/query", json={"question": "q"})
+    assert int(r.headers["Retry-After"]) <= 60, "a transient fault must not cost a day"

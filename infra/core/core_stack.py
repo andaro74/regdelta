@@ -369,6 +369,33 @@ class RegDeltaCoreStack(cdk.Stack):
                 "MODEL_FAST": config.MODEL_FAST,
                 "MODEL_VERDICT": config.MODEL_VERDICT,
                 "EMBED_MODEL": config.EMBED_MODEL,
+                # The daily ceiling on Bedrock-backed answers (api/daily_quota).
+                #
+                # `QUERY_DAILY_LIMIT_DEFAULT`, NOT `QUERY_DAILY_LIMIT`, and the
+                # distinction is the whole point. The latter is
+                # `int(os.environ.get("QUERY_DAILY_LIMIT", ...))`, which resolves
+                # in the SYNTH process — so pinning it would bake "whatever the
+                # operator happened to export" into the deployed function, which
+                # is precisely the hazard an earlier version of this comment
+                # claimed the pin removed. A stale `export
+                # QUERY_DAILY_LIMIT=100000` would have deployed a 100,000/day
+                # ceiling with the suite green.
+                #
+                # The analogy to the model ids above does NOT hold either: those
+                # are pinned because the IAM policy is built from the same
+                # synth-time values and the two must provably agree. Nothing in
+                # any policy depends on this number.
+                # eng-code-reviewer M1, security-reviewer F7.
+                #
+                # What the declaration DOES buy: the function reads a value the
+                # template states rather than an ambient default, so the ceiling
+                # is visible in `cdk diff` when it changes. Change it here.
+                # 0 closes the endpoint in a form the repo records, which
+                # `put-function-concurrency 0` is not — that one survives a
+                # deploy (no ReservedConcurrentExecutions is declared here, and
+                # CloudFormation does not manage what it does not declare), but
+                # it lives only in the live account.
+                "QUERY_DAILY_LIMIT": str(config.QUERY_DAILY_LIMIT_DEFAULT),
             },
         )
         self.corpus_bucket.grant_read(query_fn)
@@ -459,6 +486,37 @@ class RegDeltaCoreStack(cdk.Stack):
             resources=[state_table_arn],
             conditions={"ForAllValues:StringLike": {
                 "dynamodb:LeadingKeys": ["THREAD#*", "REVIEW#*", "CACHE#*"]}}))
+        # QUOTA#* IS THE FOURTH PREFIX, AND IT GETS ITS OWN STATEMENT — one
+        # action, because `daily_quota.consume()` makes exactly one kind of call.
+        #
+        # It was briefly folded into the four-action statement above, which was
+        # wrong in a way worth recording: the allowlist forcing-function in
+        # `tests/test_query_fn_iam.py` guards PREFIXES, not ACTIONS, so a prefix
+        # needing `UpdateItem` silently acquired PutItem, DeleteItem and
+        # BatchWriteItem too. The QueryFn is the principal this ceiling
+        # CONSTRAINS, and that grant let it delete its own counter — nothing
+        # calls it, but the grant had stopped describing the code.
+        # security-reviewer F3.
+        #
+        # Write-only, no GetItem: `consume()` reads the new value out of
+        # `ReturnValues="UPDATED_NEW"`, so a read grant would be capability
+        # nobody calls. (A future peek-then-claim on `/resume` — see
+        # `api._refuse_over_quota`'s neighbour comment — would need one; it does
+        # not exist yet and is not granted in advance.)
+        #
+        # This grant is not optional in the way CACHE#* was. The cache swallows
+        # AccessDenied as a miss, which is how the M05-to-M06 outage hid; the
+        # quota FAILS CLOSED, so the same mistake here 503s every /query. That
+        # is the intended direction — a control that cannot verify must not
+        # admit — but it means this statement and `daily_quota.consume` have to
+        # ship together, which `test_every_state_table_prefix_in_src_is_granted`
+        # enforces, and that the refusal be VISIBLE, which is why
+        # `observability.QuotaUnavailableAlarm` exists.
+        query_fn.add_to_role_policy(iam.PolicyStatement(
+            actions=["dynamodb:UpdateItem"],
+            resources=[state_table_arn],
+            conditions={"ForAllValues:StringLike": {
+                "dynamodb:LeadingKeys": ["QUOTA#*"]}}))
         # Metadata, not data. `DescribeTable` does not accept a LeadingKeys
         # condition — it has no keys — and it returns the schema and item COUNT,
         # never an item. Granted separately and named here so that its absence
@@ -554,10 +612,48 @@ class RegDeltaCoreStack(cdk.Stack):
             self, "ApiStage", http_api=api, stage_name=API_STAGE_NAME, auto_deploy=True,
             # A BOUND ON AN UNAUTHENTICATED ENDPOINT THAT SPENDS MONEY. Each
             # /query is a Bedrock call; without a ceiling the only limit on a
-            # stranger's bill is Lambda's account concurrency. These numbers are
-            # a demo's shape — a handful of humans clicking — not a capacity
-            # plan; M06 sets real ones against a load test.
-            throttle=apigw.ThrottleSettings(rate_limit=20, burst_limit=40))
+            # stranger's bill is Lambda's account concurrency.
+            #
+            # 20/40 UNTIL NOW, AND THAT WAS NEVER A COST CONTROL. Held flat for
+            # a day it admits 1,728,000 requests, and it bounded nothing that
+            # mattered: what actually stopped a runaway was the account's
+            # NON-ADJUSTABLE Bedrock daily token cap (config
+            # .BEDROCK_DAILY_TOKEN_CAP), reached in about 22 seconds at this
+            # rate. "It throttles" read like protection and was capacity
+            # planning for traffic this demo does not get.
+            #
+            # 1/5 IS HALF OF A DOLLAR FIGURE, the other half being
+            # config.QUERY_DAILY_LIMIT, and the two must move together. The
+            # quota bounds what gets ANSWERED (80 x $0.0475 = $3.80/day); this
+            # bounds what gets REFUSED, which is cheap per request and not free:
+            # a 429 still costs Lambda GB-seconds, an API Gateway request, a
+            # cache read and a DynamoDB failed conditional write — $0.00000603
+            # together, so $0.52/day at 1 rps and $10.43/day at 20. Above about
+            # 2 rps the refusals cost more than the answers, which is the whole
+            # ceiling standing on its head.
+            #
+            # A SECOND 429 NOW EXISTS, and it is not the quota's. Above 1 rps
+            # the STAGE refuses with its own `429 {"message":"Too Many
+            # Requests"}` — no `Retry-After`, no `retry_after_seconds`, no
+            # `trace_id`. A caller cannot tell it from the quota's "come back
+            # after midnight", which is structurally the same collapse
+            # `daily_quota` argues against when it keeps 429 and 503 apart.
+            #
+            # ACCEPTED RATHER THAN FIXED, and named here so it is a decision.
+            # `ui/app.js` fires `refreshHealth()` alongside every ask, so one
+            # human clicking is 2 stage requests and two at once can trip burst
+            # 5. The distinguishing fix is a gateway response override on
+            # THROTTLED_429, which is worth doing when someone reports the
+            # confusion — not before, on a demo where the two remedies (wait a
+            # second / come back tomorrow) differ only in how long you wait.
+            # eng-code-reviewer M4.
+            #
+            # AND IT COSTS THE DEMO NOTHING. A handful of humans clicking is
+            # well under 0.05 rps; burst 5 absorbs a page firing several
+            # requests at once. 20 rps was ~400x what this surface ever sees.
+            # SPEC/06's load profiles drive `LoadDriverFn` in region and never
+            # traverse this stage, so lowering it does not touch them.
+            throttle=apigw.ThrottleSettings(rate_limit=1, burst_limit=5))
 
         # The UI's bucket is PRIVATE and reachable only through CloudFront's
         # origin access control. It holds derived files that are rebuilt from
